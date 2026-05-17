@@ -289,27 +289,41 @@ function MarketInsight() {
       const prompt = MARKET_PROMPTS[tabId](today);
       const text = await callClaudeWithSearch({
         maxTokens: 4000,
-        system: "당신은 글로벌 투자 분석 전문가입니다. 웹 검색으로 최신 정보를 수집하고 순수 JSON만 반환하세요. 마크다운이나 설명 텍스트 없이 JSON만. 각 배열 항목은 최대 3개로 제한하고 간결하게 작성하세요.",
+        system: "You are a global investment analyst. Search the web for latest info and return ONLY valid JSON. No markdown, no code blocks, no explanation text before or after. Start your response with { and end with }. Limit each array to max 3 items. Be concise.",
         user: prompt,
       });
-      const clean = text.replace(/```json|```/g, "").trim();
-      // JSON 파싱 — 잘린 경우 복구 시도
+      // Gemini/Claude 모두 대응하는 강화된 JSON 파싱
       let parsed;
-      try { parsed = JSON.parse(clean); }
-      catch {
-        // 방법1: { ~ } 추출
-        const m1 = clean.match(/\{[\s\S]*\}/);
-        if (m1) {
-          try { parsed = JSON.parse(m1[0]); }
-          catch {
-            // 방법2: 잘린 JSON 끝에 }]} 붙여서 복구
-            let truncated = m1[0];
-            for (const suffix of ["}", "]}", "}]}", "]}}", "}]}}"]) {
-              try { parsed = JSON.parse(truncated + suffix); break; } catch {}
+      try {
+        // 1단계: 마크다운 코드블록 제거
+        let clean = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+        
+        // 2단계: JSON 객체 추출 (앞뒤 텍스트 제거)
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error("No JSON found");
+        clean = jsonMatch[0];
+        
+        // 3단계: 직접 파싱 시도
+        try { parsed = JSON.parse(clean); }
+        catch {
+          // 4단계: 잘린 JSON 복구 시도
+          for (const suffix of ["", "}", "]}", "}]}", ""}", ""}]}", "\"}", "\"]}}"]) {
+            try { parsed = JSON.parse(clean + suffix); break; } catch {}
+          }
+          // 5단계: 마지막 완전한 필드까지만 잘라서 복구
+          if (!parsed) {
+            const lastComma = clean.lastIndexOf(",");
+            if (lastComma > 0) {
+              const trimmed = clean.slice(0, lastComma);
+              for (const suffix of ["}", "]}", "}]}", "\"}", ""}]}"]) {
+                try { parsed = JSON.parse(trimmed + suffix); break; } catch {}
+              }
             }
           }
+          if (!parsed) parsed = { summary: clean.slice(0, 800), _raw: true };
         }
-        if (!parsed) parsed = { summary: clean.slice(0, 500) + "...(분석 결과가 너무 길어 일부만 표시)", _raw: true };
+      } catch(parseErr) {
+        parsed = { summary: text.slice(0, 800), _raw: true };
       }
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
