@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ComposedChart } from "recharts";
 
 const STORAGE_KEY = "portfolio_v1";
 const GEMINI_MODEL = "gemini-2.5-flash";
@@ -748,266 +747,214 @@ function MarketInsight({ onRefreshAll }) {
 }
 
 
-// ── 차트 색상 ─────────────────────────────────────────────────────────────────
-const SECTOR_PIE_COLORS = ["#0ea5e9","#7c3aed","#f59e0b","#10b981","#ef4444","#ec4899","#f97316","#06b6d4","#84cc16","#6b7280","#a78bfa","#34d399","#fb923c","#e2e8f0"];
-const REGION_PIE_COLORS = ["#0ea5e9","#7c3aed","#ef4444","#f59e0b","#10b981","#ec4899","#06b6d4","#f97316","#84cc16","#6b7280"];
+// ── 차트 (순수 SVG) ──────────────────────────────────────────────────────────
+const PIE_COLORS = ["#0ea5e9","#7c3aed","#f59e0b","#10b981","#ef4444","#ec4899","#f97316","#06b6d4","#84cc16","#6b7280","#a78bfa","#34d399","#fb923c","#fbbf24"];
 
-const REGION_MAP = {
-  "삼성 개인연금": "KR", "삼성 DC": "KR", "메리츠 일반": "KR", "신한 일반": "KR",
-};
-
-// 종목명 기반 지역 추정
 function guessRegion(name) {
   if (!name) return "기타";
   const n = name.toUpperCase();
-  if (n.includes("미국") || n.includes("S&P") || n.includes("나스닥") || n.includes("NASDAQ") || n.includes("빅테크") || n.includes("우주테크") || n.includes("배당다우") || n.includes("테크TOP")) return "🇺🇸 미국";
-  if (n.includes("차이나") || n.includes("중국") || n.includes("항셍")) return "🇨🇳 중국";
-  if (n.includes("일본") || n.includes("닛케이")) return "🇯🇵 일본";
-  if (n.includes("인도") || n.includes("빌리언")) return "🇮🇳 인도";
-  if (n.includes("유럽") || n.includes("DAX") || n.includes("FTSE")) return "🇪🇺 유럽";
-  if (n.includes("글로벌") || n.includes("TOP4") || n.includes("원자력") || n.includes("K방산") || n.includes("조선")) return "🌍 글로벌";
-  if (n.includes("코인") || n.includes("BTC") || n.includes("ETH")) return "💰 코인";
-  // 기본값: 국내
+  if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("우주테크")||n.includes("배당다우")||n.includes("테크TOP")||n.includes("서학개미")) return "🇺🇸 미국";
+  if (n.includes("차이나")||n.includes("중국")) return "🇨🇳 중국";
+  if (n.includes("인도")||n.includes("빌리언")) return "🇮🇳 인도";
+  if (n.includes("글로벌")||n.includes("TOP4")||n.includes("원자력")||n.includes("K방산")||n.includes("조선")) return "🌍 글로벌";
   return "🇰🇷 한국";
 }
 
-// 섹터 매핑 개선
 function getSectorLabel(sector, name) {
-  if (!sector || sector === "기타") {
-    // 종목명으로 추정
-    const n = (name||"").toUpperCase();
-    if (n.includes("AI") || n.includes("인공지능") || n.includes("로보")) return "AI·로보틱스";
-    if (n.includes("반도체") || n.includes("SEMI")) return "반도체";
-    if (n.includes("빅테크") || n.includes("테크TOP")) return "미국 빅테크";
-    if (n.includes("S&P") || n.includes("나스닥") || n.includes("NASDAQ")) return "미국 지수";
-    if (n.includes("전력") || n.includes("인프라")) return "전력·인프라";
-    if (n.includes("원자력") || n.includes("에너지")) return "원자력·에너지";
-    if (n.includes("방산") || n.includes("조선")) return "방산·조선";
-    if (n.includes("2차전지") || n.includes("배터리")) return "2차전지";
-    if (n.includes("금") || n.includes("구리") || n.includes("원자재")) return "금·원자재";
-    if (n.includes("채권") || n.includes("배당") || n.includes("배당")) return "배당·채권";
-    if (n.includes("차이나") || n.includes("중국") || n.includes("인도")) return "신흥국";
-    if (n.includes("코스닥") || n.includes("코스피") || n.includes("밸류업") || n.includes("증권")) return "국내 지수";
-    if (n.includes("바이오") || n.includes("헬스")) return "바이오·헬스";
-    return "기타";
-  }
-  const sMap = {
-    "AI": "AI·로보틱스", "반도체": "반도체", "기술": "미국 빅테크",
-    "에너지": "원자력·에너지", "금융": "배당·채권", "헬스케어": "바이오·헬스",
-    "방산": "방산·조선", "부동산": "부동산", "소비재": "소비재",
-  };
-  return sMap[sector] || sector;
+  const n = (name||"").toUpperCase();
+  if (n.includes("AI")||n.includes("인공지능")||n.includes("로보")) return "AI·로보틱스";
+  if (n.includes("반도체")) return "반도체";
+  if (n.includes("빅테크")||n.includes("테크TOP")) return "미국빅테크";
+  if (n.includes("S&P")||n.includes("나스닥")) return "미국지수";
+  if (n.includes("전력")||n.includes("인프라")) return "전력인프라";
+  if (n.includes("원자력")) return "원자력";
+  if (n.includes("방산")||n.includes("조선")) return "방산·조선";
+  if (n.includes("2차전지")) return "2차전지";
+  if (n.includes("금현물")||n.includes("구리실물")) return "금·원자재";
+  if (n.includes("채권")||n.includes("배당")) return "배당·채권";
+  if (n.includes("차이나")||n.includes("인도빌리언")) return "신흥국";
+  if (n.includes("코스닥")||n.includes("코스피")||n.includes("밸류업")||n.includes("증권")) return "국내지수";
+  if (sector && sector !== "기타") return sector;
+  return "기타";
 }
 
-// ── 원형 그래프 컴포넌트 ──────────────────────────────────────────────────────
+function SvgPieChart({ data, colors }) {
+  const [hov, setHov] = useState(null);
+  const cx=110, cy=100, r=78, ri=44, W=220, H=200;
+  const total = data.reduce((s,d)=>s+d.value,0);
+  if (!total) return null;
+  let angle = -Math.PI/2;
+  const slices = data.map((d,i)=>{
+    const pct = d.value/total;
+    const a0=angle, a1=angle+pct*2*Math.PI;
+    angle=a1;
+    const x1=cx+r*Math.cos(a0),y1=cy+r*Math.sin(a0);
+    const x2=cx+r*Math.cos(a1),y2=cy+r*Math.sin(a1);
+    const ix1=cx+ri*Math.cos(a0),iy1=cy+ri*Math.sin(a0);
+    const ix2=cx+ri*Math.cos(a1),iy2=cy+ri*Math.sin(a1);
+    const lg=pct>0.5?1:0;
+    const path=`M${ix1},${iy1} L${x1},${y1} A${r},${r} 0 ${lg} 1 ${x2},${y2} L${ix2},${iy2} A${ri},${ri} 0 ${lg} 0 ${ix1},${iy1}Z`;
+    return {...d,path,color:colors[i%colors.length],pct:(pct*100).toFixed(1)};
+  });
+  const h = hov!==null?slices[hov]:null;
+  return (
+    <svg width={W} height={H} style={{display:"block",margin:"0 auto"}}>
+      {slices.map((s,i)=>(
+        <path key={i} d={s.path} fill={s.color} opacity={hov===null||hov===i?1:0.45}
+          onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}
+          style={{cursor:"pointer",transition:"opacity 0.15s"}}/>
+      ))}
+      {h&&<>
+        <text x={cx} y={cy-8} textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="700">{h.name.slice(0,9)}</text>
+        <text x={cx} y={cy+10} textAnchor="middle" fill={h.color} fontSize="15" fontWeight="800">{h.pct}%</text>
+      </>}
+      {!h&&<>
+        <text x={cx} y={cy-4} textAnchor="middle" fill="#64748b" fontSize="11">터치하면</text>
+        <text x={cx} y={cy+12} textAnchor="middle" fill="#64748b" fontSize="11">상세 표시</text>
+      </>}
+    </svg>
+  );
+}
+
 function PortfolioPieCharts({ portfolio }) {
   if (!portfolio) return null;
+  const totalValue = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const cash = portfolio.cash||0;
+  const grand = totalValue+cash;
 
-  const totalValue = portfolio.holdings.reduce((s,h) => s+(h.shares||0)*(h.current_price||h.avg_price||0), 0);
-  const cash = portfolio.cash || 0;
-  const grandTotal = totalValue + cash;
-
-  // ① 섹터별 데이터
-  const sectorMap = {};
-  portfolio.holdings.forEach(h => {
-    const key = getSectorLabel(h.sector, h.name);
-    const val = (h.shares||0)*(h.current_price||h.avg_price||0);
-    sectorMap[key] = (sectorMap[key]||0) + val;
+  const sectorMap={}, regionMap={};
+  portfolio.holdings.forEach(h=>{
+    const sv=(h.shares||0)*(h.current_price||h.avg_price||0);
+    const sk=getSectorLabel(h.sector,h.name);
+    sectorMap[sk]=(sectorMap[sk]||0)+sv;
+    const rk=guessRegion(h.name);
+    regionMap[rk]=(regionMap[rk]||0)+sv;
   });
-  if (cash > 0) sectorMap["💵 현금"] = cash;
-  const sectorData = Object.entries(sectorMap)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([name, value]) => ({ name, value: Math.round(value), pct: grandTotal>0?((value/grandTotal)*100).toFixed(1):"0" }));
+  if(cash>0){sectorMap["💵 현금"]=cash; regionMap["💵 현금"]=cash;}
 
-  // ② 지역별 데이터
-  const regionMap = {};
-  portfolio.holdings.forEach(h => {
-    const key = guessRegion(h.name);
-    const val = (h.shares||0)*(h.current_price||h.avg_price||0);
-    regionMap[key] = (regionMap[key]||0) + val;
-  });
-  if (cash > 0) regionMap["💵 현금"] = cash;
-  const regionData = Object.entries(regionMap)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([name, value]) => ({ name, value: Math.round(value), pct: grandTotal>0?((value/grandTotal)*100).toFixed(1):"0" }));
+  const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
+  const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
 
-  const CustomTooltip = ({ active, payload }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, padding:"8px 12px" }}>
-        <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:13 }}>{payload[0].name}</div>
-        <div style={{ color:"#0ea5e9", fontSize:13 }}>{payload[0].payload.pct}%</div>
-        <div style={{ color:"#64748b", fontSize:12 }}>₩{Math.round(payload[0].value/10000).toLocaleString()}만</div>
-      </div>
-    );
-  };
-
-  const PieSection = ({ title, data, colors }) => (
-    <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:16, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:14, letterSpacing:2 }}>{title}</div>
-      <ResponsiveContainer width="100%" height={200}>
-        <PieChart>
-          <Pie data={data} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
-            {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-      {/* 범례 */}
-      <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:10 }}>
-        {data.map((d,i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:4, fontSize:12 }}>
-            <div style={{ width:10, height:10, borderRadius:2, background:colors[i%colors.length], flexShrink:0 }} />
-            <span style={{ color:"#94a3b8" }}>{d.name}</span>
-            <span style={{ color:"#e2e8f0", fontWeight:700 }}>{d.pct}%</span>
-          </div>
-        ))}
-      </div>
+  const Legend=({data,colors})=>(
+    <div style={{display:"flex",flexWrap:"wrap",gap:"6px 10px",marginTop:10}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}>
+          <div style={{width:9,height:9,borderRadius:2,background:colors[i%colors.length],flexShrink:0}}/>
+          <span style={{color:"#94a3b8"}}>{d.name}</span>
+          <span style={{color:"#e2e8f0",fontWeight:700}}>{grand>0?((d.value/grand)*100).toFixed(1):0}%</span>
+        </div>
+      ))}
     </div>
   );
 
   return (
     <>
-      <PieSection title="섹터별 구성" data={sectorData} colors={SECTOR_PIE_COLORS} />
-      <PieSection title="지역별 구성" data={regionData} colors={REGION_PIE_COLORS} />
+      <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
+        <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
+        <SvgPieChart data={sectorData} colors={PIE_COLORS}/>
+        <Legend data={sectorData} colors={PIE_COLORS}/>
+      </div>
+      <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
+        <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
+        <SvgPieChart data={regionData} colors={PIE_COLORS}/>
+        <Legend data={regionData} colors={PIE_COLORS}/>
+      </div>
     </>
   );
 }
 
-// ── 수익률 히스토리 그래프 ────────────────────────────────────────────────────
-const HISTORY_KEY = "portfolio_history_v1";
-
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
-}
-
-function saveHistory(h) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(-365))); // 최대 365개
-}
-
-function addHistoryPoint(portfolio, period) {
-  const history = loadHistory();
-  const totalCost  = portfolio.holdings.reduce((s,h) => s+(h.shares||0)*(h.avg_price||0), 0);
-  const totalValue = portfolio.holdings.reduce((s,h) => s+(h.shares||0)*(h.current_price||h.avg_price||0), 0);
-  const ret = totalCost > 0 ? ((totalValue-totalCost)/totalCost)*100 : 0;
-
-  const now = new Date();
-  const point = {
-    date: now.toISOString().slice(0,10),
-    timestamp: now.getTime(),
-    type: "realtime",
-    total_value: Math.round(totalValue),
-    total_cost: Math.round(totalCost),
-    return_pct: parseFloat(ret.toFixed(2)),
-    period,
-  };
-
-  // 같은 날짜면 덮어씀 (마지막 새로고침 기준)
-  const filtered = history.filter(h => h.date !== point.date);
-  saveHistory([...filtered, point].sort((a,b) => a.timestamp-b.timestamp));
-}
-
-function filterHistoryByPeriod(history, period) {
-  if (!history.length) return history;
-  // 주기별로 그룹핑 후 마지막 값만
-  const grouped = {};
-  history.forEach(h => {
-    let key;
-    const d = new Date(h.timestamp);
-    if (period === "daily")   key = h.date;
-    else if (period === "weekly")  key = `${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
-    else if (period === "monthly") key = h.date.slice(0,7);
-    else if (period === "yearly")  key = h.date.slice(0,4);
-    else key = h.date;
-    if (!grouped[key] || h.timestamp > grouped[key].timestamp) grouped[key] = h;
-  });
-  return Object.values(grouped).sort((a,b) => a.timestamp-b.timestamp);
+function addHistoryPoint(portfolio) {
+  try {
+    const history = JSON.parse(localStorage.getItem("portfolio_history_v1")||"[]");
+    const tc=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
+    const tv=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+    const ret=tc>0?((tv-tc)/tc*100):0;
+    const now=new Date();
+    const point={date:now.toISOString().slice(0,10),timestamp:now.getTime(),total_value:Math.round(tv),total_cost:Math.round(tc),return_pct:parseFloat(ret.toFixed(2))};
+    const filtered=history.filter(h=>h.date!==point.date);
+    localStorage.setItem("portfolio_history_v1",JSON.stringify([...filtered,point].sort((a,b)=>a.timestamp-b.timestamp).slice(-365)));
+  } catch(e) { console.error(e); }
 }
 
 function ReturnHistoryChart({ portfolio }) {
   const [period, setPeriod] = useState(localStorage.getItem("history_period")||"daily");
-  const history = filterHistoryByPeriod(loadHistory(), period);
-
   if (!portfolio) return null;
 
-  const periods = [
-    { id:"daily", label:"일별" }, { id:"weekly", label:"주별" },
-    { id:"monthly", label:"월별" }, { id:"yearly", label:"연별" },
-  ];
+  const rawHistory = (() => { try { return JSON.parse(localStorage.getItem("portfolio_history_v1")||"[]"); } catch { return []; } })();
+  const grouped={};
+  rawHistory.forEach(h=>{
+    const d=new Date(h.timestamp);
+    let key;
+    if(period==="daily") key=h.date;
+    else if(period==="weekly") key=`${d.getFullYear()}-W${Math.ceil((d.getDate())/7)}`;
+    else if(period==="monthly") key=h.date.slice(0,7);
+    else key=h.date.slice(0,4);
+    if(!grouped[key]||h.timestamp>grouped[key].timestamp) grouped[key]=h;
+  });
+  const history=Object.values(grouped).sort((a,b)=>a.timestamp-b.timestamp);
 
-  const chartData = history.map(h => ({
-    date: period==="daily" ? h.date.slice(5) : period==="weekly" ? h.date.slice(5) : period==="monthly" ? h.date.slice(0,7) : h.date.slice(0,4),
-    수익률: h.return_pct,
-    평가금액: Math.round(h.total_value/10000),
-  }));
+  const tc=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
+  const tv=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const curRet=tc>0?((tv-tc)/tc*100).toFixed(2):0;
 
-  const currentReturn = (() => {
-    const tc = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
-    const tv = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
-    return tc>0?((tv-tc)/tc*100).toFixed(2):0;
-  })();
+  const periods=[{id:"daily",label:"일별"},{id:"weekly",label:"주별"},{id:"monthly",label:"월별"},{id:"yearly",label:"연별"}];
+
+  const maxAbs = history.length ? Math.max(...history.map(h=>Math.abs(h.return_pct)),1) : 1;
+  const BAR_H = 100;
 
   return (
-    <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:16, marginBottom:14 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-        <div style={{ fontSize:13, color:"#7c3aed", fontWeight:700, letterSpacing:2 }}>수익률 히스토리</div>
-        <div style={{ display:"flex", gap:4 }}>
-          {periods.map(p => (
-            <button key={p.id} onClick={() => { setPeriod(p.id); localStorage.setItem("history_period",p.id); }} style={{
-              padding:"4px 10px", borderRadius:12, border:`1px solid ${period===p.id?"#7c3aed":"#334155"}`,
+    <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:13,color:"#7c3aed",fontWeight:700,letterSpacing:2}}>수익률 히스토리</div>
+        <div style={{display:"flex",gap:4}}>
+          {periods.map(p=>(
+            <button key={p.id} onClick={()=>{setPeriod(p.id);localStorage.setItem("history_period",p.id);}} style={{
+              padding:"4px 8px",borderRadius:10,border:`1px solid ${period===p.id?"#7c3aed":"#334155"}`,
               background:period===p.id?"#7c3aed22":"transparent",
-              color:period===p.id?"#a78bfa":"#64748b", fontSize:12, cursor:"pointer", fontWeight:period===p.id?700:400,
+              color:period===p.id?"#a78bfa":"#64748b",fontSize:11,cursor:"pointer",fontWeight:period===p.id?700:400,
             }}>{p.label}</button>
           ))}
         </div>
       </div>
 
-      {chartData.length === 0 ? (
-        <div style={{ textAlign:"center", padding:"30px 0", color:"#475569", fontSize:13 }}>
-          가격 새로고침 후 히스토리가 쌓입니다
+      {history.length===0?(
+        <div style={{textAlign:"center",padding:"24px 0",color:"#475569",fontSize:13}}>
+          ↻ 가격 새로고침 후 히스토리가 쌓입니다
         </div>
-      ) : chartData.length === 1 ? (
-        // 데이터 1개: 막대 그래프
+      ):(
         <div>
-          <div style={{ textAlign:"center", marginBottom:10 }}>
-            <div style={{ fontSize:13, color:"#64748b" }}>{chartData[0].date}</div>
-            <div style={{ fontSize:28, fontWeight:800, color:parseFloat(currentReturn)>=0?"#10b981":"#ef4444" }}>
-              {parseFloat(currentReturn)>=0?"+":""}{currentReturn}%
-            </div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:4,height:BAR_H+30,overflowX:"auto",paddingBottom:4}}>
+            {history.map((h,i)=>{
+              const barH=Math.max(4,Math.abs(h.return_pct)/maxAbs*BAR_H);
+              const isPos=h.return_pct>=0;
+              const isCur=i===history.length-1;
+              return(
+                <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:36,flexShrink:0}}>
+                  <div style={{fontSize:10,color:isPos?"#10b981":"#ef4444",fontWeight:700,marginBottom:2}}>
+                    {h.return_pct>=0?"+":""}{h.return_pct}%
+                  </div>
+                  <div style={{
+                    width:28,height:barH,borderRadius:"4px 4px 0 0",
+                    background:isCur?(isPos?"#0ea5e9":"#ef4444"):(isPos?"#10b981":"#ef4444"),
+                    opacity:isCur?1:0.6,
+                    border:isCur?"2px solid #fff":"none",
+                  }}/>
+                  <div style={{fontSize:9,color:"#475569",marginTop:3,textAlign:"center",lineHeight:1.2}}>
+                    {period==="daily"?h.date.slice(5):period==="monthly"?h.date.slice(0,7):h.date.slice(0,period==="yearly"?4:7)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fill:"#64748b", fontSize:12 }} />
-              <YAxis tick={{ fill:"#64748b", fontSize:12 }} tickFormatter={v=>`${v}%`} />
-              <Tooltip formatter={(v)=>[`${v}%`,"수익률"]} contentStyle={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8 }} labelStyle={{ color:"#e2e8f0" }} />
-              <Bar dataKey="수익률" fill="#7c3aed" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{textAlign:"center",marginTop:8,fontSize:13,color:"#64748b"}}>
+            현재 수익률: <span style={{color:parseFloat(curRet)>=0?"#10b981":"#ef4444",fontWeight:700}}>{parseFloat(curRet)>=0?"+":""}{curRet}%</span>
+            <span style={{fontSize:11,color:"#334155",marginLeft:8}}>(파란 막대 = 현재)</span>
+          </div>
         </div>
-      ) : (
-        // 데이터 2개 이상: 막대+꺾은선 조합
-        <ResponsiveContainer width="100%" height={200}>
-          <ComposedChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="date" tick={{ fill:"#64748b", fontSize:12 }} />
-            <YAxis yAxisId="left" tick={{ fill:"#64748b", fontSize:12 }} tickFormatter={v=>`${v}%`} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fill:"#64748b", fontSize:11 }} tickFormatter={v=>`${v}만`} />
-            <Tooltip
-              contentStyle={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8 }}
-              labelStyle={{ color:"#e2e8f0" }}
-              formatter={(v,n) => n==="수익률"?[`${v}%`,n]:[`₩${v.toLocaleString()}만`,n]}
-            />
-            <Legend wrapperStyle={{ fontSize:13, color:"#94a3b8" }} />
-            <Bar yAxisId="left" dataKey="수익률" fill="#7c3aed" opacity={0.7} radius={[3,3,0,0]} />
-            <Line yAxisId="right" type="monotone" dataKey="평가금액" stroke="#0ea5e9" strokeWidth={2} dot={{ fill:"#0ea5e9", r:3 }} />
-          </ComposedChart>
-        </ResponsiveContainer>
       )}
     </div>
   );
 }
-
 
 // ── 직접입력 모달 ─────────────────────────────────────────────────────────────
 const ACCOUNTS = ["국내계좌", "해외계좌", "ISA", "연금저축", "IRP", "기타"];
@@ -1506,6 +1453,27 @@ function Portfolio() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* 종목 추가 버튼 — 상단 배치 */}
+          <div style={{marginBottom:14}}>
+            <input id="add-img" type="file" accept="image/*"
+              style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
+              onChange={e=>onFileChange(e,true)}/>
+            <input id="add-xls" type="file" accept=".xlsx,.xls,.csv"
+              style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
+              onChange={e=>onFileChange(e,true)}/>
+            <input id="order-img-top" type="file" accept="image/*"
+              style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
+              onChange={e=>{const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f);}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+              <label htmlFor="add-img" style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}>📱 스크린샷</label>
+              <label htmlFor="add-xls" style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}>📊 엑셀/CSV</label>
+              <button onClick={()=>setShowManual(true)} style={{padding:"10px 6px",borderRadius:10,background:"#7c3aed22",border:"1px solid #7c3aed44",color:"#a78bfa",fontWeight:700,fontSize:13,cursor:"pointer"}}>✏️ 직접입력</button>
+            </div>
+            <label htmlFor="order-img-top" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13,userSelect:"none"}}>
+              📋 주문체결/실현손익 캡처 반영
+            </label>
           </div>
 
           {/* 원형 그래프 */}
