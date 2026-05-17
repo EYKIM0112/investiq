@@ -397,7 +397,7 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
       </S>
 
-      <S title="🌊 글로벌 자금 흐름" color:"#0ea5e9">
+      <S title="🌊 글로벌 자금 흐름" color="#0ea5e9">
         <div style={{ color:"#cbd5e1", lineHeight:1.8, fontSize:16 }}>{d.global_flow}</div>
       </S>
 
