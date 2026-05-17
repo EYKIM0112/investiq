@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 
 const STORAGE_KEY = "portfolio_v1";
-const MODEL = "claude-sonnet-4-20250514";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const SECTOR_COLORS = {
   "기술": "#00d4ff", "반도체": "#7c3aed", "AI": "#f59e0b",
@@ -22,59 +22,76 @@ function getApiKey() {
   return localStorage.getItem("investiq_api_key") || "";
 }
 
+// ── Gemini API 공통 호출 ──────────────────────────────────────────────────────
+async function callGemini({ system, user, maxTokens = 2000, useSearch = false }) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
+
+  const contents = [];
+  if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]
+${system}
+
+[사용자 질문]
+${user}` }] });
+  else contents.push({ role: "user", parts: [{ text: user }] });
+
+  const body = {
+    contents,
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+  };
+
+  if (useSearch) {
+    body.tools = [{ googleSearch: {} }];
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+}
+
+async function callGeminiWithImage({ system, user, imageBase64, mediaType, maxTokens = 2000 }) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
+
+  const parts = [];
+  if (system) parts.push({ text: `[시스템 지시]
+${system}
+
+` });
+  parts.push({ inlineData: { mimeType: mediaType, data: imageBase64 } });
+  parts.push({ text: user });
+
+  const body = {
+    contents: [{ role: "user", parts }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
+  };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+}
+
+// 기존 함수명 호환성 유지 (내부에서 Gemini 호출)
 async function callClaude({ system, user, maxTokens = 1000 }) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정에서 Claude API 키를 입력해주세요.");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({
-      model: MODEL, max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: user }],
-    }),
-  });
-  const data = await res.json();
-  return data.content?.map(b => b.text || "").join("") || "";
+  return callGemini({ system, user, maxTokens, useSearch: false });
 }
-
 async function callClaudeWithSearch({ system, user, maxTokens = 2000 }) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정에서 Claude API 키를 입력해주세요.");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({
-      model: MODEL, max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: user }],
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-    }),
-  });
-  const data = await res.json();
-  return data.content?.map(b => b.text || "").filter(Boolean).join("") || "";
+  return callGemini({ system, user, maxTokens, useSearch: true });
 }
-
 async function callClaudeWithImage({ system, user, imageBase64, mediaType, maxTokens = 1500 }) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정에서 Claude API 키를 입력해주세요.");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({
-      model: MODEL, max_tokens: maxTokens,
-      system,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
-          { type: "text", text: user },
-        ],
-      }],
-    }),
-  });
-  const data = await res.json();
-  return data.content?.map(b => b.text || "").join("") || "";
+  return callGeminiWithImage({ system, user, imageBase64, mediaType, maxTokens });
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -1189,7 +1206,7 @@ function Settings() {
       <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 11, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>CLAUDE API KEY</div>
         <div style={{ fontSize: 12, color: "#475569", marginBottom: 16, lineHeight: 1.6 }}>
-          Anthropic Console(console.anthropic.com)에서 발급받은 API 키를 입력하세요.
+          Google AI Studio(aistudio.google.com)에서 발급받은 Gemini API 키를 입력하세요.
           키는 이 기기에만 저장되며 외부로 전송되지 않습니다.
         </div>
 
@@ -1203,7 +1220,7 @@ function Settings() {
             type="text"
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
-            placeholder="sk-ant-api03-..."
+            placeholder="AIzaSy..."
             style={{
               width: "100%", background: "#1e293b", border: "1px solid #334155",
               borderRadius: 8, padding: "11px 14px", color: "#e2e8f0",
@@ -1233,11 +1250,11 @@ function Settings() {
       <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>API 키 발급 방법</div>
         {[
-          { step: "1", text: "console.anthropic.com 접속" },
+          { step: "1", text: "aistudio.google.com 접속" },
           { step: "2", text: "회원가입 또는 로그인" },
-          { step: "3", text: "좌측 메뉴 'API Keys' 클릭" },
-          { step: "4", text: "'Create Key' 버튼 클릭" },
-          { step: "5", text: "생성된 키(sk-ant-...)를 위에 입력" },
+          { step: "3", text: "좌측 메뉴 'Get API key' 클릭" },
+          { step: "4", text: "'API 키 만들기' 버튼 클릭" },
+          { step: "5", text: "생성된 키(AIzaSy...)를 위에 입력" },
         ].map(({ step, text }) => (
           <div key={step} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#f59e0b", fontWeight: 700, flexShrink: 0 }}>{step}</div>
@@ -1245,7 +1262,7 @@ function Settings() {
           </div>
         ))}
         <div style={{ marginTop: 8, padding: "10px 14px", background: "#1e293b", borderRadius: 8, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
-          💡 API 사용료는 Anthropic에서 별도 청구됩니다. Claude claude-sonnet-4 기준 약 $3/1M 토큰. 일반적인 사용량이면 월 $1~5 수준입니다.
+          💡 API 사용료는 Google에서 별도 청구됩니다. Gemini 2.5 Flash 기준 입력 $0.30/1M 토큰. 일반적인 사용량이면 월 $0.3~1 수준입니다.
         </div>
       </div>
 
