@@ -349,7 +349,7 @@ function MarketInsight({ onRefreshAll }) {
   const isLoad = loading === activeTab;
   const upAt = updatedAt[activeTab];
 
-  const S = ({ title, color, children }) => (
+  const MSec = ({ title, color, children }) => (
     <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color, fontWeight:700, marginBottom:12, letterSpacing:2 }}>{title}</div>
       {children}
@@ -403,7 +403,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
 
       {/* 전체 지수 현황 */}
-      <S title="주요 지수 현황" color="#94a3b8">
+      <MSec title="주요 지수 현황" color="#94a3b8">
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
           {d.index_alerts?.map((a,i) => (
             <div key={i} style={{ background:"#1e293b", borderRadius:8, padding:"10px 12px" }}>
@@ -413,38 +413,38 @@ function MarketInsight({ onRefreshAll }) {
             </div>
           ))}
         </div>
-      </S>
+      </MSec>
 
-      <S title="GLOBAL SUMMARY" color="#e2e8f0">
+      <MSec title="GLOBAL SUMMARY" color="#e2e8f0">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
+      </MSec>
 
-      <S title="🌊 글로벌 자금 흐름" color="#0ea5e9">
+      <MSec title="🌊 글로벌 자금 흐름" color="#0ea5e9">
         <div style={{ color:"#cbd5e1", lineHeight:1.8, fontSize:16 }}>{d.global_flow}</div>
-      </S>
+      </MSec>
 
       {d.sector_cycle?.leading?.length > 0 && (
-        <S title="🔥 주도 섹터" color="#10b981">
+        <MSec title="🔥 주도 섹터" color="#10b981">
           {d.sector_cycle.leading.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
-        </S>
+        </MSec>
       )}
       {d.sector_cycle?.turnaround?.length > 0 && (
-        <S title="📈 턴어라운드 섹터" color="#f59e0b">
+        <MSec title="📈 턴어라운드 섹터" color="#f59e0b">
           {d.sector_cycle.turnaround.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
-        </S>
+        </MSec>
       )}
       {d.sector_cycle?.declining?.length > 0 && (
-        <S title="📉 하강 섹터" color="#ef4444">
+        <MSec title="📉 하강 섹터" color="#ef4444">
           {d.sector_cycle.declining.map((s,i) => (
             <div key={i} style={{ marginBottom:10, fontSize:16 }}>
               <span style={{ fontWeight:700, color:"#fca5a5" }}>{s.name}</span>
               <span style={{ fontSize:15, color:"#64748b", marginLeft:8 }}>{s.comment}</span>
             </div>
           ))}
-        </S>
+        </MSec>
       )}
       {d.black_swan?.length > 0 && (
-        <S title="💀 블랙스완 리스크" color="#7c3aed">
+        <MSec title="💀 블랙스완 리스크" color="#7c3aed">
           {d.black_swan.map((b,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
               <div>
@@ -458,40 +458,40 @@ function MarketInsight({ onRefreshAll }) {
               </span>
             </div>
           ))}
-        </S>
+        </MSec>
       )}
     </>
   );
 
   const renderKrUs = (d) => (
     <>
-      <S title="MARKET SUMMARY" color="#0ea5e9">
+      <MSec title="MARKET SUMMARY" color="#0ea5e9">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
+      </MSec>
       {d.strong?.length > 0 && (
-        <S title="🔥 모멘텀 강한 섹터" color="#10b981">
+        <MSec title="🔥 모멘텀 강한 섹터" color="#10b981">
           {d.strong.map((s,i) => <SectorRow key={i} item={s} showScore />)}
-        </S>
+        </MSec>
       )}
       {d.rebound?.length > 0 && (
-        <S title="📈 턴어라운드 섹터" color="#f59e0b">
+        <MSec title="📈 턴어라운드 섹터" color="#f59e0b">
           {d.rebound.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
-        </S>
+        </MSec>
       )}
       {d.weakening?.length > 0 && (
-        <S title="📉 하강 섹터 (주의)" color="#ef4444">
+        <MSec title="📉 하강 섹터 (주의)" color="#ef4444">
           {d.weakening.map((s,i) => (
             <div key={i} style={{ marginBottom:10 }}>
               <div style={{ fontSize:17, fontWeight:700, color:"#fca5a5" }}>{s.name}</div>
               <div style={{ fontSize:15, color:"#64748b" }}>{s.reason}</div>
             </div>
           ))}
-        </S>
+        </MSec>
       )}
       {d.events?.length > 0 && (
-        <S title="주요 이벤트" color="#f59e0b">
+        <MSec title="주요 이벤트" color="#f59e0b">
           {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
-        </S>
+        </MSec>
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
@@ -504,10 +504,10 @@ function MarketInsight({ onRefreshAll }) {
 
   const renderCommodities = (d) => (
     <>
-      <S title="COMMODITY SUMMARY" color="#f59e0b">
+      <MSec title="COMMODITY SUMMARY" color="#f59e0b">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
-      <S title="원자재 현황 (시장규모 순)" color="#f59e0b">
+      </MSec>
+      <MSec title="원자재 현황 (시장규모 순)" color="#f59e0b">
         {d.items?.map((item,i) => (
           <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
@@ -524,9 +524,9 @@ function MarketInsight({ onRefreshAll }) {
             <div style={{ fontSize:14, color:"#475569", paddingLeft:30, marginTop:2 }}>전망: {item.outlook}</div>
           </div>
         ))}
-      </S>
+      </MSec>
       {d.hot_picks?.length > 0 && (
-        <S title="🔥 핫픽 원자재" color="#f97316">
+        <MSec title="🔥 핫픽 원자재" color="#f97316">
           {d.hot_picks.map((h,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
               <div>
@@ -536,23 +536,23 @@ function MarketInsight({ onRefreshAll }) {
               <span style={{ fontWeight:700, color:parseFloat(h.change_pct)>=0?"#10b981":"#ef4444", fontSize:16 }}>{h.change_pct}</span>
             </div>
           ))}
-        </S>
+        </MSec>
       )}
       {d.drivers?.length > 0 && (
-        <S title="주요 동인" color="#0ea5e9">
+        <MSec title="주요 동인" color="#0ea5e9">
           {d.drivers.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
-        </S>
+        </MSec>
       )}
     </>
   );
 
   const renderAsia = (d) => (
     <>
-      <S title="ASIA SUMMARY" color="#10b981">
+      <MSec title="ASIA SUMMARY" color="#10b981">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
+      </MSec>
       {d.markets?.map((mkt,i) => (
-        <S key={i} title={`${mkt.country} ${mkt.index_change||""}`} color="#10b981">
+        <MSec key={i} title={`${mkt.country} ${mkt.index_change||""}`} color="#10b981">
           {mkt.strong?.length > 0 && (
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>▲ 강한 섹터</div>
@@ -568,17 +568,17 @@ function MarketInsight({ onRefreshAll }) {
             </div>
           )}
           <div style={{ fontSize:15, color:"#475569", marginTop:10 }}>전망: {mkt.outlook}</div>
-        </S>
+        </MSec>
       ))}
     </>
   );
 
   const renderCrypto = (d) => (
     <>
-      <S title="CRYPTO SUMMARY" color="#f97316">
+      <MSec title="CRYPTO SUMMARY" color="#f97316">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
-      <S title="메이저 코인" color="#f97316">
+      </MSec>
+      <MSec title="메이저 코인" color="#f97316">
         {d.majors?.map((c,i) => (
           <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
             <div>
@@ -591,11 +591,11 @@ function MarketInsight({ onRefreshAll }) {
             </div>
           </div>
         ))}
-      </S>
+      </MSec>
       {d.hot_sectors?.length > 0 && (
-        <S title="🔥 핫한 섹터" color="#f59e0b">
+        <MSec title="🔥 핫한 섹터" color="#f59e0b">
           {d.hot_sectors.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
-        </S>
+        </MSec>
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
@@ -608,34 +608,34 @@ function MarketInsight({ onRefreshAll }) {
 
   const renderEurope = (d) => (
     <>
-      <S title="EUROPE SUMMARY" color="#ec4899">
+      <MSec title="EUROPE SUMMARY" color="#ec4899">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
+      </MSec>
       {d.strong?.length > 0 && (
-        <S title="▲ 강한 섹터" color="#10b981">
+        <MSec title="▲ 강한 섹터" color="#10b981">
           {d.strong.map((s,i) => <SectorRow key={i} item={{...s, reason:`[${s.country}] ${s.reason}`}} showScore={false} />)}
-        </S>
+        </MSec>
       )}
       {d.weak?.length > 0 && (
-        <S title="▼ 약한 섹터" color="#ef4444">
+        <MSec title="▼ 약한 섹터" color="#ef4444">
           {d.weak.map((s,i) => <div key={i} style={{ fontSize:16, color:"#64748b", marginBottom:8 }}>• {s.name}: {s.reason}</div>)}
-        </S>
+        </MSec>
       )}
       {d.events?.length > 0 && (
-        <S title="주요 이벤트" color="#f59e0b">
+        <MSec title="주요 이벤트" color="#f59e0b">
           {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
-        </S>
+        </MSec>
       )}
     </>
   );
 
   const renderIpo = (d) => (
     <>
-      <S title="SUMMARY" color="#06b6d4">
+      <MSec title="SUMMARY" color="#06b6d4">
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      </S>
+      </MSec>
       {d.upcoming?.length > 0 && (
-        <S title="⏰ 상장 예정" color="#06b6d4">
+        <MSec title="⏰ 상장 예정" color="#06b6d4">
           {d.upcoming.map((item,i) => (
             <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
@@ -650,10 +650,10 @@ function MarketInsight({ onRefreshAll }) {
               {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>★ {item.highlight}</div>}
             </div>
           ))}
-        </S>
+        </MSec>
       )}
       {d.recent?.length > 0 && (
-        <S title="🆕 최근 상장 (1개월 이내)" color="#10b981">
+        <MSec title="🆕 최근 상장 (1개월 이내)" color="#10b981">
           {d.recent.map((item,i) => (
             <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
@@ -674,7 +674,7 @@ function MarketInsight({ onRefreshAll }) {
               {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>★ {item.highlight}</div>}
             </div>
           ))}
-        </S>
+        </MSec>
       )}
     </>
   );
@@ -835,7 +835,7 @@ function PortfolioPieCharts({ portfolio }) {
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
 
-  const Legend=({data,colors})=>(
+  const PieLegend=({data,colors})=>(
     <div style={{display:"flex",flexWrap:"wrap",gap:"6px 10px",marginTop:10}}>
       {data.map((d,i)=>(
         <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}>
@@ -852,12 +852,12 @@ function PortfolioPieCharts({ portfolio }) {
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
         <SvgPieChart data={sectorData} colors={PIE_COLORS}/>
-        <Legend data={sectorData} colors={PIE_COLORS}/>
+        <PieLegend data={sectorData} colors={PIE_COLORS}/>
       </div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
         <SvgPieChart data={regionData} colors={PIE_COLORS}/>
-        <Legend data={regionData} colors={PIE_COLORS}/>
+        <PieLegend data={regionData} colors={PIE_COLORS}/>
       </div>
     </>
   );
