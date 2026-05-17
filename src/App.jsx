@@ -278,6 +278,29 @@ const MARKET_PROMPTS = {
 {"upcoming":[{"name":"종목명","type":"주식/ETF","expected_date":"예정일","issuer":"운용사/회사","description":"한줄설명","highlight":"주목이유"}],"recent":[{"name":"종목명","type":"주식/ETF","listed_date":"상장일","market_cap":"시총(억원)","issuer":"운용사/회사","description":"한줄설명","highlight":"주목이유","size_note":"소규모 참고 또는 없음"}],"summary":"1문장"}`,
 };
 
+function SectorRow({ item, showScore }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+        <span style={{ fontSize:17, fontWeight:700, color:getSectorColor(item.name) }}>{item.name}</span>
+        {showScore && item.score && <span style={{ fontSize:14, color:"#10b981", fontWeight:700 }}>{item.score}/100</span>}
+      </div>
+      {showScore && item.score && (
+        <div style={{ background:"#1e293b", borderRadius:4, height:5, marginBottom:6 }}>
+          <div style={{ width:`${item.score}%`, height:5, borderRadius:4, background:getSectorColor(item.name) }} />
+        </div>
+      )}
+      <div style={{ fontSize:15, color:"#94a3b8", marginBottom:4 }}>{item.reason}</div>
+      {item.leaders?.length > 0 && (
+        <div style={{ fontSize:14, color:"#64748b" }}>주도주: <span style={{ color:"#e2e8f0" }}>{item.leaders.join(" · ")}</span></div>
+      )}
+      {item.etf?.length > 0 && (
+        <div style={{ fontSize:14, color:"#64748b" }}>관련ETF: <span style={{ color:"#0ea5e9" }}>{item.etf.join(" · ")}</span></div>
+      )}
+    </div>
+  );
+}
+
 function MarketInsight({ onRefreshAll }) {
   const [activeTab, setActiveTab] = useState("summary");
   const [results, setResults]     = useState({});
@@ -350,26 +373,7 @@ function MarketInsight({ onRefreshAll }) {
   const upAt = updatedAt[activeTab];
 
 
-  const SectorRow = ({ item, showScore }) => (
-    <div style={{ marginBottom:16 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-        <span style={{ fontSize:17, fontWeight:700, color:getSectorColor(item.name) }}>{item.name}</span>
-        {showScore && item.score && <span style={{ fontSize:14, color:"#10b981", fontWeight:700 }}>{item.score}/100</span>}
-      </div>
-      {showScore && item.score && (
-        <div style={{ background:"#1e293b", borderRadius:4, height:5, marginBottom:6 }}>
-          <div style={{ width:`${item.score}%`, height:5, borderRadius:4, background:getSectorColor(item.name) }} />
-        </div>
-      )}
-      <div style={{ fontSize:15, color:"#94a3b8", marginBottom:4 }}>{item.reason}</div>
-      {item.leaders?.length > 0 && (
-        <div style={{ fontSize:14, color:"#64748b" }}>주도주: <span style={{ color:"#e2e8f0" }}>{item.leaders.join(" · ")}</span></div>
-      )}
-      {item.etf?.length > 0 && (
-        <div style={{ fontSize:14, color:"#64748b" }}>관련ETF: <span style={{ color:"#0ea5e9" }}>{item.etf.join(" · ")}</span></div>
-      )}
-    </div>
-  );
+
 
   const alertColor = (status) => status==="danger"?"#ef4444":status==="warning"?"#f59e0b":"#10b981";
 
@@ -1038,6 +1042,129 @@ function ReturnHistoryChart({ portfolio }) {
 const ACCOUNTS = ["국내계좌", "해외계좌", "ISA", "연금저축", "IRP", "기타"];
 const SECTORS  = ["기술","반도체","AI","에너지","금융","헬스케어","소비재","방산","부동산","기타"];
 
+
+function EditHoldingModal({ holding, onClose, onSave }) {
+  const [mode, setMode] = useState("edit");
+  const [shares, setShares] = useState(String(holding.shares || ""));
+  const [avgPrice, setAvgPrice] = useState(String(holding.avg_price || ""));
+  const [addShares, setAddShares] = useState("");
+  const [addPrice, setAddPrice] = useState("");
+  const [sellShares, setSellShares] = useState("");
+
+  const handleSave = () => {
+    if (mode === "edit") {
+      onSave({ ...holding, shares: parseFloat(shares)||0, avg_price: parseFloat(String(avgPrice).replace(/,/g,""))||0 });
+    } else if (mode === "buy") {
+      const addSh = parseFloat(addShares)||0;
+      const addPr = parseFloat(String(addPrice).replace(/,/g,""))||0;
+      const newShares = (holding.shares||0) + addSh;
+      const newAvg = newShares>0 ? Math.round(((holding.shares||0)*(holding.avg_price||0)+addSh*addPr)/newShares) : (holding.avg_price||0);
+      onSave({ ...holding, shares: newShares, avg_price: newAvg });
+    } else if (mode === "sell") {
+      const sellSh = parseFloat(sellShares)||0;
+      const newShares = (holding.shares||0) - sellSh;
+      if (newShares <= 0) { onSave(null); return; }
+      onSave({ ...holding, shares: newShares });
+    }
+  };
+
+  const tabBtn = (t, label) => (
+    <button onClick={() => setMode(t)} style={{
+      flex:1, padding:"8px 4px", border:"none", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:mode===t?700:400,
+      background: mode===t?(t==="buy"?"#0ea5e9":t==="sell"?"#ef4444":"#7c3aed"):"#1e293b",
+      color: mode===t?"#fff":"#64748b",
+    }}>{label}</button>
+  );
+
+  const newSharesCalc = (holding.shares||0)+(parseFloat(addShares)||0);
+  const newAvgCalc = newSharesCalc>0
+    ? Math.round(((holding.shares||0)*(holding.avg_price||0)+(parseFloat(addShares)||0)*(parseFloat(String(addPrice).replace(/,/g,""))||0))/newSharesCalc)
+    : 0;
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:300, display:"flex", alignItems:"flex-end" }}
+      onClick={e => e.target===e.currentTarget && onClose()}>
+      <div style={{ width:"100%", maxWidth:480, margin:"0 auto", background:"#0f172a", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"88vh", overflowY:"auto", border:"1px solid #1e293b" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
+          <div>
+            <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{holding.name}</div>
+            <div style={{ fontSize:13, color:"#475569", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ display:"flex", gap:6, marginBottom:20, background:"#1e293b", borderRadius:10, padding:4 }}>
+          {tabBtn("edit","✏️ 수정")}
+          {tabBtn("buy","📈 추가매수")}
+          {tabBtn("sell","📉 일부매도")}
+        </div>
+        {mode==="edit" && (
+          <>
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:6 }}>보유 수량</div>
+            <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal"
+              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:6 }}>평균단가</div>
+            <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal"
+              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+          </>
+        )}
+        {mode==="buy" && (
+          <>
+            <div style={{ background:"#0ea5e911", border:"1px solid #0ea5e933", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#7dd3fc" }}>추가매수 시 평단가가 자동으로 재계산됩니다</div>
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:6 }}>추가 매수 수량</div>
+            <input value={addShares} onChange={e=>setAddShares(e.target.value)} inputMode="decimal"
+              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:6 }}>매수 단가</div>
+            <input value={addPrice} onChange={e=>setAddPrice(e.target.value)} inputMode="decimal"
+              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            {addShares && addPrice && (
+              <div style={{ background:"#1e293b", borderRadius:8, padding:"12px 14px", marginBottom:12 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:14 }}>
+                  <span style={{ color:"#94a3b8" }}>총 수량</span>
+                  <span style={{ color:"#e2e8f0", fontWeight:700 }}>{newSharesCalc}주</span>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, marginTop:4 }}>
+                  <span style={{ color:"#94a3b8" }}>새 평단가</span>
+                  <span style={{ color:"#0ea5e9", fontWeight:700 }}>{newAvgCalc.toLocaleString()}원</span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {mode==="sell" && (
+          <>
+            <div style={{ background:"#ef444411", border:"1px solid #ef444433", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#fca5a5" }}>전량매도 시 종목이 삭제됩니다</div>
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:6 }}>매도 수량 (보유: {holding.shares}주)</div>
+            <input value={sellShares} onChange={e=>setSellShares(e.target.value)} inputMode="decimal"
+              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            {sellShares && (
+              <div style={{ fontSize:13, marginBottom:12, color:parseFloat(sellShares)>=(holding.shares||0)?"#ef4444":"#10b981" }}>
+                {parseFloat(sellShares)>=(holding.shares||0)?"⚠️ 전량매도 — 종목 삭제":`잔여 ${(holding.shares||0)-(parseFloat(sellShares)||0)}주`}
+              </div>
+            )}
+          </>
+        )}
+        <button onClick={handleSave} style={{
+          width:"100%", padding:"14px", borderRadius:10, border:"none", cursor:"pointer",
+          fontWeight:700, fontSize:16, color:"#fff", marginTop:8,
+          background: mode==="buy"?"linear-gradient(135deg,#0ea5e9,#0369a1)":mode==="sell"?"linear-gradient(135deg,#ef4444,#b91c1c)":"linear-gradient(135deg,#7c3aed,#4c1d95)",
+        }}>
+          {mode==="edit"?"저장":mode==="buy"?"매수 반영":"매도 반영"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InputField({ label, value, onChange, inputMode = "text" }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>{label}</div>
+      <input value={value} onChange={e => onChange(e.target.value)} inputMode={inputMode}
+        style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
+    </div>
+  );
+}
+
 function ManualInputModal({ onClose, onAdd }) {
   const [account, setAccount]           = useState("국내계좌");
   const [customAccount, setCustomAccount] = useState("");
@@ -1063,20 +1190,6 @@ function ManualInputModal({ onClose, onAdd }) {
     setName(""); setTicker(""); setAvgPrice(""); setShares("");
   };
 
-  const Field = ({ label, value, onChange, inputMode = "text" }) => (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>{label}</div>
-      <input
-        inputMode={inputMode}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          width: "100%", background: "#020617", border: "1px solid #334155",
-          borderRadius: 8, padding: "11px 12px", color: "#e2e8f0", fontSize: 16, outline: "none",
-        }}
-      />
-    </div>
-  );
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 300, display: "flex", alignItems: "flex-end" }}
@@ -1116,10 +1229,10 @@ function ManualInputModal({ onClose, onAdd }) {
           ))}
         </div>
 
-        <Field label="종목명 *" value={name} onChange={setName} />
-        <Field label="종목코드 (선택)" value={ticker} onChange={setTicker} />
-        <Field label="매수 평균단가 *" value={avgPrice} onChange={setAvgPrice} inputMode="decimal" />
-        <Field label="보유 수량 *" value={shares} onChange={setShares} inputMode="decimal" />
+        <InputField label="종목명 *" value={name} onChange={setName} />
+        <InputField label="종목코드 (선택)" value={ticker} onChange={setTicker} />
+        <InputField label="매수 평균단가 *" value={avgPrice} onChange={setAvgPrice} inputMode="decimal" />
+        <InputField label="보유 수량 *" value={shares} onChange={setShares} inputMode="decimal" />
 
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6, marginTop: 4 }}>섹터</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 22 }}>
