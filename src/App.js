@@ -1461,8 +1461,7 @@ function Portfolio() {
                 </button>
                 <button onClick={() => {
                   const accs = [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))];
-                  const target = window.prompt("삭제할 계좌명 입력 (전체삭제: 전체):
-"+accs.join(", "));
+                  const target = window.prompt("삭제할 계좌명 입력 (전체삭제: 전체):\n" + accs.join(", "));
                   if (!target) return;
                   if (target === "전체") { savePortfolio(null); setPortfolio(null); }
                   else {
