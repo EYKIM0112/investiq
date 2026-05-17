@@ -281,29 +281,21 @@ const MARKET_TABS = [
 ];
 
 const MARKET_PROMPTS = {
-  summary: (d) => `오늘(${d}) 기준 글로벌 주식시장 종합 분석. 최근 2~3일 이내 정보만 사용. 순수 JSON만:
-{"index_alerts":[{"name":"지수명","value":"현재값","change_pct":"등락%","status":"normal/warning/danger","comment":"한줄"}],"vix":{"value":"수치","status":"normal/warning/danger"},"global_flow":"글로벌 자금흐름 2문장","black_swan":[{"risk":"리스크명","level":"low/medium/high","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주1"],"etf":["ETF1"]}],"turnaround":[{"name":"섹터","leaders":["종목1"],"etf":["ETF1"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"종합 2문장"}`,
+  summary: (d) => `Today is ${d}. Analyze global stock markets using only news from the last 2-3 days. Respond with ONLY this JSON, no other text: {"index_alerts":[{"name":"index name","value":"current value","change_pct":"change%","status":"normal","comment":"one line"}],"vix":{"value":"number","status":"normal"},"global_flow":"2 sentences on capital flows","black_swan":[{"risk":"risk name","level":"low","comment":"one line"}],"sector_cycle":{"leading":[{"name":"sector","leaders":["stock1"],"etf":["ETF1"]}],"turnaround":[{"name":"sector","leaders":["stock1"],"etf":["ETF1"]}],"declining":[{"name":"sector","comment":"one line"}]},"summary":"2 sentences"}`,
 
-  kr: (d) => `오늘(${d}) 한국 주식시장(코스피·코스닥) 분석. 최근 2~3일 이내 정보만. 순수 JSON만:
-{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["관련ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
+  kr: (d) => `Today is ${d}. Analyze Korean stock market (KOSPI, KOSDAQ) using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","strong":[{"name":"sector in Korean","reason":"1 sentence","score":80,"leaders":["stock"],"etf":["ETF"]}],"rebound":[{"name":"sector","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weakening":[{"name":"sector","reason":"1 sentence"}],"events":["event1","event2"],"risks":["risk1"]}`,
 
-  us: (d) => `오늘(${d}) 미국 주식시장(S&P500·나스닥) 분석. 최근 2~3일 이내 정보만. 순수 JSON만:
-{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["관련ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
+  us: (d) => `Today is ${d}. Analyze US stock market (S&P500, NASDAQ) using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","strong":[{"name":"sector in Korean","reason":"1 sentence","score":80,"leaders":["stock"],"etf":["ETF"]}],"rebound":[{"name":"sector","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weakening":[{"name":"sector","reason":"1 sentence"}],"events":["event1","event2"],"risks":["risk1"]}`,
 
-  commodities: (d) => `오늘(${d}) 글로벌 원자재 시장. 최근 2~3일 정보. 시장규모 순위대로 상위 10개. 순수 JSON만:
-{"summary":"2문장","items":[{"rank":1,"name":"원자재","price":"현재가","change_pct":"등락%","trend":"up/down/sideways","reason":"1문장","outlook":"1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1","동인2"],"risks":["리스크1"]}`,
+  commodities: (d) => `Today is ${d}. Analyze global commodity markets using only news from last 2-3 days. List top 10 by market size. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","items":[{"rank":1,"name":"commodity","price":"current price","change_pct":"change%","trend":"up","reason":"1 sentence","outlook":"1 sentence"}],"hot_picks":[{"name":"commodity","reason":"1 sentence","change_pct":"change%"}],"drivers":["driver1"],"risks":["risk1"]}`,
 
-  asia: (d) => `오늘(${d}) 일본·중국·인도 주식시장. 최근 2~3일 정보. 순수 JSON만:
-{"summary":"2문장","markets":[{"country":"국가","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
+  asia: (d) => `Today is ${d}. Analyze Japan, China, India stock markets using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","markets":[{"country":"Japan/China/India","index_change":"change%","strong":[{"name":"sector in Korean","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weak":[{"name":"sector","reason":"1 sentence"}],"outlook":"1 sentence"}],"events":["event1"]}`,
 
-  crypto: (d) => `오늘(${d}) 가상화폐 시장. 최근 2~3일 정보. 순수 JSON만:
-{"summary":"2문장","majors":[{"name":"코인","price":"현재가","change_24h":"24h%","trend":"up/down/sideways","comment":"1문장"}],"hot_sectors":[{"name":"섹터","reason":"1문장","leaders":["코인1","코인2"]}],"events":["이벤트1"],"risks":["리스크1"]}`,
+  crypto: (d) => `Today is ${d}. Analyze cryptocurrency markets using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","majors":[{"name":"coin","price":"current price","change_24h":"24h change%","trend":"up","comment":"1 sentence in Korean"}],"hot_sectors":[{"name":"sector","reason":"1 sentence in Korean","leaders":["coin1","coin2"]}],"events":["event1"],"risks":["risk1"]}`,
 
-  europe: (d) => `오늘(${d}) 유럽 주요시장(DAX·FTSE·CAC40) 섹터 분석. 최근 2~3일 정보. 순수 JSON만:
-{"summary":"2문장","strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
+  europe: (d) => `Today is ${d}. Analyze European stock markets (DAX, FTSE, CAC40) using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","strong":[{"name":"sector in Korean","country":"country","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weak":[{"name":"sector","reason":"1 sentence"}],"events":["event1"],"risks":["risk1"]}`,
 
-  ipo: (d) => `오늘(${d}) 기준 한국 거래소(KRX) 신규 상장 및 상장 예정 주식·ETF. 최근 1개월 이내 상장 또는 향후 1개월 내 상장 예정. 순수 JSON만:
-{"upcoming":[{"name":"종목명","type":"주식/ETF","expected_date":"예정일","issuer":"운용사/회사","description":"한줄설명","highlight":"주목이유"}],"recent":[{"name":"종목명","type":"주식/ETF","listed_date":"상장일","market_cap":"시총(억원)","issuer":"운용사/회사","description":"한줄설명","highlight":"주목이유","size_note":"소규모 참고 또는 없음"}],"summary":"1문장"}`,
+  ipo: (d) => `Today is ${d}. Find Korean stock exchange (KRX) IPOs: listed in last 1 month OR expected to list in next 1 month. Respond with ONLY this JSON: {"upcoming":[{"name":"name","type":"주식/ETF","expected_date":"date","issuer":"company","description":"1 sentence in Korean","highlight":"reason in Korean"}],"recent":[{"name":"name","type":"주식/ETF","listed_date":"date","market_cap":"billions KRW","issuer":"company","description":"1 sentence in Korean","highlight":"reason in Korean","size_note":"소규모 참고 or empty"}],"summary":"1 sentence in Korean"}`,
 };
 
 function SectorRow({ item, showScore }) {
@@ -1841,7 +1833,7 @@ function Advisor() {
         ? portfolio.holdings.map(h => `${h.name}(${h.ticker}) ${h.shares}주 평단${h.avg_price}`).join(", ")
         : "포트폴리오 정보 없음";
       const text = await callClaudeWithSearch({
-        maxTokens: 2000,
+        maxTokens: 4000,
         system: `당신은 실전 투자 어드바이저입니다. 웹 검색으로 최신 2~3일 시장 정보를 수집한 뒤 답변하세요.
 
 규칙:
