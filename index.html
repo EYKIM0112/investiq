@@ -7,7 +7,6 @@
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-title" content="InvestIQ"/>
-  <link rel="manifest" href="manifest.json"/>
   <title>InvestIQ</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -336,13 +335,6 @@ function MarketInsight({ onRefreshAll }) {
   const [loading, setLoading]     = useState(null);
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState({});
-
-  // 전체 새로고침 이벤트 수신
-  useEffect(() => {
-    const handler = () => fetchTab("summary");
-    window.addEventListener("globalRefresh", handler);
-    return () => window.removeEventListener("globalRefresh", handler);
-  }, [fetchTab]);
 
   const fetchTab = async (tabId) => {
     setLoading(tabId);
