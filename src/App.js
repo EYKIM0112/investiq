@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ComposedChart } from "recharts";
 
 const STORAGE_KEY = "portfolio_v1";
 const GEMINI_MODEL = "gemini-2.5-flash";
@@ -233,7 +234,7 @@ function Badge({ children, color }) {
   return (
     <span style={{
       background: color + "22", color, border: `1px solid ${color}44`,
-      borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700, letterSpacing: 1,
+      borderRadius: 4, padding: "2px 8px", fontSize: 13, fontWeight: 700, letterSpacing: 1,
     }}>
       {children}
     </span>
@@ -242,42 +243,46 @@ function Badge({ children, color }) {
 
 // ── 시장 인사이트 탭 ──────────────────────────────────────────────────────────
 const MARKET_TABS = [
-  { id:"kr",          label:"🇰🇷 한국",    color:"#0ea5e9" },
-  { id:"us",          label:"🇺🇸 미국",    color:"#7c3aed" },
-  { id:"commodities", label:"🛢️ 원자재",  color:"#f59e0b" },
-  { id:"asia",        label:"🌏 아시아",   color:"#10b981" },
-  { id:"crypto",      label:"💰 가상화폐", color:"#f97316" },
-  { id:"europe",      label:"🇪🇺 유럽",   color:"#ec4899" },
+  { id:"summary",     label:"🌐 종합",    color:"#e2e8f0" },
+  { id:"kr",          label:"🇰🇷 한국",   color:"#0ea5e9" },
+  { id:"us",          label:"🇺🇸 미국",   color:"#7c3aed" },
+  { id:"commodities", label:"🛢️ 원자재", color:"#f59e0b" },
+  { id:"asia",        label:"🌏 아시아",  color:"#10b981" },
+  { id:"crypto",      label:"💰 가상화폐",color:"#f97316" },
+  { id:"europe",      label:"🇪🇺 유럽",  color:"#ec4899" },
+  { id:"ipo",         label:"🆕 신규상장",color:"#06b6d4" },
 ];
 
 const MARKET_PROMPTS = {
-  kr: (d) => `오늘(${d}) 한국 주식시장 분석. 각 배열 최대 3개 항목, reason은 1문장으로 간결하게. 순수 JSON만:
-{"summary":"2문장 요약","strong":[{"name":"섹터명","reason":"1문장근거","score":80,"leaders":["종목1","종목2"]}],"rebound":[{"name":"섹터명","reason":"1문장근거","leaders":["종목1"]}],"weakening":[{"name":"섹터명","reason":"1문장근거"}],"events":["이벤트1","이벤트2"],"risks":["리스크1","리스크2"]}`,
+  summary: (d) => `오늘(${d}) 기준 글로벌 주식시장 종합 분석. 최근 2~3일 이내 정보만 사용. 순수 JSON만:
+{"index_alerts":[{"name":"지수명","value":"현재값","change_pct":"등락%","status":"normal/warning/danger","comment":"한줄"}],"vix":{"value":"수치","status":"normal/warning/danger"},"global_flow":"글로벌 자금흐름 2문장","black_swan":[{"risk":"리스크명","level":"low/medium/high","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주1"],"etf":["ETF1"]}],"turnaround":[{"name":"섹터","leaders":["종목1"],"etf":["ETF1"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"종합 2문장"}`,
 
-  us: (d) => `오늘(${d}) 미국 주식시장 분석. 각 배열 최대 3개 항목, reason은 1문장으로 간결하게. 순수 JSON만:
-{"summary":"2문장 요약","strong":[{"name":"섹터명","reason":"1문장근거","score":80,"leaders":["종목1","종목2"]}],"rebound":[{"name":"섹터명","reason":"1문장근거","leaders":["종목1"]}],"weakening":[{"name":"섹터명","reason":"1문장근거"}],"events":["이벤트1","이벤트2"],"risks":["리스크1","리스크2"]}`,
+  kr: (d) => `오늘(${d}) 한국 주식시장(코스피·코스닥) 분석. 최근 2~3일 이내 정보만. 순수 JSON만:
+{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["관련ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  commodities: (d) => `오늘(${d}) 글로벌 원자재 시장 분석. 아래 규칙을 따라줘:
-1) 시장 규모 기준 상위 10개 원자재를 순위대로 나열 (금>원유>철광석>천연가스>구리>은>알루미늄>아연>니켈>옥수수 순이 일반적이나 최신 시장 규모 기준으로 정렬)
-2) 규모가 작더라도 현재 급등·급락·핫한 원자재가 있으면 hot_pick으로 별도 추가
-3) reason과 outlook은 각 1문장으로 간결하게
-순수 JSON만:
-{"summary":"2문장 요약","items":[{"rank":1,"name":"원자재명","price":"현재가(단위포함)","change_pct":"등락%","trend":"up/down/sideways","reason":"1문장근거","outlook":"1문장전망"}],"hot_picks":[{"name":"원자재명","reason":"왜 핫한지 1문장","change_pct":"등락%"}],"drivers":["주요동인1","주요동인2"],"risks":["리스크1"]}`,
+  us: (d) => `오늘(${d}) 미국 주식시장(S&P500·나스닥) 분석. 최근 2~3일 이내 정보만. 순수 JSON만:
+{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["관련ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  asia: (d) => `오늘(${d}) 일본·중국·인도 주식시장 분석. 국가별 strong/weak 각 2개, reason 1문장. 순수 JSON만:
-{"summary":"2문장 요약","markets":[{"country":"국가명","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목1"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장전망"}],"events":["이벤트1","이벤트2"]}`,
+  commodities: (d) => `오늘(${d}) 글로벌 원자재 시장. 최근 2~3일 정보. 시장규모 순위대로 상위 10개. 순수 JSON만:
+{"summary":"2문장","items":[{"rank":1,"name":"원자재","price":"현재가","change_pct":"등락%","trend":"up/down/sideways","reason":"1문장","outlook":"1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1","동인2"],"risks":["리스크1"]}`,
 
-  crypto: (d) => `오늘(${d}) 가상화폐 시장 분석. majors 최대 5개, hot_sectors 최대 3개, reason 1문장. 순수 JSON만:
-{"summary":"2문장 요약","majors":[{"name":"코인","price":"현재가","change_24h":"24h%","trend":"up/down/sideways","comment":"1문장"}],"hot_sectors":[{"name":"섹터","reason":"1문장","leaders":["코인1","코인2"]}],"events":["이벤트1"],"risks":["리스크1"]}`,
+  asia: (d) => `오늘(${d}) 일본·중국·인도 주식시장. 최근 2~3일 정보. 순수 JSON만:
+{"summary":"2문장","markets":[{"country":"국가","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
 
-  europe: (d) => `오늘(${d}) 유럽 주요시장(DAX,FTSE,CAC40) 섹터 분석. strong/weak 각 3개, reason 1문장. 순수 JSON만:
-{"summary":"2문장 요약","strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목1"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
+  crypto: (d) => `오늘(${d}) 가상화폐 시장. 최근 2~3일 정보. 순수 JSON만:
+{"summary":"2문장","majors":[{"name":"코인","price":"현재가","change_24h":"24h%","trend":"up/down/sideways","comment":"1문장"}],"hot_sectors":[{"name":"섹터","reason":"1문장","leaders":["코인1","코인2"]}],"events":["이벤트1"],"risks":["리스크1"]}`,
+
+  europe: (d) => `오늘(${d}) 유럽 주요시장(DAX·FTSE·CAC40) 섹터 분석. 최근 2~3일 정보. 순수 JSON만:
+{"summary":"2문장","strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
+
+  ipo: (d) => `오늘(${d}) 기준 한국 거래소(KRX) 신규 상장 및 상장 예정 주식·ETF. 최근 1개월 이내 상장 또는 향후 1개월 내 상장 예정. 순수 JSON만:
+{"upcoming":[{"name":"종목명","type":"주식/ETF","expected_date":"예정일","issuer":"운용사/회사","description":"한줄설명","highlight":"주목이유"}],"recent":[{"name":"종목명","type":"주식/ETF","listed_date":"상장일","market_cap":"시총(억원)","issuer":"운용사/회사","description":"한줄설명","highlight":"주목이유","size_note":"소규모 참고 또는 없음"}],"summary":"1문장"}`,
 };
 
-function MarketInsight() {
-  const [activeTab, setActiveTab] = useState("kr");
-  const [results, setResults]     = useState({}); // { tabId: data }
-  const [loading, setLoading]     = useState(null); // tabId or null
+function MarketInsight({ onRefreshAll }) {
+  const [activeTab, setActiveTab] = useState("summary");
+  const [results, setResults]     = useState({});
+  const [loading, setLoading]     = useState(null);
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState({});
 
@@ -286,117 +291,190 @@ function MarketInsight() {
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
       const today = new Date().toLocaleDateString("ko-KR");
-      const prompt = MARKET_PROMPTS[tabId](today);
       const text = await callClaudeWithSearch({
         maxTokens: 4000,
-        system: "You are a global investment analyst. Search the web for latest info and return ONLY valid JSON. No markdown, no code blocks, no explanation text before or after. Start your response with { and end with }. Limit each array to max 3 items. Be concise.",
-        user: prompt,
+        system: "You are a global investment analyst. Search ONLY the latest 2-3 days of news and data. Return ONLY valid JSON starting with { and ending with }. No markdown, no explanation.",
+        user: MARKET_PROMPTS[tabId](today),
       });
-      // Gemini/Claude 모두 대응하는 강화된 JSON 파싱
       let parsed;
       try {
-        // 1단계: 마크다운 코드블록 제거
-        let clean = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
-        
-        // 2단계: JSON 객체 추출 (앞뒤 텍스트 제거)
-        const jsonMatch = clean.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("No JSON found");
-        clean = jsonMatch[0];
-        
-        // 3단계: 직접 파싱 시도
+        let clean = text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
+        const m = clean.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error("No JSON");
+        clean = m[0];
         try { parsed = JSON.parse(clean); }
         catch {
-          // 4단계: 잘린 JSON 복구 시도
-          const suffixes = ["}", "]}", "}]}", "}]}}"];
-          for (const suffix of suffixes) {
-            try { parsed = JSON.parse(clean + suffix); break; } catch {}
-          }
-          // 5단계: 마지막 완전한 필드까지만 잘라서 복구
+          const suffixes = ["}","]}","}]}","}]}}"];
+          for (const s of suffixes) { try { parsed = JSON.parse(clean+s); break; } catch {} }
           if (!parsed) {
-            const lastComma = clean.lastIndexOf(",");
-            if (lastComma > 0) {
-              const trimmed = clean.slice(0, lastComma);
-              const suffixes2 = ["}", "]}", "}]}", "}]}}"];
-              for (const suffix of suffixes2) {
-                try { parsed = JSON.parse(trimmed + suffix); break; } catch {}
-              }
-            }
+            const lc = clean.lastIndexOf(",");
+            if (lc>0) { const t2=clean.slice(0,lc); for (const s of suffixes) { try { parsed=JSON.parse(t2+s); break; } catch {} } }
           }
-          if (!parsed) parsed = { summary: clean.slice(0, 800), _raw: true };
+          if (!parsed) parsed = { summary: clean.slice(0,800), _raw:true };
         }
-      } catch(parseErr) {
-        parsed = { summary: text.slice(0, 800), _raw: true };
-      }
+      } catch { parsed = { summary: text.slice(0,800), _raw:true }; }
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
     } catch(e) {
-      setErrors(er => ({ ...er, [tabId]: "분석 실패: " + e.message }));
+      setErrors(er => ({ ...er, [tabId]: "분석 실패: "+e.message }));
     }
     setLoading(null);
   };
 
-  const tab    = MARKET_TABS.find(t => t.id === activeTab);
-  const data   = results[activeTab];
-  const err    = errors[activeTab];
+  const tab  = MARKET_TABS.find(t => t.id === activeTab);
+  const data = results[activeTab];
+  const err  = errors[activeTab];
   const isLoad = loading === activeTab;
-  const upAt   = updatedAt[activeTab];
+  const upAt = updatedAt[activeTab];
 
-  const Section = ({ title, color, children }) => (
-    <div style={{ background:"#0f172a", border:`1px solid #1e293b`, borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:10, color, fontWeight:700, marginBottom:12, letterSpacing:2 }}>{title}</div>
+  const S = ({ title, color, children }) => (
+    <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
+      <div style={{ fontSize:13, color, fontWeight:700, marginBottom:12, letterSpacing:2 }}>{title}</div>
       {children}
     </div>
   );
 
-  const SectorCard = ({ item, showScore }) => (
-    <div style={{ marginBottom:14 }}>
+  const SectorRow = ({ item, showScore }) => (
+    <div style={{ marginBottom:16 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:14, fontWeight:700, color: getSectorColor(item.name) }}>{item.name}</span>
-          {item.leaders?.length > 0 && (
-            <span style={{ fontSize:10, color:"#475569" }}>{item.leaders.slice(0,2).join(" · ")}</span>
-          )}
-        </div>
-        {showScore && item.score && <span style={{ fontSize:11, color:"#10b981", fontWeight:700 }}>{item.score}/100</span>}
+        <span style={{ fontSize:17, fontWeight:700, color:getSectorColor(item.name) }}>{item.name}</span>
+        {showScore && item.score && <span style={{ fontSize:14, color:"#10b981", fontWeight:700 }}>{item.score}/100</span>}
       </div>
       {showScore && item.score && (
-        <div style={{ background:"#1e293b", borderRadius:4, height:4, marginBottom:6 }}>
-          <div style={{ width:`${item.score}%`, height:4, borderRadius:4, background: getSectorColor(item.name) }} />
+        <div style={{ background:"#1e293b", borderRadius:4, height:5, marginBottom:6 }}>
+          <div style={{ width:`${item.score}%`, height:5, borderRadius:4, background:getSectorColor(item.name) }} />
         </div>
       )}
-      <div style={{ fontSize:12, color:"#64748b" }}>{item.reason}</div>
+      <div style={{ fontSize:15, color:"#94a3b8", marginBottom:4 }}>{item.reason}</div>
+      {item.leaders?.length > 0 && (
+        <div style={{ fontSize:14, color:"#64748b" }}>주도주: <span style={{ color:"#e2e8f0" }}>{item.leaders.join(" · ")}</span></div>
+      )}
+      {item.etf?.length > 0 && (
+        <div style={{ fontSize:14, color:"#64748b" }}>관련ETF: <span style={{ color:"#0ea5e9" }}>{item.etf.join(" · ")}</span></div>
+      )}
     </div>
+  );
+
+  const alertColor = (status) => status==="danger"?"#ef4444":status==="warning"?"#f59e0b":"#10b981";
+
+  const renderSummary = (d) => (
+    <>
+      {/* 지수 급등락 경고 */}
+      {d.index_alerts?.some(a => a.status !== "normal") && (
+        <div style={{ background:"#1a0808", border:"1px solid #ef444466", borderRadius:12, padding:16, marginBottom:14 }}>
+          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>🚨 지수 급등락 경고</div>
+          {d.index_alerts.filter(a=>a.status!=="normal").map((a,i) => (
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div>
+                <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{a.name}</span>
+                <span style={{ fontSize:14, color:"#64748b", marginLeft:8 }}>{a.comment}</span>
+              </div>
+              <span style={{ fontWeight:800, color:alertColor(a.status), fontSize:16 }}>{a.change_pct}</span>
+            </div>
+          ))}
+          {d.vix && d.vix.status !== "normal" && (
+            <div style={{ marginTop:8, padding:"8px 12px", background:"#2a0a0a", borderRadius:8, fontSize:15, color:"#fca5a5" }}>
+              VIX {d.vix.value} — 공포지수 {d.vix.status==="danger"?"위험":"주의"} 구간
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 전체 지수 현황 */}
+      <S title="주요 지수 현황" color="#94a3b8">
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          {d.index_alerts?.map((a,i) => (
+            <div key={i} style={{ background:"#1e293b", borderRadius:8, padding:"10px 12px" }}>
+              <div style={{ fontSize:14, color:"#64748b", marginBottom:3 }}>{a.name}</div>
+              <div style={{ fontSize:17, fontWeight:700, color:alertColor(a.status) }}>{a.change_pct}</div>
+              <div style={{ fontSize:13, color:"#475569" }}>{a.value}</div>
+            </div>
+          ))}
+        </div>
+      </S>
+
+      <S title="GLOBAL SUMMARY" color="#e2e8f0">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
+
+      <S title="🌊 글로벌 자금 흐름" color:"#0ea5e9">
+        <div style={{ color:"#cbd5e1", lineHeight:1.8, fontSize:16 }}>{d.global_flow}</div>
+      </S>
+
+      {d.sector_cycle?.leading?.length > 0 && (
+        <S title="🔥 주도 섹터" color="#10b981">
+          {d.sector_cycle.leading.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
+        </S>
+      )}
+      {d.sector_cycle?.turnaround?.length > 0 && (
+        <S title="📈 턴어라운드 섹터" color="#f59e0b">
+          {d.sector_cycle.turnaround.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
+        </S>
+      )}
+      {d.sector_cycle?.declining?.length > 0 && (
+        <S title="📉 하강 섹터" color="#ef4444">
+          {d.sector_cycle.declining.map((s,i) => (
+            <div key={i} style={{ marginBottom:10, fontSize:16 }}>
+              <span style={{ fontWeight:700, color:"#fca5a5" }}>{s.name}</span>
+              <span style={{ fontSize:15, color:"#64748b", marginLeft:8 }}>{s.comment}</span>
+            </div>
+          ))}
+        </S>
+      )}
+      {d.black_swan?.length > 0 && (
+        <S title="💀 블랙스완 리스크" color="#7c3aed">
+          {d.black_swan.map((b,i) => (
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+              <div>
+                <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{b.risk}</div>
+                <div style={{ fontSize:15, color:"#64748b" }}>{b.comment}</div>
+              </div>
+              <span style={{ fontSize:13, fontWeight:700, padding:"3px 8px", borderRadius:4,
+                background: b.level==="high"?"#ef444422":b.level==="medium"?"#f59e0b22":"#10b98122",
+                color: b.level==="high"?"#ef4444":b.level==="medium"?"#f59e0b":"#10b981" }}>
+                {b.level==="high"?"고위험":b.level==="medium"?"중위험":"저위험"}
+              </span>
+            </div>
+          ))}
+        </S>
+      )}
+    </>
   );
 
   const renderKrUs = (d) => (
     <>
-      <Section title="MARKET SUMMARY" color="#0ea5e9">
-        <div style={{ color:"#e2e8f0", lineHeight:1.7, fontSize:14 }}>{d.summary}</div>
-      </Section>
+      <S title="MARKET SUMMARY" color="#0ea5e9">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
       {d.strong?.length > 0 && (
-        <Section title="🔥 모멘텀 강한 섹터 (자금 유입 중)" color="#10b981">
-          {d.strong.map((s,i) => <SectorCard key={i} item={s} showScore />)}
-        </Section>
+        <S title="🔥 모멘텀 강한 섹터" color="#10b981">
+          {d.strong.map((s,i) => <SectorRow key={i} item={s} showScore />)}
+        </S>
       )}
       {d.rebound?.length > 0 && (
-        <Section title="📈 반등 시작 섹터 (바닥권 신호)" color="#f59e0b">
-          {d.rebound.map((s,i) => <SectorCard key={i} item={s} />)}
-        </Section>
+        <S title="📈 턴어라운드 섹터" color="#f59e0b">
+          {d.rebound.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
+        </S>
       )}
       {d.weakening?.length > 0 && (
-        <Section title="📉 모멘텀 약화 섹터 (주의)" color="#ef4444">
-          {d.weakening.map((s,i) => <SectorCard key={i} item={s} />)}
-        </Section>
+        <S title="📉 하강 섹터 (주의)" color="#ef4444">
+          {d.weakening.map((s,i) => (
+            <div key={i} style={{ marginBottom:10 }}>
+              <div style={{ fontSize:17, fontWeight:700, color:"#fca5a5" }}>{s.name}</div>
+              <div style={{ fontSize:15, color:"#64748b" }}>{s.reason}</div>
+            </div>
+          ))}
+        </S>
       )}
       {d.events?.length > 0 && (
-        <Section title="주요 이벤트" color="#f59e0b">
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:13, color:"#cbd5e1", marginBottom:6 }}>• {e}</div>)}
-        </Section>
+        <S title="주요 이벤트" color="#f59e0b">
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
+        </S>
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
-          <div style={{ fontSize:10, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>⚠️ 리스크</div>
-          {d.risks.map((r,i) => <div key={i} style={{ fontSize:13, color:"#fca5a5", marginBottom:6 }}>• {r}</div>)}
+          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>⚠️ 리스크</div>
+          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>• {r}</div>)}
         </div>
       )}
     </>
@@ -404,103 +482,103 @@ function MarketInsight() {
 
   const renderCommodities = (d) => (
     <>
-      <Section title="COMMODITY SUMMARY" color="#f59e0b">
-        <div style={{ color:"#e2e8f0", lineHeight:1.7, fontSize:14 }}>{d.summary}</div>
-      </Section>
-      <Section title="원자재별 현황 (시장규모 순위)" color="#f59e0b">
+      <S title="COMMODITY SUMMARY" color="#f59e0b">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
+      <S title="원자재 현황 (시장규모 순)" color="#f59e0b">
         {d.items?.map((item,i) => (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", padding:"10px 0", borderBottom:"1px solid #1e293b" }}>
-            <div style={{ flex:1 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                <span style={{ fontSize:11, color:"#475569", fontWeight:700, minWidth:20 }}>#{item.rank||i+1}</span>
-                <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:14 }}>{item.name}</span>
-                <Badge color={item.trend==="up"?"#10b981":item.trend==="down"?"#ef4444":"#64748b"}>
+          <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:13, color:"#475569", fontWeight:700, minWidth:22 }}>#{item.rank||i+1}</span>
+                <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
+                <span style={{ fontSize:14, fontWeight:700, color:item.trend==="up"?"#10b981":item.trend==="down"?"#ef4444":"#64748b" }}>
                   {item.trend==="up"?"▲":item.trend==="down"?"▼":"→"} {item.change_pct}
-                </Badge>
+                </span>
               </div>
-              <div style={{ fontSize:11, color:"#64748b", paddingLeft:28 }}>{item.reason}</div>
-              <div style={{ fontSize:11, color:"#475569", marginTop:2, paddingLeft:28 }}>전망: {item.outlook}</div>
+              <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{item.price}</span>
             </div>
-            <div style={{ textAlign:"right", fontSize:13, fontWeight:700, color:"#e2e8f0", minWidth:80 }}>{item.price}</div>
+            <div style={{ fontSize:15, color:"#64748b", paddingLeft:30 }}>{item.reason}</div>
+            <div style={{ fontSize:14, color:"#475569", paddingLeft:30, marginTop:2 }}>전망: {item.outlook}</div>
           </div>
         ))}
-      </Section>
+      </S>
       {d.hot_picks?.length > 0 && (
-        <Section title="🔥 주목 원자재 (급등·급락·핫픽)" color="#f97316">
+        <S title="🔥 핫픽 원자재" color="#f97316">
           {d.hot_picks.map((h,i) => (
-            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", padding:"8px 0", borderBottom:"1px solid #1e293b" }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:14, marginBottom:3 }}>{h.name}</div>
-                <div style={{ fontSize:12, color:"#64748b" }}>{h.reason}</div>
+            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+              <div>
+                <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{h.name}</div>
+                <div style={{ fontSize:15, color:"#64748b" }}>{h.reason}</div>
               </div>
-              <div style={{ fontSize:13, fontWeight:700, color: parseFloat(h.change_pct) >= 0 ? "#10b981" : "#ef4444", minWidth:60, textAlign:"right" }}>
-                {h.change_pct}
-              </div>
+              <span style={{ fontWeight:700, color:parseFloat(h.change_pct)>=0?"#10b981":"#ef4444", fontSize:16 }}>{h.change_pct}</span>
             </div>
           ))}
-        </Section>
+        </S>
       )}
       {d.drivers?.length > 0 && (
-        <Section title="주요 동인" color="#0ea5e9">
-          {d.drivers.map((e,i) => <div key={i} style={{ fontSize:13, color:"#cbd5e1", marginBottom:6 }}>• {e}</div>)}
-        </Section>
+        <S title="주요 동인" color="#0ea5e9">
+          {d.drivers.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
+        </S>
       )}
     </>
   );
 
   const renderAsia = (d) => (
     <>
-      <Section title="ASIA SUMMARY" color="#10b981">
-        <div style={{ color:"#e2e8f0", lineHeight:1.7, fontSize:14 }}>{d.summary}</div>
-      </Section>
+      <S title="ASIA SUMMARY" color="#10b981">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
       {d.markets?.map((mkt,i) => (
-        <Section key={i} title={`${mkt.country} ${mkt.index_change||""}`} color="#10b981">
+        <S key={i} title={`${mkt.country} ${mkt.index_change||""}`} color="#10b981">
           {mkt.strong?.length > 0 && (
-            <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:10, color:"#10b981", marginBottom:8 }}>▲ 강한 섹터</div>
-              {mkt.strong.map((s,j) => <SectorCard key={j} item={s} />)}
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>▲ 강한 섹터</div>
+              {mkt.strong.map((s,j) => <SectorRow key={j} item={s} showScore={false} />)}
             </div>
           )}
           {mkt.weak?.length > 0 && (
             <div>
-              <div style={{ fontSize:10, color:"#ef4444", marginBottom:8 }}>▼ 약한 섹터</div>
-              {mkt.weak.map((s,j) => <div key={j} style={{ fontSize:13, color:"#64748b", marginBottom:4 }}>• {s.name}: {s.reason}</div>)}
+              <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>▼ 약한 섹터</div>
+              {mkt.weak.map((s,j) => (
+                <div key={j} style={{ fontSize:16, color:"#64748b", marginBottom:6 }}>• {s.name}: {s.reason}</div>
+              ))}
             </div>
           )}
-          <div style={{ fontSize:12, color:"#475569", marginTop:8 }}>전망: {mkt.outlook}</div>
-        </Section>
+          <div style={{ fontSize:15, color:"#475569", marginTop:10 }}>전망: {mkt.outlook}</div>
+        </S>
       ))}
     </>
   );
 
   const renderCrypto = (d) => (
     <>
-      <Section title="CRYPTO SUMMARY" color="#f97316">
-        <div style={{ color:"#e2e8f0", lineHeight:1.7, fontSize:14 }}>{d.summary}</div>
-      </Section>
-      <Section title="메이저 코인" color="#f97316">
+      <S title="CRYPTO SUMMARY" color="#f97316">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
+      <S title="메이저 코인" color="#f97316">
         {d.majors?.map((c,i) => (
-          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:"1px solid #1e293b" }}>
+          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
             <div>
-              <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:14 }}>{c.name}</div>
-              <div style={{ fontSize:11, color:"#64748b" }}>{c.comment}</div>
+              <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{c.name}</div>
+              <div style={{ fontSize:15, color:"#64748b" }}>{c.comment}</div>
             </div>
             <div style={{ textAlign:"right" }}>
-              <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:13 }}>{c.price}</div>
-              <div style={{ fontSize:11, color: c.trend==="up"?"#10b981":"#ef4444" }}>{c.change_24h} (24h)</div>
+              <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{c.price}</div>
+              <div style={{ fontSize:15, color:c.trend==="up"?"#10b981":"#ef4444", fontWeight:700 }}>{c.change_24h}</div>
             </div>
           </div>
         ))}
-      </Section>
+      </S>
       {d.hot_sectors?.length > 0 && (
-        <Section title="🔥 핫한 섹터" color="#f59e0b">
-          {d.hot_sectors.map((s,i) => <SectorCard key={i} item={s} />)}
-        </Section>
+        <S title="🔥 핫한 섹터" color="#f59e0b">
+          {d.hot_sectors.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
+        </S>
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
-          <div style={{ fontSize:10, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>⚠️ 리스크</div>
-          {d.risks.map((r,i) => <div key={i} style={{ fontSize:13, color:"#fca5a5", marginBottom:6 }}>• {r}</div>)}
+          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>⚠️ 리스크</div>
+          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>• {r}</div>)}
         </div>
       )}
     </>
@@ -508,62 +586,117 @@ function MarketInsight() {
 
   const renderEurope = (d) => (
     <>
-      <Section title="EUROPE SUMMARY" color="#ec4899">
-        <div style={{ color:"#e2e8f0", lineHeight:1.7, fontSize:14 }}>{d.summary}</div>
-      </Section>
+      <S title="EUROPE SUMMARY" color="#ec4899">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
       {d.strong?.length > 0 && (
-        <Section title="▲ 강한 섹터" color="#10b981">
-          {d.strong.map((s,i) => <SectorCard key={i} item={{...s, reason: `[${s.country}] ${s.reason}`}} />)}
-        </Section>
+        <S title="▲ 강한 섹터" color="#10b981">
+          {d.strong.map((s,i) => <SectorRow key={i} item={{...s, reason:`[${s.country}] ${s.reason}`}} showScore={false} />)}
+        </S>
       )}
       {d.weak?.length > 0 && (
-        <Section title="▼ 약한 섹터" color="#ef4444">
-          {d.weak.map((s,i) => <div key={i} style={{ fontSize:13, color:"#64748b", marginBottom:6 }}>• {s.name}: {s.reason}</div>)}
-        </Section>
+        <S title="▼ 약한 섹터" color="#ef4444">
+          {d.weak.map((s,i) => <div key={i} style={{ fontSize:16, color:"#64748b", marginBottom:8 }}>• {s.name}: {s.reason}</div>)}
+        </S>
       )}
       {d.events?.length > 0 && (
-        <Section title="주요 이벤트" color="#f59e0b">
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:13, color:"#cbd5e1", marginBottom:6 }}>• {e}</div>)}
-        </Section>
+        <S title="주요 이벤트" color="#f59e0b">
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
+        </S>
+      )}
+    </>
+  );
+
+  const renderIpo = (d) => (
+    <>
+      <S title="SUMMARY" color="#06b6d4">
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
+      </S>
+      {d.upcoming?.length > 0 && (
+        <S title="⏰ 상장 예정" color="#06b6d4">
+          {d.upcoming.map((item,i) => (
+            <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+                <div>
+                  <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
+                  <span style={{ fontSize:13, color:"#06b6d4", background:"#06b6d422", padding:"2px 6px", borderRadius:4, marginLeft:8 }}>{item.type}</span>
+                </div>
+                <span style={{ fontSize:14, color:"#64748b" }}>{item.expected_date}</span>
+              </div>
+              <div style={{ fontSize:15, color:"#64748b", marginBottom:4 }}>{item.issuer}</div>
+              <div style={{ fontSize:15, color:"#94a3b8" }}>{item.description}</div>
+              {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>★ {item.highlight}</div>}
+            </div>
+          ))}
+        </S>
+      )}
+      {d.recent?.length > 0 && (
+        <S title="🆕 최근 상장 (1개월 이내)" color="#10b981">
+          {d.recent.map((item,i) => (
+            <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+                <div>
+                  <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
+                  <span style={{ fontSize:13, color:"#10b981", background:"#10b98122", padding:"2px 6px", borderRadius:4, marginLeft:8 }}>{item.type}</span>
+                </div>
+                <span style={{ fontSize:14, color:"#64748b" }}>{item.listed_date}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                <span style={{ fontSize:15, color:"#64748b" }}>{item.issuer}</span>
+                <span style={{ fontSize:15, color: parseInt(item.market_cap)>=3000?"#10b981":parseInt(item.market_cap)>=1000?"#f59e0b":"#94a3b8", fontWeight:700 }}>
+                  시총 {item.market_cap}억
+                  {parseInt(item.market_cap)<3000 && parseInt(item.market_cap)>=1000 ? " (소규모 참고)" : ""}
+                </span>
+              </div>
+              <div style={{ fontSize:15, color:"#94a3b8" }}>{item.description}</div>
+              {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>★ {item.highlight}</div>}
+            </div>
+          ))}
+        </S>
       )}
     </>
   );
 
   const renderData = (tabId, d) => {
-    if (d._raw) return <div style={{ color:"#94a3b8", fontSize:13, lineHeight:1.7 }}>{d.summary}</div>;
-    if (tabId==="kr" || tabId==="us") return renderKrUs(d);
-    if (tabId==="commodities")        return renderCommodities(d);
-    if (tabId==="asia")               return renderAsia(d);
-    if (tabId==="crypto")             return renderCrypto(d);
-    if (tabId==="europe")             return renderEurope(d);
+    if (d._raw) return <div style={{ color:"#94a3b8", fontSize:16, lineHeight:1.8 }}>{d.summary}</div>;
+    if (tabId==="summary")     return renderSummary(d);
+    if (tabId==="kr"||tabId==="us") return renderKrUs(d);
+    if (tabId==="commodities") return renderCommodities(d);
+    if (tabId==="asia")        return renderAsia(d);
+    if (tabId==="crypto")      return renderCrypto(d);
+    if (tabId==="europe")      return renderEurope(d);
+    if (tabId==="ipo")         return renderIpo(d);
     return null;
   };
+
+  const tabIcons = { summary:"🌐", kr:"🇰🇷", us:"🇺🇸", commodities:"🛢️", asia:"🌏", crypto:"💰", europe:"🇪🇺", ipo:"🆕" };
 
   return (
     <div style={{ padding:"0 4px" }}>
       {/* 마켓 탭 */}
-      <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:4 }}>
+      <div style={{ display:"flex", gap:6, marginBottom:14, overflowX:"auto", paddingBottom:4 }}>
         {MARKET_TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
             padding:"7px 12px", borderRadius:20, flexShrink:0,
             border:`1px solid ${activeTab===t.id ? t.color : "#334155"}`,
             background: activeTab===t.id ? t.color+"22" : "transparent",
             color: activeTab===t.id ? t.color : "#64748b",
-            fontSize:11, fontWeight: activeTab===t.id ? 700 : 400, cursor:"pointer",
+            fontSize:14, fontWeight:activeTab===t.id ? 700 : 400, cursor:"pointer",
           }}>{t.label}</button>
         ))}
       </div>
 
       {/* 헤더 */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-        <div style={{ fontSize:11, color:"#64748b" }}>
+        <div style={{ fontSize:14, color:"#64748b" }}>
           {upAt ? `업데이트: ${upAt.toLocaleTimeString("ko-KR")}` : "버튼을 눌러 분석 시작"}
         </div>
         <button onClick={() => fetchTab(activeTab)} disabled={!!loading} style={{
-          background: tab.color, color:"#fff", border:"none", borderRadius:8,
-          padding:"8px 16px", cursor: loading ? "not-allowed" : "pointer",
-          fontWeight:700, fontSize:12, display:"flex", alignItems:"center", gap:6,
-          opacity: loading ? 0.7 : 1,
+          background: tab.color==="#e2e8f0"?"#334155":tab.color,
+          color:"#fff", border:"none", borderRadius:8,
+          padding:"9px 18px", cursor:loading?"not-allowed":"pointer",
+          fontWeight:700, fontSize:15, display:"flex", alignItems:"center", gap:6,
+          opacity:loading?0.7:1,
         }}>
           {isLoad ? <Spinner size={13}/> : "↻"} {isLoad ? "분석 중..." : "분석 시작"}
         </button>
@@ -572,31 +705,282 @@ function MarketInsight() {
       {/* 초기 안내 */}
       {!isLoad && !data && !err && (
         <div style={{ textAlign:"center", padding:"50px 20px" }}>
-          <div style={{ fontSize:44, marginBottom:14 }}>
-            {tab.id==="kr"?"🇰🇷":tab.id==="us"?"🇺🇸":tab.id==="commodities"?"🛢️":tab.id==="asia"?"🌏":tab.id==="crypto"?"💰":"🇪🇺"}
-          </div>
-          <div style={{ fontSize:14, fontWeight:700, color:"#94a3b8", marginBottom:8 }}>{tab.label} 분석</div>
-          <div style={{ fontSize:12, color:"#475569" }}>분석 시작 버튼을 눌러주세요</div>
+          <div style={{ fontSize:48, marginBottom:14 }}>{tabIcons[activeTab]}</div>
+          <div style={{ fontSize:17, fontWeight:700, color:"#94a3b8", marginBottom:8 }}>{tab.label} 분석</div>
+          <div style={{ fontSize:15, color:"#475569" }}>분석 시작 버튼을 눌러주세요</div>
         </div>
       )}
-
-      {/* 로딩 */}
       {isLoad && (
         <div style={{ textAlign:"center", padding:"50px 20px" }}>
           <Spinner size={34}/>
-          <div style={{ marginTop:14, fontSize:13, color:"#64748b" }}>웹 검색 중... 최신 데이터 수집 중</div>
+          <div style={{ marginTop:14, fontSize:16, color:"#64748b" }}>최신 데이터 수집 중...</div>
         </div>
       )}
-
-      {/* 에러 */}
       {err && !isLoad && (
-        <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:16, color:"#fca5a5", fontSize:13 }}>
-          ⚠️ {err}
-        </div>
+        <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:16, color:"#fca5a5", fontSize:16 }}>⚠️ {err}</div>
       )}
-
-      {/* 결과 */}
       {data && !isLoad && renderData(activeTab, data)}
+    </div>
+  );
+}
+
+
+// ── 차트 색상 ─────────────────────────────────────────────────────────────────
+const SECTOR_PIE_COLORS = ["#0ea5e9","#7c3aed","#f59e0b","#10b981","#ef4444","#ec4899","#f97316","#06b6d4","#84cc16","#6b7280","#a78bfa","#34d399","#fb923c","#e2e8f0"];
+const REGION_PIE_COLORS = ["#0ea5e9","#7c3aed","#ef4444","#f59e0b","#10b981","#ec4899","#06b6d4","#f97316","#84cc16","#6b7280"];
+
+const REGION_MAP = {
+  "삼성 개인연금": "KR", "삼성 DC": "KR", "메리츠 일반": "KR", "신한 일반": "KR",
+};
+
+// 종목명 기반 지역 추정
+function guessRegion(name) {
+  if (!name) return "기타";
+  const n = name.toUpperCase();
+  if (n.includes("미국") || n.includes("S&P") || n.includes("나스닥") || n.includes("NASDAQ") || n.includes("빅테크") || n.includes("우주테크") || n.includes("배당다우") || n.includes("테크TOP")) return "🇺🇸 미국";
+  if (n.includes("차이나") || n.includes("중국") || n.includes("항셍")) return "🇨🇳 중국";
+  if (n.includes("일본") || n.includes("닛케이")) return "🇯🇵 일본";
+  if (n.includes("인도") || n.includes("빌리언")) return "🇮🇳 인도";
+  if (n.includes("유럽") || n.includes("DAX") || n.includes("FTSE")) return "🇪🇺 유럽";
+  if (n.includes("글로벌") || n.includes("TOP4") || n.includes("원자력") || n.includes("K방산") || n.includes("조선")) return "🌍 글로벌";
+  if (n.includes("코인") || n.includes("BTC") || n.includes("ETH")) return "💰 코인";
+  // 기본값: 국내
+  return "🇰🇷 한국";
+}
+
+// 섹터 매핑 개선
+function getSectorLabel(sector, name) {
+  if (!sector || sector === "기타") {
+    // 종목명으로 추정
+    const n = (name||"").toUpperCase();
+    if (n.includes("AI") || n.includes("인공지능") || n.includes("로보")) return "AI·로보틱스";
+    if (n.includes("반도체") || n.includes("SEMI")) return "반도체";
+    if (n.includes("빅테크") || n.includes("테크TOP")) return "미국 빅테크";
+    if (n.includes("S&P") || n.includes("나스닥") || n.includes("NASDAQ")) return "미국 지수";
+    if (n.includes("전력") || n.includes("인프라")) return "전력·인프라";
+    if (n.includes("원자력") || n.includes("에너지")) return "원자력·에너지";
+    if (n.includes("방산") || n.includes("조선")) return "방산·조선";
+    if (n.includes("2차전지") || n.includes("배터리")) return "2차전지";
+    if (n.includes("금") || n.includes("구리") || n.includes("원자재")) return "금·원자재";
+    if (n.includes("채권") || n.includes("배당") || n.includes("배당")) return "배당·채권";
+    if (n.includes("차이나") || n.includes("중국") || n.includes("인도")) return "신흥국";
+    if (n.includes("코스닥") || n.includes("코스피") || n.includes("밸류업") || n.includes("증권")) return "국내 지수";
+    if (n.includes("바이오") || n.includes("헬스")) return "바이오·헬스";
+    return "기타";
+  }
+  const sMap = {
+    "AI": "AI·로보틱스", "반도체": "반도체", "기술": "미국 빅테크",
+    "에너지": "원자력·에너지", "금융": "배당·채권", "헬스케어": "바이오·헬스",
+    "방산": "방산·조선", "부동산": "부동산", "소비재": "소비재",
+  };
+  return sMap[sector] || sector;
+}
+
+// ── 원형 그래프 컴포넌트 ──────────────────────────────────────────────────────
+function PortfolioPieCharts({ portfolio }) {
+  if (!portfolio) return null;
+
+  const totalValue = portfolio.holdings.reduce((s,h) => s+(h.shares||0)*(h.current_price||h.avg_price||0), 0);
+  const cash = portfolio.cash || 0;
+  const grandTotal = totalValue + cash;
+
+  // ① 섹터별 데이터
+  const sectorMap = {};
+  portfolio.holdings.forEach(h => {
+    const key = getSectorLabel(h.sector, h.name);
+    const val = (h.shares||0)*(h.current_price||h.avg_price||0);
+    sectorMap[key] = (sectorMap[key]||0) + val;
+  });
+  if (cash > 0) sectorMap["💵 현금"] = cash;
+  const sectorData = Object.entries(sectorMap)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([name, value]) => ({ name, value: Math.round(value), pct: grandTotal>0?((value/grandTotal)*100).toFixed(1):"0" }));
+
+  // ② 지역별 데이터
+  const regionMap = {};
+  portfolio.holdings.forEach(h => {
+    const key = guessRegion(h.name);
+    const val = (h.shares||0)*(h.current_price||h.avg_price||0);
+    regionMap[key] = (regionMap[key]||0) + val;
+  });
+  if (cash > 0) regionMap["💵 현금"] = cash;
+  const regionData = Object.entries(regionMap)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([name, value]) => ({ name, value: Math.round(value), pct: grandTotal>0?((value/grandTotal)*100).toFixed(1):"0" }));
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, padding:"8px 12px" }}>
+        <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:13 }}>{payload[0].name}</div>
+        <div style={{ color:"#0ea5e9", fontSize:13 }}>{payload[0].payload.pct}%</div>
+        <div style={{ color:"#64748b", fontSize:12 }}>₩{Math.round(payload[0].value/10000).toLocaleString()}만</div>
+      </div>
+    );
+  };
+
+  const PieSection = ({ title, data, colors }) => (
+    <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:16, marginBottom:14 }}>
+      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:14, letterSpacing:2 }}>{title}</div>
+      <ResponsiveContainer width="100%" height={200}>
+        <PieChart>
+          <Pie data={data} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={2}>
+            {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+          </Pie>
+          <Tooltip content={<CustomTooltip />} />
+        </PieChart>
+      </ResponsiveContainer>
+      {/* 범례 */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:10 }}>
+        {data.map((d,i) => (
+          <div key={i} style={{ display:"flex", alignItems:"center", gap:4, fontSize:12 }}>
+            <div style={{ width:10, height:10, borderRadius:2, background:colors[i%colors.length], flexShrink:0 }} />
+            <span style={{ color:"#94a3b8" }}>{d.name}</span>
+            <span style={{ color:"#e2e8f0", fontWeight:700 }}>{d.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <PieSection title="섹터별 구성" data={sectorData} colors={SECTOR_PIE_COLORS} />
+      <PieSection title="지역별 구성" data={regionData} colors={REGION_PIE_COLORS} />
+    </>
+  );
+}
+
+// ── 수익률 히스토리 그래프 ────────────────────────────────────────────────────
+const HISTORY_KEY = "portfolio_history_v1";
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+}
+
+function saveHistory(h) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(-365))); // 최대 365개
+}
+
+function addHistoryPoint(portfolio, period) {
+  const history = loadHistory();
+  const totalCost  = portfolio.holdings.reduce((s,h) => s+(h.shares||0)*(h.avg_price||0), 0);
+  const totalValue = portfolio.holdings.reduce((s,h) => s+(h.shares||0)*(h.current_price||h.avg_price||0), 0);
+  const ret = totalCost > 0 ? ((totalValue-totalCost)/totalCost)*100 : 0;
+
+  const now = new Date();
+  const point = {
+    date: now.toISOString().slice(0,10),
+    timestamp: now.getTime(),
+    type: "realtime",
+    total_value: Math.round(totalValue),
+    total_cost: Math.round(totalCost),
+    return_pct: parseFloat(ret.toFixed(2)),
+    period,
+  };
+
+  // 같은 날짜면 덮어씀 (마지막 새로고침 기준)
+  const filtered = history.filter(h => h.date !== point.date);
+  saveHistory([...filtered, point].sort((a,b) => a.timestamp-b.timestamp));
+}
+
+function filterHistoryByPeriod(history, period) {
+  if (!history.length) return history;
+  // 주기별로 그룹핑 후 마지막 값만
+  const grouped = {};
+  history.forEach(h => {
+    let key;
+    const d = new Date(h.timestamp);
+    if (period === "daily")   key = h.date;
+    else if (period === "weekly")  key = `${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
+    else if (period === "monthly") key = h.date.slice(0,7);
+    else if (period === "yearly")  key = h.date.slice(0,4);
+    else key = h.date;
+    if (!grouped[key] || h.timestamp > grouped[key].timestamp) grouped[key] = h;
+  });
+  return Object.values(grouped).sort((a,b) => a.timestamp-b.timestamp);
+}
+
+function ReturnHistoryChart({ portfolio }) {
+  const [period, setPeriod] = useState(localStorage.getItem("history_period")||"daily");
+  const history = filterHistoryByPeriod(loadHistory(), period);
+
+  if (!portfolio) return null;
+
+  const periods = [
+    { id:"daily", label:"일별" }, { id:"weekly", label:"주별" },
+    { id:"monthly", label:"월별" }, { id:"yearly", label:"연별" },
+  ];
+
+  const chartData = history.map(h => ({
+    date: period==="daily" ? h.date.slice(5) : period==="weekly" ? h.date.slice(5) : period==="monthly" ? h.date.slice(0,7) : h.date.slice(0,4),
+    수익률: h.return_pct,
+    평가금액: Math.round(h.total_value/10000),
+  }));
+
+  const currentReturn = (() => {
+    const tc = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
+    const tv = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+    return tc>0?((tv-tc)/tc*100).toFixed(2):0;
+  })();
+
+  return (
+    <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:16, marginBottom:14 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+        <div style={{ fontSize:13, color:"#7c3aed", fontWeight:700, letterSpacing:2 }}>수익률 히스토리</div>
+        <div style={{ display:"flex", gap:4 }}>
+          {periods.map(p => (
+            <button key={p.id} onClick={() => { setPeriod(p.id); localStorage.setItem("history_period",p.id); }} style={{
+              padding:"4px 10px", borderRadius:12, border:`1px solid ${period===p.id?"#7c3aed":"#334155"}`,
+              background:period===p.id?"#7c3aed22":"transparent",
+              color:period===p.id?"#a78bfa":"#64748b", fontSize:12, cursor:"pointer", fontWeight:period===p.id?700:400,
+            }}>{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {chartData.length === 0 ? (
+        <div style={{ textAlign:"center", padding:"30px 0", color:"#475569", fontSize:13 }}>
+          가격 새로고침 후 히스토리가 쌓입니다
+        </div>
+      ) : chartData.length === 1 ? (
+        // 데이터 1개: 막대 그래프
+        <div>
+          <div style={{ textAlign:"center", marginBottom:10 }}>
+            <div style={{ fontSize:13, color:"#64748b" }}>{chartData[0].date}</div>
+            <div style={{ fontSize:28, fontWeight:800, color:parseFloat(currentReturn)>=0?"#10b981":"#ef4444" }}>
+              {parseFloat(currentReturn)>=0?"+":""}{currentReturn}%
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <XAxis dataKey="date" tick={{ fill:"#64748b", fontSize:12 }} />
+              <YAxis tick={{ fill:"#64748b", fontSize:12 }} tickFormatter={v=>`${v}%`} />
+              <Tooltip formatter={(v)=>[`${v}%`,"수익률"]} contentStyle={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8 }} labelStyle={{ color:"#e2e8f0" }} />
+              <Bar dataKey="수익률" fill="#7c3aed" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        // 데이터 2개 이상: 막대+꺾은선 조합
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+            <XAxis dataKey="date" tick={{ fill:"#64748b", fontSize:12 }} />
+            <YAxis yAxisId="left" tick={{ fill:"#64748b", fontSize:12 }} tickFormatter={v=>`${v}%`} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fill:"#64748b", fontSize:11 }} tickFormatter={v=>`${v}만`} />
+            <Tooltip
+              contentStyle={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8 }}
+              labelStyle={{ color:"#e2e8f0" }}
+              formatter={(v,n) => n==="수익률"?[`${v}%`,n]:[`₩${v.toLocaleString()}만`,n]}
+            />
+            <Legend wrapperStyle={{ fontSize:13, color:"#94a3b8" }} />
+            <Bar yAxisId="left" dataKey="수익률" fill="#7c3aed" opacity={0.7} radius={[3,3,0,0]} />
+            <Line yAxisId="right" type="monotone" dataKey="평가금액" stroke="#0ea5e9" strokeWidth={2} dot={{ fill:"#0ea5e9", r:3 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
@@ -633,14 +1017,14 @@ function ManualInputModal({ onClose, onAdd }) {
 
   const Field = ({ label, value, onChange, inputMode = "text" }) => (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>{label}</div>
       <input
         inputMode={inputMode}
         value={value}
         onChange={e => onChange(e.target.value)}
         style={{
           width: "100%", background: "#020617", border: "1px solid #334155",
-          borderRadius: 8, padding: "11px 12px", color: "#e2e8f0", fontSize: 14, outline: "none",
+          borderRadius: 8, padding: "11px 12px", color: "#e2e8f0", fontSize: 16, outline: "none",
         }}
       />
     </div>
@@ -652,34 +1036,34 @@ function ManualInputModal({ onClose, onAdd }) {
     >
       <div style={{ width: "100%", maxWidth: 480, margin: "0 auto", background: "#0f172a", borderRadius: "20px 20px 0 0", padding: "24px 20px 48px", maxHeight: "88vh", overflowY: "auto", border: "1px solid #1e293b" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>종목 직접 입력</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0" }}>종목 직접 입력</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>계좌 선택</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>계좌 선택</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
           {ACCOUNTS.map(a => (
             <button key={a} onClick={() => setAccount(a)} style={{
               padding: "6px 12px", borderRadius: 20,
               border: `1px solid ${account === a ? "#0ea5e9" : "#334155"}`,
               background: account === a ? "#0ea5e922" : "transparent",
-              color: account === a ? "#0ea5e9" : "#94a3b8", fontSize: 12, cursor: "pointer", fontWeight: account === a ? 700 : 400,
+              color: account === a ? "#0ea5e9" : "#94a3b8", fontSize: 14, cursor: "pointer", fontWeight: account === a ? 700 : 400,
             }}>{a}</button>
           ))}
         </div>
         {account === "기타" && (
           <input placeholder="계좌명 직접 입력" value={customAccount} onChange={e => setCustomAccount(e.target.value)}
-            style={{ width: "100%", background: "#020617", border: "1px solid #334155", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontSize: 14, outline: "none", marginBottom: 10 }} />
+            style={{ width: "100%", background: "#020617", border: "1px solid #334155", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontSize: 16, outline: "none", marginBottom: 10 }} />
         )}
 
-        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>통화</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>통화</div>
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {["KRW","USD","JPY","EUR"].map(c => (
             <button key={c} onClick={() => setCurrency(c)} style={{
               flex: 1, padding: "8px 0", borderRadius: 8,
               border: `1px solid ${currency === c ? "#10b981" : "#334155"}`,
               background: currency === c ? "#10b98122" : "transparent",
-              color: currency === c ? "#10b981" : "#94a3b8", fontSize: 12, cursor: "pointer", fontWeight: currency === c ? 700 : 400,
+              color: currency === c ? "#10b981" : "#94a3b8", fontSize: 14, cursor: "pointer", fontWeight: currency === c ? 700 : 400,
             }}>{c}</button>
           ))}
         </div>
@@ -689,14 +1073,14 @@ function ManualInputModal({ onClose, onAdd }) {
         <Field label="매수 평균단가 *" value={avgPrice} onChange={setAvgPrice} inputMode="decimal" />
         <Field label="보유 수량 *" value={shares} onChange={setShares} inputMode="decimal" />
 
-        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, marginTop: 4 }}>섹터</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6, marginTop: 4 }}>섹터</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 22 }}>
           {SECTORS.map(s => (
             <button key={s} onClick={() => setSector(s)} style={{
               padding: "5px 11px", borderRadius: 16,
               border: `1px solid ${sector === s ? getSectorColor(s) : "#334155"}`,
               background: sector === s ? getSectorColor(s) + "22" : "transparent",
-              color: sector === s ? getSectorColor(s) : "#94a3b8", fontSize: 11, cursor: "pointer",
+              color: sector === s ? getSectorColor(s) : "#94a3b8", fontSize: 13, cursor: "pointer",
             }}>{s}</button>
           ))}
         </div>
@@ -704,7 +1088,7 @@ function ManualInputModal({ onClose, onAdd }) {
         <button onClick={handleAdd} style={{
           width: "100%", padding: "14px", borderRadius: 10,
           background: "linear-gradient(135deg,#0ea5e9,#7c3aed)",
-          color: "#fff", border: "none", fontWeight: 700, fontSize: 15, cursor: "pointer",
+          color: "#fff", border: "none", fontWeight: 700, fontSize: 17, cursor: "pointer",
         }}>+ 종목 추가</button>
       </div>
     </div>
@@ -720,6 +1104,7 @@ function Portfolio() {
   const [dragOver, setDragOver]     = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [editTarget, setEditTarget] = useState(null); // {holding, index}
 
   // 이미지 → Claude Vision
   const analyzeImage = async (file) => {
@@ -735,6 +1120,60 @@ function Portfolio() {
       user: "이 계좌 스크린샷에서 모든 보유 종목(코드, 종목명, 수량, 평균단가)을 추출해줘. JSON만.",
     });
     return JSON.parse(text.replace(/```json|```/g, "").trim());
+  };
+
+  // 주문체결/실현손익 캡처 분석
+  const analyzeOrderCapture = async (file) => {
+    setUploadMsg("주문체결 내역 분석 중...");
+    const base64 = await new Promise((res,rej) => {
+      const r = new FileReader(); r.onload = ()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file);
+    });
+    const text = await callGeminiWithImage({
+      maxTokens:2000,
+      system:`주문체결 또는 실현손익 캡처에서 거래 내역을 추출해 순수 JSON만 반환.
+{"trades":[{"name":"종목명","ticker":"코드","type":"buy/sell","shares":수량,"price":단가,"date":"날짜"}]}`,
+      imageBase64:base64, mediaType:file.type,
+      user:"이 주문체결/실현손익 화면에서 모든 거래 내역(종목명, 수량, 단가, 매수/매도)을 추출해줘. JSON만.",
+    });
+    const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    return parsed.trades || [];
+  };
+
+  // 주문체결 캡처로 포폴 업데이트
+  const processOrderCapture = async (file) => {
+    setUploading(true);
+    setUploadMsg("주문체결 분석 중...");
+    try {
+      const trades = await analyzeOrderCapture(file);
+      if (!trades.length) { alert("거래 내역을 찾을 수 없어요."); setUploading(false); return; }
+      
+      let holdings = [...(portfolio?.holdings||[])];
+      trades.forEach(trade => {
+        const idx = holdings.findIndex(h => h.ticker===trade.ticker || h.name===trade.name);
+        if (trade.type === "buy") {
+          if (idx >= 0) {
+            // 기존 종목 추가매수 → 평단 재계산
+            const h = holdings[idx];
+            const newShares = (h.shares||0) + trade.shares;
+            const newAvg = newShares>0 ? Math.round(((h.shares||0)*(h.avg_price||0)+trade.shares*trade.price)/newShares) : trade.price;
+            holdings[idx] = { ...h, shares:newShares, avg_price:newAvg };
+          } else {
+            holdings.push({ name:trade.name, ticker:trade.ticker||trade.name, shares:trade.shares, avg_price:trade.price, currency:"KRW", sector:"기타", current_price:null });
+          }
+        } else if (trade.type === "sell") {
+          if (idx >= 0) {
+            const remaining = (holdings[idx].shares||0) - trade.shares;
+            if (remaining <= 0) holdings.splice(idx, 1);
+            else holdings[idx] = { ...holdings[idx], shares:remaining };
+          }
+        }
+      });
+
+      const updated = { ...(portfolio||{holdings:[],uploadedAt:new Date().toISOString()}), holdings, updatedAt:new Date().toISOString() };
+      savePortfolio(updated); setPortfolio(updated);
+      alert(`${trades.length}건 거래 반영 완료!`);
+    } catch(e) { alert("분석 실패: "+e.message); }
+    setUploading(false); setUploadMsg("");
   };
 
   // 엑셀/CSV → Claude
@@ -817,6 +1256,19 @@ function Portfolio() {
     setPortfolio(updated);
   };
 
+  // 종목 수정/삭제
+  const updateHolding = (idx, updated) => {
+    let newHoldings;
+    if (updated === null) {
+      newHoldings = portfolio.holdings.filter((_, i) => i !== idx);
+    } else {
+      newHoldings = portfolio.holdings.map((h, i) => i === idx ? updated : h);
+    }
+    const p = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
+    savePortfolio(p);
+    setPortfolio(p);
+  };
+
   // 현재가 업데이트
   const updatePrices = async () => {
     if (!portfolio) return;
@@ -837,6 +1289,9 @@ function Portfolio() {
         }),
       };
       savePortfolio(updated); setPortfolio(updated);
+      // 히스토리 포인트 저장
+      const period = localStorage.getItem("history_period") || "daily";
+      addHistoryPoint(updated, period);
     } catch (e) { alert("가격 업데이트 실패: " + e.message); }
     setUpdating(false);
   };
@@ -876,7 +1331,7 @@ function Portfolio() {
         {uploading ? (
           <div style={{ textAlign: "center", padding: "36px 20px", background: "#0a0f1a", borderRadius: 14, border: "1px solid #1e293b" }}>
             <Spinner size={34} />
-            <div style={{ marginTop: 14, color: "#0ea5e9", fontWeight: 700, fontSize: 14 }}>{uploadMsg}</div>
+            <div style={{ marginTop: 14, color: "#0ea5e9", fontWeight: 700, fontSize: 16 }}>{uploadMsg}</div>
           </div>
         ) : (
           <div>
@@ -892,8 +1347,8 @@ function Portfolio() {
               }}
             >
               <div style={{ fontSize: 26, marginBottom: 5 }}>📂</div>
-              <div style={{ fontSize: 12, color: "#475569" }}>PC: 파일을 여기로 드래그</div>
-              <div style={{ fontSize: 11, color: "#334155", marginTop: 2 }}>이미지 · xlsx · csv</div>
+              <div style={{ fontSize: 14, color: "#475569" }}>PC: 파일을 여기로 드래그</div>
+              <div style={{ fontSize: 13, color: "#334155", marginTop: 2 }}>이미지 · xlsx · csv</div>
             </div>
 
             {/* label 버튼 — htmlFor로 input 직접 연결 (모바일에서 가장 확실) */}
@@ -903,7 +1358,7 @@ function Portfolio() {
                 style={{
                   padding: "14px 8px", borderRadius: 12, cursor: "pointer",
                   background: "linear-gradient(135deg,#0ea5e9,#0369a1)", color: "#fff",
-                  fontWeight: 700, fontSize: 13, display: "flex", flexDirection: "column",
+                  fontWeight: 700, fontSize: 15, display: "flex", flexDirection: "column",
                   alignItems: "center", gap: 6, userSelect: "none",
                 }}
               >
@@ -915,7 +1370,7 @@ function Portfolio() {
                 style={{
                   padding: "14px 8px", borderRadius: 12, cursor: "pointer",
                   background: "linear-gradient(135deg,#10b981,#059669)", color: "#fff",
-                  fontWeight: 700, fontSize: 13, display: "flex", flexDirection: "column",
+                  fontWeight: 700, fontSize: 15, display: "flex", flexDirection: "column",
                   alignItems: "center", gap: 6, userSelect: "none",
                 }}
               >
@@ -929,13 +1384,13 @@ function Portfolio() {
               style={{
                 width: "100%", padding: "13px", borderRadius: 12, cursor: "pointer",
                 background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155",
-                fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}
             >
               ✏️ 직접 입력
             </button>
             {addToExisting && (
-              <button onClick={() => setShowAddPanel(false)} style={{ width: "100%", marginTop: 8, padding: "10px", background: "none", border: "none", color: "#64748b", fontSize: 13, cursor: "pointer" }}>
+              <button onClick={() => setShowAddPanel(false)} style={{ width: "100%", marginTop: 8, padding: "10px", background: "none", border: "none", color: "#64748b", fontSize: 15, cursor: "pointer" }}>
                 취소
               </button>
             )}
@@ -947,6 +1402,16 @@ function Portfolio() {
 
   return (
     <div style={{ padding: "0 4px" }}>
+      {editTarget && (
+        <EditHoldingModal
+          holding={editTarget.holding}
+          onClose={() => setEditTarget(null)}
+          onSave={(updated) => {
+            updateHolding(editTarget.index, updated);
+            setEditTarget(null);
+          }}
+        />
+      )}
       {showManual && (
         <ManualInputModal onClose={() => setShowManual(false)} onAdd={h => { addManualHolding(h); setShowManual(false); }} />
       )}
@@ -957,7 +1422,7 @@ function Portfolio() {
           <div style={{ textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>💼</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>포트폴리오 등록</div>
-            <div style={{ fontSize: 12, color: "#64748b" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
+            <div style={{ fontSize: 14, color: "#64748b" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
           </div>
           <UploadPanel addToExisting={false} />
         </div>
@@ -969,14 +1434,14 @@ function Portfolio() {
               padding: "6px 12px", borderRadius: 20, border: `1px solid ${viewMode === "all" ? "#7c3aed" : "#334155"}`,
               background: viewMode === "all" ? "#7c3aed22" : "transparent",
               color: viewMode === "all" ? "#a78bfa" : "#64748b",
-              fontSize: 11, fontWeight: viewMode === "all" ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+              fontSize: 13, fontWeight: viewMode === "all" ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
             }}>전체</button>
             {accounts.map(acc => (
               <button key={acc} onClick={() => setViewMode(acc)} style={{
                 padding: "6px 12px", borderRadius: 20, border: `1px solid ${viewMode === acc ? "#0ea5e9" : "#334155"}`,
                 background: viewMode === acc ? "#0ea5e922" : "transparent",
                 color: viewMode === acc ? "#0ea5e9" : "#64748b",
-                fontSize: 11, fontWeight: viewMode === acc ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+                fontSize: 13, fontWeight: viewMode === acc ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
               }}>{acc}</button>
             ))}
           </div>
@@ -985,16 +1450,26 @@ function Portfolio() {
           <div style={{ background: "linear-gradient(135deg,#0f172a,#1e1b4b)", border: "1px solid #312e81", borderRadius: 16, padding: 18, marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
               <div>
-                <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 3 }}>
+                <div style={{ fontSize: 12, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 3 }}>
                   {viewMode === "all" ? "전체 포트폴리오" : viewMode}
                 </div>
-                <div style={{ fontSize: 11, color: "#475569" }}>{new Date(portfolio.updatedAt).toLocaleString("ko-KR")}</div>
+                <div style={{ fontSize: 13, color: "#475569" }}>{new Date(portfolio.updatedAt).toLocaleString("ko-KR")}</div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={updatePrices} disabled={updating} style={{ background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                <button onClick={updatePrices} disabled={updating} style={{ background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                   {updating ? <Spinner size={11} /> : "↻"} 가격
                 </button>
-                <button onClick={() => { savePortfolio(null); setPortfolio(null); }} style={{ background: "#1e293b", color: "#ef4444", border: "1px solid #ef444433", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 11 }}>초기화</button>
+                <button onClick={() => {
+                  const accs = [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))];
+                  const target = window.prompt("삭제할 계좌명 입력 (전체삭제: 전체):
+"+accs.join(", "));
+                  if (!target) return;
+                  if (target === "전체") { savePortfolio(null); setPortfolio(null); }
+                  else {
+                    const updated = { ...portfolio, holdings: portfolio.holdings.filter(h=>h.account!==target), updatedAt:new Date().toISOString() };
+                    savePortfolio(updated); setPortfolio(updated);
+                  }
+                }} style={{ background: "#1e293b", color: "#ef4444", border: "1px solid #ef444433", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13 }}>🗑️ 삭제</button>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -1005,15 +1480,39 @@ function Portfolio() {
               ].map((m, i) => (
                 <div key={i} style={{ textAlign: "center", background: "#0f172a55", borderRadius: 8, padding: "10px 4px" }}>
                   <div style={{ fontSize: 9, color: "#64748b", marginBottom: 3 }}>{m.label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: m.color }}>{m.value}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{m.value}</div>
                 </div>
               ))}
             </div>
           </div>
 
+          {/* 원형 그래프 */}
+          <PortfolioPieCharts portfolio={portfolio} />
+
+          {/* 수익률 히스토리 */}
+          <ReturnHistoryChart portfolio={portfolio} />
+
+          {/* 현금/배당 잔고 */}
+          <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:"14px 16px", marginBottom:14, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div>
+              <div style={{ fontSize:12, color:"#f59e0b", fontWeight:700, letterSpacing:2, marginBottom:4 }}>현금 잔고</div>
+              <div style={{ fontSize:18, fontWeight:800, color:"#e2e8f0" }}>₩{((portfolio.cash)||0).toLocaleString()}</div>
+              <div style={{ fontSize:13, color:"#475569", marginTop:2 }}>예수금 + 배당금</div>
+            </div>
+            <button onClick={() => {
+              const input = prompt("현금 잔고 입력 (원):", portfolio.cash || 0);
+              if (input !== null) {
+                const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() };
+                savePortfolio(p); setPortfolio(p);
+              }
+            }} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, color:"#e2e8f0", padding:"7px 14px", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+              ✏️ 수정
+            </button>
+          </div>
+
           {/* 섹터 분포 */}
           <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700, marginBottom: 12, letterSpacing: 2 }}>섹터 분포</div>
+            <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700, marginBottom: 12, letterSpacing: 2 }}>섹터 분포</div>
             {Object.entries(
               visibleHoldings.reduce((acc, h) => {
                 const s = h.sector || "기타";
@@ -1024,7 +1523,7 @@ function Portfolio() {
               const pct = totalValue > 0 ? (val/totalValue)*100 : 0;
               return (
                 <div key={sector} style={{ marginBottom: 9 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 14 }}>
                     <span style={{ color: getSectorColor(sector), fontWeight: 600 }}>{sector}</span>
                     <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}%</span>
                   </div>
@@ -1039,7 +1538,7 @@ function Portfolio() {
           {/* 종목 목록 */}
           <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
             <div style={{ padding: "13px 16px", borderBottom: "1px solid #1e293b" }}>
-              <span style={{ fontSize: 10, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2 }}>보유 종목 ({visibleHoldings.length})</span>
+              <span style={{ fontSize: 12, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2 }}>보유 종목 ({visibleHoldings.length})</span>
             </div>
             {visibleHoldings.map((h, i) => {
               const cost  = (h.shares||0)*(h.avg_price||0);
@@ -1049,10 +1548,10 @@ function Portfolio() {
                 <div key={i} style={{ padding: "12px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 14 }}>{h.name}</span>
-                      {h.account && <span style={{ fontSize: 10, color: "#475569", background: "#1e293b", padding: "1px 5px", borderRadius: 3 }}>{h.account}</span>}
+                      <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 16 }}>{h.name}</span>
+                      {h.account && <span style={{ fontSize: 12, color: "#475569", background: "#1e293b", padding: "1px 5px", borderRadius: 3 }}>{h.account}</span>}
                     </div>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>
+                    <div style={{ fontSize: 13, color: "#64748b" }}>
                       {h.ticker && h.ticker !== h.name ? h.ticker + " · " : ""}{h.shares}주 · 평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}
                     </div>
                   </div>
@@ -1060,14 +1559,15 @@ function Portfolio() {
                     <div style={{ textAlign: "right" }}>
                       {h.current_price ? (
                         <>
-                          <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13 }}>{h.current_price.toLocaleString()}</div>
-                          <div style={{ fontSize: 12, color: ret >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>{ret >= 0 ? "+" : ""}{ret.toFixed(2)}%</div>
+                          <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 15 }}>{h.current_price.toLocaleString()}</div>
+                          <div style={{ fontSize: 14, color: ret >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>{ret >= 0 ? "+" : ""}{ret.toFixed(2)}%</div>
                         </>
                       ) : (
-                        <div style={{ fontSize: 11, color: "#334155" }}>미조회</div>
+                        <div style={{ fontSize: 13, color: "#334155" }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => removeHolding(i)} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>✕</button>
+                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 8px", marginRight: 4 }}>✏️</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>✕</button>
                   </div>
                 </div>
               );
@@ -1085,14 +1585,22 @@ function Portfolio() {
           {uploading ? (
             <div style={{ textAlign: "center", padding: "28px", background: "#0a0f1a", borderRadius: 12, border: "1px solid #1e293b" }}>
               <Spinner size={28} />
-              <div style={{ marginTop: 12, color: "#0ea5e9", fontWeight: 700, fontSize: 13 }}>{uploadMsg}</div>
+              <div style={{ marginTop: 12, color: "#0ea5e9", fontWeight: 700, fontSize: 15 }}>{uploadMsg}</div>
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-              <label htmlFor="add-img" style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 11, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📱 스크린샷</label>
-              <label htmlFor="add-xls" style={{ padding: "10px 6px", borderRadius: 10, background: "#10b98122", border: "1px solid #10b98144", color: "#10b981", fontWeight: 700, fontSize: 11, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📊 엑셀/CSV</label>
-              <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>✏️ 직접입력</button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom:8 }}>
+              <label htmlFor="add-img" style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📱 스크린샷</label>
+              <label htmlFor="add-xls" style={{ padding: "10px 6px", borderRadius: 10, background: "#10b98122", border: "1px solid #10b98144", color: "#10b981", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📊 엑셀/CSV</label>
+              <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✏️ 직접입력</button>
             </div>
+            <input id="order-img" type="file" accept="image/*"
+              style={{ position:"absolute", width:1, height:1, opacity:0, overflow:"hidden" }}
+              onChange={e => { const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f); }} />
+            <label htmlFor="order-img" style={{
+              display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+              padding:"11px", borderRadius:10, cursor:"pointer",
+              background:"#1e293b", border:"1px solid #334155", color:"#e2e8f0", fontWeight:700, fontSize:13,
+            }}>📋 주문체결/실현손익 캡처 반영</label>
           )}
         </div>
       )}
@@ -1116,8 +1624,18 @@ function Advisor() {
         : "포트폴리오 정보 없음";
       const text = await callClaudeWithSearch({
         maxTokens: 2000,
-        system: `전문 투자 어드바이저. 포트폴리오와 현재 시장 상황을 종합하여 한국어로 구체적 조언 제공. 웹 검색으로 최신 정보 수집 후 조언.
-⚠️ 면책: 참고용이며 투자 손실 책임은 투자자 본인에게 있음.`,
+        system: `당신은 실전 투자 어드바이저입니다. 최근 2~3일 시장 데이터를 웹 검색으로 수집하고, 사용자 포트폴리오와 결합해 구체적 액션을 제시하세요.
+
+응답 형식:
+1. 포트폴리오 진단 (현재 섹터/지역 쏠림, 리스크 등)
+2. 즉시 액션 (매수/매도/비중조정 구체적 제안)
+   - 매수 추천 시: 주도주 1~2개 + 관련 ETF (시총 3000억↑ 우선, 1000억↓ 추천불가)
+   - 시총 1000억~2999억이면 "(시총 XXX억, 유동성 주의)" 명시
+   - 적합한 ETF 없으면 "추천 가능한 종목 없음" 표시
+3. 중기 전망 (1~3개월)
+4. 리스크 경고
+
+⚠️ 참고용이며 투자 손실 책임은 투자자 본인에게 있음.`,
         user: `[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
       });
       setChatHistory(prev => [...prev, { role: "user", content: q }, { role: "ai", content: text }]);
@@ -1133,16 +1651,16 @@ function Advisor() {
   return (
     <div style={{ padding: "0 4px" }}>
       {!portfolio && (
-        <div style={{ background: "#1a0a0a", border: "1px solid #ef444433", borderRadius: 12, padding: 14, marginBottom: 16, fontSize: 13, color: "#fca5a5" }}>
+        <div style={{ background: "#1a0a0a", border: "1px solid #ef444433", borderRadius: 12, padding: 14, marginBottom: 16, fontSize: 15, color: "#fca5a5" }}>
           ⚠️ 포트폴리오 탭에서 계좌를 등록하면 더 정확한 맞춤 조언을 받을 수 있어요
         </div>
       )}
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 10, color: "#64748b", marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>빠른 질문</div>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>빠른 질문</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
           {quickActions.map((q, i) => (
-            <button key={i} onClick={() => getAdvice(q)} disabled={loading} style={{ background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 12 }}>
+            <button key={i} onClick={() => getAdvice(q)} disabled={loading} style={{ background: "#1e293b", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 14 }}>
               {q}
             </button>
           ))}
@@ -1155,7 +1673,7 @@ function Advisor() {
           onChange={e => setQuestion(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !e.shiftKey && getAdvice(question)}
           placeholder="투자 관련 질문을 입력하세요..."
-          style={{ flex: 1, background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: "11px 14px", color: "#e2e8f0", fontSize: 14, outline: "none" }}
+          style={{ flex: 1, background: "#0f172a", border: "1px solid #334155", borderRadius: 10, padding: "11px 14px", color: "#e2e8f0", fontSize: 16, outline: "none" }}
         />
         <button onClick={() => getAdvice(question)} disabled={loading || !question} style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", cursor: "pointer", fontWeight: 700, opacity: loading || !question ? 0.5 : 1 }}>
           {loading ? <Spinner size={16} /> : "전송"}
@@ -1165,13 +1683,13 @@ function Advisor() {
       {chatHistory.length === 0 && !loading && (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
           <div style={{ fontSize: 44, marginBottom: 12 }}>🤖</div>
-          <div style={{ fontSize: 14 }}>AI 투자 어드바이저에게 질문해보세요</div>
-          <div style={{ fontSize: 12, marginTop: 6 }}>실시간 웹 검색으로 최신 시장 정보를 반영합니다</div>
+          <div style={{ fontSize: 16 }}>AI 투자 어드바이저에게 질문해보세요</div>
+          <div style={{ fontSize: 14, marginTop: 6 }}>실시간 웹 검색으로 최신 시장 정보를 반영합니다</div>
         </div>
       )}
 
       {loading && (
-        <div style={{ textAlign: "center", padding: "20px", color: "#64748b", fontSize: 13 }}>
+        <div style={{ textAlign: "center", padding: "20px", color: "#64748b", fontSize: 15 }}>
           <Spinner size={22} />
           <div style={{ marginTop: 10 }}>시장 정보 검색 중...</div>
         </div>
@@ -1185,10 +1703,10 @@ function Advisor() {
             borderRadius: 12, padding: 16,
             borderLeft: msg.role === "ai" ? "3px solid #7c3aed" : "none",
           }}>
-            <div style={{ fontSize: 10, color: msg.role === "user" ? "#64748b" : "#7c3aed", fontWeight: 700, marginBottom: 7, letterSpacing: 1 }}>
+            <div style={{ fontSize: 12, color: msg.role === "user" ? "#64748b" : "#7c3aed", fontWeight: 700, marginBottom: 7, letterSpacing: 1 }}>
               {msg.role === "user" ? "나의 질문" : "AI 어드바이저"}
             </div>
-            <div style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
+            <div style={{ color: "#cbd5e1", fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
           </div>
         ))}
       </div>
@@ -1220,16 +1738,16 @@ function Settings() {
     <div style={{ padding: "0 4px" }}>
       {/* API 키 설정 */}
       <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>CLAUDE API KEY</div>
-        <div style={{ fontSize: 12, color: "#475569", marginBottom: 16, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 13, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>CLAUDE API KEY</div>
+        <div style={{ fontSize: 14, color: "#475569", marginBottom: 16, lineHeight: 1.6 }}>
           Google AI Studio(aistudio.google.com)에서 발급받은 Gemini API 키를 입력하세요.
           키는 이 기기에만 저장되며 외부로 전송되지 않습니다.
         </div>
 
         {apiKey && !showKey ? (
           <div style={{ background: "#1e293b", borderRadius: 8, padding: "11px 14px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: "#94a3b8", fontSize: 13, fontFamily: "monospace" }}>{maskedKey}</span>
-            <button onClick={() => setShowKey(true)} style={{ background: "none", border: "none", color: "#64748b", fontSize: 12, cursor: "pointer" }}>보기</button>
+            <span style={{ color: "#94a3b8", fontSize: 15, fontFamily: "monospace" }}>{maskedKey}</span>
+            <button onClick={() => setShowKey(true)} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer" }}>보기</button>
           </div>
         ) : (
           <input
@@ -1240,7 +1758,7 @@ function Settings() {
             style={{
               width: "100%", background: "#1e293b", border: "1px solid #334155",
               borderRadius: 8, padding: "11px 14px", color: "#e2e8f0",
-              fontSize: 13, outline: "none", marginBottom: 10, fontFamily: "monospace",
+              fontSize: 15, outline: "none", marginBottom: 10, fontFamily: "monospace",
             }}
           />
         )}
@@ -1249,14 +1767,14 @@ function Settings() {
           <button onClick={handleSave} style={{
             flex: 1, padding: "12px", borderRadius: 10, border: "none", cursor: "pointer",
             background: saved ? "#10b981" : "linear-gradient(135deg,#0ea5e9,#7c3aed)",
-            color: "#fff", fontWeight: 700, fontSize: 14,
+            color: "#fff", fontWeight: 700, fontSize: 16,
           }}>
             {saved ? "✓ 저장됨" : "저장"}
           </button>
           {apiKey && (
             <button onClick={handleClear} style={{
               padding: "12px 16px", borderRadius: 10, border: "1px solid #ef444433",
-              background: "#1e293b", color: "#ef4444", fontWeight: 700, fontSize: 14, cursor: "pointer",
+              background: "#1e293b", color: "#ef4444", fontWeight: 700, fontSize: 16, cursor: "pointer",
             }}>삭제</button>
           )}
         </div>
@@ -1264,7 +1782,7 @@ function Settings() {
 
       {/* API 키 발급 안내 */}
       <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>API 키 발급 방법</div>
+        <div style={{ fontSize: 13, color: "#f59e0b", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>API 키 발급 방법</div>
         {[
           { step: "1", text: "aistudio.google.com 접속" },
           { step: "2", text: "회원가입 또는 로그인" },
@@ -1273,22 +1791,45 @@ function Settings() {
           { step: "5", text: "생성된 키(AIzaSy...)를 위에 입력" },
         ].map(({ step, text }) => (
           <div key={step} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
-            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#f59e0b", fontWeight: 700, flexShrink: 0 }}>{step}</div>
-            <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, paddingTop: 2 }}>{text}</div>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#f59e0b", fontWeight: 700, flexShrink: 0 }}>{step}</div>
+            <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.5, paddingTop: 2 }}>{text}</div>
           </div>
         ))}
-        <div style={{ marginTop: 8, padding: "10px 14px", background: "#1e293b", borderRadius: 8, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+        <div style={{ marginTop: 8, padding: "10px 14px", background: "#1e293b", borderRadius: 8, fontSize: 14, color: "#64748b", lineHeight: 1.6 }}>
           💡 API 사용료는 Google에서 별도 청구됩니다. Gemini 2.5 Flash 기준 입력 $0.30/1M 토큰. 일반적인 사용량이면 월 $0.3~1 수준입니다.
         </div>
       </div>
 
+      {/* 히스토리 주기 설정 */}
+      <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
+        <div style={{ fontSize:13, color:"#10b981", fontWeight:700, letterSpacing:2, marginBottom:4 }}>수익률 기록 주기</div>
+        <div style={{ fontSize:13, color:"#475569", marginBottom:14 }}>가격 새로고침 시 히스토리 저장 주기</div>
+        <div style={{ display:"flex", gap:8 }}>
+          {[{id:"daily",label:"일별"},{id:"weekly",label:"주별"},{id:"monthly",label:"월별"},{id:"yearly",label:"연별"}].map(p => {
+            const cur = localStorage.getItem("history_period")||"daily";
+            return (
+              <button key={p.id} onClick={() => { localStorage.setItem("history_period",p.id); window.location.reload(); }} style={{
+                flex:1, padding:"10px 4px", borderRadius:10,
+                border:`1px solid ${cur===p.id?"#10b981":"#334155"}`,
+                background:cur===p.id?"#10b98122":"transparent",
+                color:cur===p.id?"#10b981":"#64748b",
+                fontSize:13, fontWeight:cur===p.id?700:400, cursor:"pointer",
+              }}>{p.label}</button>
+            );
+          })}
+        </div>
+        <button onClick={() => { if(window.confirm("수익률 히스토리를 초기화할까요?")) { localStorage.removeItem("portfolio_history_v1"); window.location.reload(); } }} style={{ width:"100%", marginTop:12, padding:"10px", borderRadius:10, background:"none", border:"1px solid #334155", color:"#64748b", fontSize:13, cursor:"pointer" }}>
+          히스토리 초기화
+        </button>
+      </div>
+
       {/* 앱 정보 */}
       <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 14, padding: 20 }}>
-        <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>앱 정보</div>
-        <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.8 }}>
+        <div style={{ fontSize: 13, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>앱 정보</div>
+        <div style={{ fontSize: 15, color: "#64748b", lineHeight: 1.8 }}>
           <div>버전: 1.0.0</div>
           <div>InvestIQ - AI 투자 어드바이저</div>
-          <div style={{ marginTop: 8, fontSize: 11, color: "#334155" }}>
+          <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
           </div>
         </div>
@@ -1320,12 +1861,27 @@ export default function App() {
 
       {/* 헤더 */}
       <div style={{ padding: "18px 18px 14px", borderBottom: "1px solid #0f172a", background: "#020617", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg,#0ea5e9,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>📈</div>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.5 }}>InvestIQ</div>
-            <div style={{ fontSize: 10, color: "#475569", letterSpacing: 1 }}>AI INVESTMENT ADVISOR</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: "linear-gradient(135deg,#0ea5e9,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📈</div>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.5 }}>InvestIQ</div>
+              <div style={{ fontSize: 13, color: "#475569", letterSpacing: 1 }}>AI INVESTMENT ADVISOR</div>
+            </div>
           </div>
+          <button
+            onClick={() => {
+              setTab("market");
+              window.dispatchEvent(new CustomEvent("globalRefresh"));
+            }}
+            style={{
+              background: "linear-gradient(135deg,#0ea5e9,#7c3aed)", color: "#fff",
+              border: "none", borderRadius: 10, padding: "8px 14px", cursor: "pointer",
+              fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            🔄 전체 새로고침
+          </button>
         </div>
         <div style={{ display: "flex", gap: 4, background: "#0f172a", borderRadius: 10, padding: 4 }}>
           {tabs.map(t => (
@@ -1333,7 +1889,7 @@ export default function App() {
               flex: 1, padding: "8px 4px", border: "none", borderRadius: 8,
               background: tab === t.id ? "#1e293b" : "transparent",
               color: tab === t.id ? "#e2e8f0" : "#64748b",
-              cursor: "pointer", fontSize: 11, fontWeight: tab === t.id ? 700 : 400, transition: "all 0.15s",
+              cursor: "pointer", fontSize: 13, fontWeight: tab === t.id ? 700 : 400, transition: "all 0.15s",
             }}>
               <div>{t.icon}</div>
               <div style={{ marginTop: 2 }}>{t.label}</div>
