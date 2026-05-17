@@ -281,21 +281,39 @@ const MARKET_TABS = [
 ];
 
 const MARKET_PROMPTS = {
-  summary: (d) => `Today is ${d}. Analyze global stock markets using only news from the last 2-3 days. Respond with ONLY this JSON, no other text: {"index_alerts":[{"name":"index name","value":"current value","change_pct":"change%","status":"normal","comment":"one line"}],"vix":{"value":"number","status":"normal"},"global_flow":"2 sentences on capital flows","black_swan":[{"risk":"risk name","level":"low","comment":"one line"}],"sector_cycle":{"leading":[{"name":"sector","leaders":["stock1"],"etf":["ETF1"]}],"turnaround":[{"name":"sector","leaders":["stock1"],"etf":["ETF1"]}],"declining":[{"name":"sector","comment":"one line"}]},"summary":"2 sentences"}`,
+  summary: (d) => `오늘은 ${d}이다. 최근 2~3일 뉴스와 시장 데이터를 검색하여 분석하라.
+반드시 아래 JSON 형식으로만 응답. {로 시작 }로 끝. JSON 외 텍스트/마크다운/인용 절대 금지. 모든 값 한국어.
+지수는 정확히 이 8개: 코스피/코스닥/S&P500/나스닥100/닛케이225/상해종합/DAX/FTSE100
+{"index_alerts":[{"name":"코스피","value":"현재값","change_pct":"등락%","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"리스크명","level":"medium","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["ETF"]}],"turnaround":[{"name":"섹터","leaders":["종목"],"etf":["ETF"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}`,
 
-  kr: (d) => `Today is ${d}. Analyze Korean stock market (KOSPI, KOSDAQ) using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","strong":[{"name":"sector in Korean","reason":"1 sentence","score":80,"leaders":["stock"],"etf":["ETF"]}],"rebound":[{"name":"sector","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weakening":[{"name":"sector","reason":"1 sentence"}],"events":["event1","event2"],"risks":["risk1"]}`,
+  kr: (d) => `오늘은 ${d}이다. 최근 2~3일 한국 주식시장 뉴스 검색 후 분석.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
+{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  us: (d) => `Today is ${d}. Analyze US stock market (S&P500, NASDAQ) using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","strong":[{"name":"sector in Korean","reason":"1 sentence","score":80,"leaders":["stock"],"etf":["ETF"]}],"rebound":[{"name":"sector","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weakening":[{"name":"sector","reason":"1 sentence"}],"events":["event1","event2"],"risks":["risk1"]}`,
+  us: (d) => `오늘은 ${d}이다. 최근 2~3일 미국 주식시장 뉴스 검색 후 분석.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
+{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  commodities: (d) => `Today is ${d}. Analyze global commodity markets using only news from last 2-3 days. List top 10 by market size. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","items":[{"rank":1,"name":"commodity","price":"current price","change_pct":"change%","trend":"up","reason":"1 sentence","outlook":"1 sentence"}],"hot_picks":[{"name":"commodity","reason":"1 sentence","change_pct":"change%"}],"drivers":["driver1"],"risks":["risk1"]}`,
+  commodities: (d) => `오늘은 ${d}이다. 최근 2~3일 글로벌 원자재 시장 뉴스 검색 후 분석.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어. 시장규모 순 상위 10개.
+{"summary":"2문장","items":[{"rank":1,"name":"원자재명","price":"현재가","change_pct":"등락%","trend":"up","reason":"1문장","outlook":"1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1"],"risks":["리스크1"]}`,
 
-  asia: (d) => `Today is ${d}. Analyze Japan, China, India stock markets using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","markets":[{"country":"Japan/China/India","index_change":"change%","strong":[{"name":"sector in Korean","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weak":[{"name":"sector","reason":"1 sentence"}],"outlook":"1 sentence"}],"events":["event1"]}`,
+  asia: (d) => `오늘은 ${d}이다. 최근 2~3일 일본/중국/인도 주식시장 뉴스 검색 후 분석.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
+{"summary":"2문장","markets":[{"country":"일본","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
 
-  crypto: (d) => `Today is ${d}. Analyze cryptocurrency markets using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","majors":[{"name":"coin","price":"current price","change_24h":"24h change%","trend":"up","comment":"1 sentence in Korean"}],"hot_sectors":[{"name":"sector","reason":"1 sentence in Korean","leaders":["coin1","coin2"]}],"events":["event1"],"risks":["risk1"]}`,
+  crypto: (d) => `오늘은 ${d}이다. 최근 2~3일 가상화폐 시장 뉴스 검색 후 분석.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
+majors 첫 두 개는 반드시 비트코인(BTC)과 이더리움(ETH)으로 시작할 것.
+{"summary":"2문장","majors":[{"name":"비트코인(BTC)","price":"현재가(달러)","change_24h":"24h%","trend":"up","comment":"1문장"},{"name":"이더리움(ETH)","price":"현재가(달러)","change_24h":"24h%","trend":"up","comment":"1문장"}],"hot_sectors":[{"name":"섹터명","reason":"1문장","leaders":["코인1","코인2"]}],"events":["이벤트1"],"risks":["리스크1"]}`,
 
-  europe: (d) => `Today is ${d}. Analyze European stock markets (DAX, FTSE, CAC40) using only news from last 2-3 days. Respond with ONLY this JSON: {"summary":"2 sentences in Korean","strong":[{"name":"sector in Korean","country":"country","reason":"1 sentence","leaders":["stock"],"etf":["ETF"]}],"weak":[{"name":"sector","reason":"1 sentence"}],"events":["event1"],"risks":["risk1"]}`,
+  europe: (d) => `오늘은 ${d}이다. 최근 2~3일 유럽 주식시장 뉴스 검색 후 분석.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
+{"summary":"2문장","strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
 
-  ipo: (d) => `Today is ${d}. Find Korean stock exchange (KRX) IPOs: listed in last 1 month OR expected to list in next 1 month. Respond with ONLY this JSON: {"upcoming":[{"name":"name","type":"주식/ETF","expected_date":"date","issuer":"company","description":"1 sentence in Korean","highlight":"reason in Korean"}],"recent":[{"name":"name","type":"주식/ETF","listed_date":"date","market_cap":"billions KRW","issuer":"company","description":"1 sentence in Korean","highlight":"reason in Korean","size_note":"소규모 참고 or empty"}],"summary":"1 sentence in Korean"}`,
+  ipo: (d) => `오늘은 ${d}이다. 한국 거래소 최근 1개월 신규상장 및 향후 1개월 상장예정 검색.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
+{"upcoming":[{"name":"종목명","type":"주식/ETF","expected_date":"예정일","issuer":"회사명","description":"1문장","highlight":"주목이유"}],"recent":[{"name":"종목명","type":"주식/ETF","listed_date":"상장일","market_cap":"시총억원","issuer":"회사명","description":"1문장","highlight":"주목이유","size_note":"소규모참고또는없음"}],"summary":"1문장"}`,
 };
 
 function SectorRow({ item, showScore }) {
@@ -328,7 +346,7 @@ function MarketInsight({ onRefreshAll }) {
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState({});
 
-  const fetchTab = async (tabId) => {
+  const fetchTab = async (tabId, retryCount = 0) => {
     setLoading(tabId);
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
@@ -337,12 +355,13 @@ function MarketInsight({ onRefreshAll }) {
         maxTokens: 4000,
         system: `You are a global investment analyst. CRITICAL RULES:
 1. Search the web for ONLY the latest 2-3 days of news and market data
-2. Your ENTIRE response must be ONLY the JSON object
-3. Start your response with { and end with }
-4. Do NOT include any text before or after the JSON
-5. Do NOT use markdown code blocks
-6. Do NOT add citations like [1] or [cite:...]
-7. Keep each string value under 50 characters`,
+2. Your ENTIRE response must be ONLY a valid JSON object
+3. Start your response IMMEDIATELY with { and end with }
+4. ABSOLUTELY NO text before or after the JSON
+5. NO markdown, NO code blocks, NO backticks
+6. NO citations like [1] [2] or [cite:...] anywhere
+7. All string values must be in Korean (한국어)
+8. Keep each string value concise`,
         user: MARKET_PROMPTS[tabId](today),
       });
       let parsed;
@@ -354,6 +373,8 @@ function MarketInsight({ onRefreshAll }) {
           .replace(/\[cite[^\]]*\]/g, "")
           .replace(/\[source[^\]]*\]/g, "")
           .replace(/\[\d+\]/g, "")
+          .replace(/\[\d+,\s*\d+[^\]]*\]/g, "")
+          .replace(/\.\s*\[cite/g, ". ")
           .trim();
 
         // 첫 { 부터 마지막 } 까지만 추출 (앞뒤 텍스트 제거)
@@ -377,9 +398,24 @@ function MarketInsight({ onRefreshAll }) {
             }
           }
           // 복구 실패시 raw 표시
-          if (!parsed) parsed = { summary: "분석 결과를 파싱하지 못했습니다. 다시 시도해주세요.", _raw: true };
+          if (!parsed) {
+            // 파싱 실패시 자동 재시도 (최대 2회)
+            if (retryCount < 2) {
+              setLoading(null);
+              setTimeout(() => fetchTab(tabId, retryCount + 1), 1000);
+              return;
+            }
+            parsed = { summary: "분석 결과를 파싱하지 못했습니다. 다시 시도해주세요.", _raw: true };
+          }
         }
-      } catch { parsed = { summary: "분석 중 오류가 발생했습니다. 다시 시도해주세요.", _raw: true }; }
+      } catch {
+        if (retryCount < 2) {
+          setLoading(null);
+          setTimeout(() => fetchTab(tabId, retryCount + 1), 1000);
+          return;
+        }
+        parsed = { summary: "분석 중 오류가 발생했습니다. 다시 시도해주세요.", _raw: true };
+      }
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
     } catch(e) {
@@ -659,6 +695,18 @@ function MarketInsight({ onRefreshAll }) {
 
   const renderCrypto = (d) => (
     <>
+      {d.majors?.slice(0,2).map((c,i) => (
+        <div key={i} style={{ background:i===0?"linear-gradient(135deg,#1a1200,#2d2100)":"linear-gradient(135deg,#0d0d2a,#13134a)", border:`1px solid ${i===0?"#f59e0b55":"#7c3aed55"}`, borderRadius:12, padding:16, marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:800, color:i===0?"#f59e0b":"#a78bfa" }}>{c.name}</div>
+            <div style={{ fontSize:13, color:"#64748b", marginTop:3 }}>{c.comment}</div>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontSize:20, fontWeight:800, color:"#e2e8f0" }}>{c.price}</div>
+            <div style={{ fontSize:15, fontWeight:700, color:c.trend==="up"?"#10b981":"#ef4444" }}>{c.change_24h}</div>
+          </div>
+        </div>
+      ))}
       <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f97316", fontWeight:700, marginBottom:12, letterSpacing:2 }}>CRYPTO SUMMARY</div>
       
@@ -1840,7 +1888,7 @@ function Advisor() {
         ? portfolio.holdings.map(h => `${h.name}(${h.ticker}) ${h.shares}주 평단${h.avg_price}`).join(", ")
         : "포트폴리오 정보 없음";
       const text = await callClaudeWithSearch({
-        maxTokens: 4000,
+        maxTokens: 8000,
         system: `당신은 실전 투자 어드바이저입니다. 웹 검색으로 최신 2~3일 시장 정보를 수집한 뒤 답변하세요.
 
 규칙:
