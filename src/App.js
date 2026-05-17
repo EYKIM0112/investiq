@@ -286,6 +286,13 @@ function MarketInsight({ onRefreshAll }) {
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState({});
 
+  // 전체 새로고침 이벤트 수신
+  useEffect(() => {
+    const handler = () => fetchTab("summary");
+    window.addEventListener("globalRefresh", handler);
+    return () => window.removeEventListener("globalRefresh", handler);
+  }, [fetchTab]);
+
   const fetchTab = async (tabId) => {
     setLoading(tabId);
     setErrors(e => ({ ...e, [tabId]: "" }));
@@ -298,21 +305,37 @@ function MarketInsight({ onRefreshAll }) {
       });
       let parsed;
       try {
-        let clean = text.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
-        const m = clean.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error("No JSON");
-        clean = m[0];
+        // 1. 마크다운, cite 태그, 불필요한 텍스트 제거
+        let clean = text
+          .replace(/```json\s*/gi, "")
+          .replace(/```\s*/g, "")
+          .replace(/\[cite[^\]]*\]/g, "")
+          .replace(/\[source[^\]]*\]/g, "")
+          .trim();
+
+        // 2. JSON 블록 추출 - 첫 { 부터 마지막 } 까지
+        const firstBrace = clean.indexOf("{");
+        const lastBrace = clean.lastIndexOf("}");
+        if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON");
+        clean = clean.slice(firstBrace, lastBrace + 1);
+
+        // 3. 직접 파싱
         try { parsed = JSON.parse(clean); }
         catch {
-          const suffixes = ["}","]}","}]}","}]}}"];
-          for (const s of suffixes) { try { parsed = JSON.parse(clean+s); break; } catch {} }
+          // 4. 잘린 JSON 복구
+          const suffixes = ["}", "]}", "}]}", "}]}}"];
+          for (const s of suffixes) { try { parsed = JSON.parse(clean + s); break; } catch {} }
+          // 5. 마지막 쉼표 이후 제거 후 복구
           if (!parsed) {
             const lc = clean.lastIndexOf(",");
-            if (lc>0) { const t2=clean.slice(0,lc); for (const s of suffixes) { try { parsed=JSON.parse(t2+s); break; } catch {} } }
+            if (lc > 0) {
+              const t2 = clean.slice(0, lc);
+              for (const s of suffixes) { try { parsed = JSON.parse(t2 + s); break; } catch {} }
+            }
           }
-          if (!parsed) parsed = { summary: clean.slice(0,800), _raw:true };
+          if (!parsed) parsed = { summary: clean.slice(0, 800), _raw: true };
         }
-      } catch { parsed = { summary: text.slice(0,800), _raw:true }; }
+      } catch { parsed = { summary: text.slice(0, 800), _raw: true }; }
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
     } catch(e) {
