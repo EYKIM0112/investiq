@@ -343,7 +343,14 @@ function MarketInsight({ onRefreshAll }) {
       const today = new Date().toLocaleDateString("ko-KR");
       const text = await callClaudeWithSearch({
         maxTokens: 4000,
-        system: "You are a global investment analyst. Search ONLY the latest 2-3 days of news and data. Return ONLY valid JSON starting with { and ending with }. No markdown, no explanation.",
+        system: `You are a global investment analyst. CRITICAL RULES:
+1. Search the web for ONLY the latest 2-3 days of news and market data
+2. Your ENTIRE response must be ONLY the JSON object
+3. Start your response with { and end with }
+4. Do NOT include any text before or after the JSON
+5. Do NOT use markdown code blocks
+6. Do NOT add citations like [1] or [cite:...]
+7. Keep each string value under 50 characters`,
         user: MARKET_PROMPTS[tabId](today),
       });
       let parsed;
@@ -386,6 +393,13 @@ function MarketInsight({ onRefreshAll }) {
     }
     setLoading(null);
   };
+
+  // 전체 새로고침 이벤트
+  React.useEffect(() => {
+    const handler = () => { setActiveTab("summary"); fetchTab("summary"); };
+    window.addEventListener("globalRefresh", handler);
+    return () => window.removeEventListener("globalRefresh", handler);
+  }, []);
 
   const tab  = MARKET_TABS.find(t => t.id === activeTab);
   const data = results[activeTab];
@@ -2076,7 +2090,7 @@ function App() {
           <button
             onClick={() => {
               setTab("market");
-              window.dispatchEvent(new CustomEvent("globalRefresh"));
+              setTimeout(() => window.dispatchEvent(new CustomEvent("globalRefresh")), 100);
             }}
             style={{
               background: "linear-gradient(135deg,#0ea5e9,#7c3aed)", color: "#fff",
