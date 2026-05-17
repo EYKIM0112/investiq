@@ -1592,14 +1592,16 @@ function Portfolio() {
               <label htmlFor="add-xls" style={{ padding: "10px 6px", borderRadius: 10, background: "#10b98122", border: "1px solid #10b98144", color: "#10b981", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📊 엑셀/CSV</label>
               <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✏️ 직접입력</button>
             </div>
-            <input id="order-img" type="file" accept="image/*"
-              style={{ position:"absolute", width:1, height:1, opacity:0, overflow:"hidden" }}
-              onChange={e => { const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f); }} />
-            <label htmlFor="order-img" style={{
-              display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-              padding:"11px", borderRadius:10, cursor:"pointer",
-              background:"#1e293b", border:"1px solid #334155", color:"#e2e8f0", fontWeight:700, fontSize:13,
-            }}>📋 주문체결/실현손익 캡처 반영</label>
+            <div>
+              <input id="order-img" type="file" accept="image/*"
+                style={{ position:"absolute", width:1, height:1, opacity:0, overflow:"hidden" }}
+                onChange={e => { const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f); }} />
+              <label htmlFor="order-img" style={{
+                display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                padding:"11px", borderRadius:10, cursor:"pointer",
+                background:"#1e293b", border:"1px solid #334155", color:"#e2e8f0", fontWeight:700, fontSize:13,
+              }}>📋 주문체결/실현손익 캡처 반영</label>
+            </div>
           )}
         </div>
       )}
