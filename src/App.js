@@ -307,7 +307,8 @@ function MarketInsight() {
         try { parsed = JSON.parse(clean); }
         catch {
           // 4단계: 잘린 JSON 복구 시도
-          for (const suffix of ["", "}", "]}", "}]}", ""}", ""}]}", "\"}", "\"]}}"]) {
+          const suffixes = ["}", "]}", "}]}", "}]}}", ""}", ""}]}"];
+          for (const suffix of suffixes) {
             try { parsed = JSON.parse(clean + suffix); break; } catch {}
           }
           // 5단계: 마지막 완전한 필드까지만 잘라서 복구
@@ -315,7 +316,8 @@ function MarketInsight() {
             const lastComma = clean.lastIndexOf(",");
             if (lastComma > 0) {
               const trimmed = clean.slice(0, lastComma);
-              for (const suffix of ["}", "]}", "}]}", "\"}", ""}]}"]) {
+              const suffixes2 = ["}", "]}", "}]}", ""}", ""}]}"];
+              for (const suffix of suffixes2) {
                 try { parsed = JSON.parse(trimmed + suffix); break; } catch {}
               }
             }
