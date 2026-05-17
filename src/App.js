@@ -892,6 +892,20 @@ function SvgPieChart({ data, colors }) {
   );
 }
 
+function PieLegend({data, colors, grand}) {
+  return (
+    <div style={{display:"flex",flexWrap:"wrap",gap:"6px 10px",marginTop:10}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}>
+          <div style={{width:9,height:9,borderRadius:2,background:colors[i%colors.length],flexShrink:0}}/>
+          <span style={{color:"#94a3b8"}}>{d.name}</span>
+          <span style={{color:"#e2e8f0",fontWeight:700}}>{grand>0?((d.value/grand)*100).toFixed(1):0}%</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PortfolioPieCharts({ portfolio }) {
   if (!portfolio) return null;
   const totalValue = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
@@ -911,29 +925,17 @@ function PortfolioPieCharts({ portfolio }) {
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
 
-  const PieLegend=({data,colors})=>(
-    <div style={{display:"flex",flexWrap:"wrap",gap:"6px 10px",marginTop:10}}>
-      {data.map((d,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}>
-          <div style={{width:9,height:9,borderRadius:2,background:colors[i%colors.length],flexShrink:0}}/>
-          <span style={{color:"#94a3b8"}}>{d.name}</span>
-          <span style={{color:"#e2e8f0",fontWeight:700}}>{grand>0?((d.value/grand)*100).toFixed(1):0}%</span>
-        </div>
-      ))}
-    </div>
-  );
-
   return (
     <>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
         <SvgPieChart data={sectorData} colors={PIE_COLORS}/>
-        <PieLegend data={sectorData} colors={PIE_COLORS}/>
+        <PieLegend data={sectorData} colors={PIE_COLORS} grand={grand}/>
       </div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
         <SvgPieChart data={regionData} colors={PIE_COLORS}/>
-        <PieLegend data={regionData} colors={PIE_COLORS}/>
+        <PieLegend data={regionData} colors={PIE_COLORS} grand={grand}/>
       </div>
     </>
   );
@@ -1357,7 +1359,7 @@ function Portfolio() {
   const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
 
   // 업로드 패널 — label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
-  const UploadPanel = ({ addToExisting = false }) => {
+  const renderUploadPanel = (addToExisting = false) => {
     const imgId  = addToExisting ? "file-img-add"  : "file-img-new";
     const xlsId  = addToExisting ? "file-xls-add"  : "file-xls-new";
     return (
@@ -1470,7 +1472,7 @@ function Portfolio() {
             <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>포트폴리오 등록</div>
             <div style={{ fontSize: 14, color: "#64748b" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
           </div>
-          <UploadPanel addToExisting={false} />
+          {renderUploadPanel(false)}
         </div>
       ) : (
         <div>
