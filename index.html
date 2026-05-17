@@ -273,10 +273,10 @@ const MARKET_TABS = [
   { id:"summary",     label:"🌐 종합",    color:"#e2e8f0" },
   { id:"kr",          label:"🇰🇷 한국",   color:"#0ea5e9" },
   { id:"us",          label:"🇺🇸 미국",   color:"#7c3aed" },
-  { id:"commodities", label:"🛢️ 원자재", color:"#f59e0b" },
   { id:"asia",        label:"🌏 아시아",  color:"#10b981" },
-  { id:"crypto",      label:"💰 가상화폐",color:"#f97316" },
   { id:"europe",      label:"🇪🇺 유럽",  color:"#ec4899" },
+  { id:"commodities", label:"🛢️ 원자재", color:"#f59e0b" },
+  { id:"crypto",      label:"💰 가상화폐",color:"#f97316" },
   { id:"ipo",         label:"🆕 신규상장",color:"#06b6d4" },
 ];
 
@@ -1842,18 +1842,17 @@ function Advisor() {
         : "포트폴리오 정보 없음";
       const text = await callClaudeWithSearch({
         maxTokens: 2000,
-        system: `당신은 실전 투자 어드바이저입니다. 최근 2~3일 시장 데이터를 웹 검색으로 수집하고, 사용자 포트폴리오와 결합해 구체적 액션을 제시하세요.
+        system: `당신은 실전 투자 어드바이저입니다. 웹 검색으로 최신 2~3일 시장 정보를 수집한 뒤 답변하세요.
 
-응답 형식:
-1. 포트폴리오 진단 (현재 섹터/지역 쏠림, 리스크 등)
-2. 즉시 액션 (매수/매도/비중조정 구체적 제안)
-   - 매수 추천 시: 주도주 1~2개 + 관련 ETF (시총 3000억↑ 우선, 1000억↓ 추천불가)
-   - 시총 1000억~2999억이면 "(시총 XXX억, 유동성 주의)" 명시
-   - 적합한 ETF 없으면 "추천 가능한 종목 없음" 표시
-3. 중기 전망 (1~3개월)
-4. 리스크 경고
-
-⚠️ 참고용이며 투자 손실 책임은 투자자 본인에게 있음.`,
+규칙:
+- 마크다운(###, **, -) 절대 사용 금지. 일반 텍스트로만 작성
+- 핵심만 간결하게. 불필요한 인사말, 설명 없이 바로 본론
+- 질문에 딱 맞는 답변만. "포트폴리오 진단" 같은 틀 강요 금지
+- 매수/매도 추천 시: 종목명 + 이유 + 관련ETF(시총 3000억↑ 우선) 함께 제시
+- ETF 시총 1000억↓는 추천 불가. 1000~3000억이면 "(소규모 주의)" 명시
+- 수치 기반 근거 제시 (예: "반도체 ETF 자금 유입 3일 연속 증가")
+- 답변 길이: 3~5문장으로 핵심만
+⚠️ 참고용. 투자 손실 책임은 투자자 본인.`,
         user: `[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
       });
       setChatHistory(prev => [...prev, { role: "user", content: q }, { role: "ai", content: text }]);
@@ -1914,7 +1913,7 @@ function Advisor() {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {[...chatHistory].reverse().map((msg, i) => (
+        {chatHistory.map((msg, i) => (
           <div key={i} style={{
             background: msg.role === "user" ? "#1e293b" : "#0f172a",
             border: `1px solid ${msg.role === "user" ? "#334155" : "#1e293b"}`,
