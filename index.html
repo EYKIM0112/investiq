@@ -45,12 +45,12 @@ function getSectorColor(sector) {
   return SECTOR_COLORS["기타"];
 }
 
-// ── API ──────────────────────────────────────────────────────────────────────
+// ---------- API ----------
 function getApiKey() {
   return localStorage.getItem("investiq_api_key") || "";
 }
 
-// ── Gemini API 공통 호출 ──────────────────────────────────────────────────────
+// ---------- Gemini API 공통 호출 ----------
 async function callGemini({ system, user, maxTokens = 2000, useSearch = false }) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
@@ -122,7 +122,7 @@ async function callClaudeWithImage({ system, user, imageBase64, mediaType, maxTo
   return callGeminiWithImage({ system, user, imageBase64, mediaType, maxTokens });
 }
 
-// ── Storage ───────────────────────────────────────────────────────────────────
+// ---------- Storage ----------
 const PRESET_PORTFOLIO = {
   uploadedAt:"2026-05-16T00:00:00.000Z", updatedAt:"2026-05-16T00:00:00.000Z",
   account_type:"혼합", broker:"삼성/미래에셋/한투/메리츠/신한",
@@ -248,7 +248,7 @@ function savePortfolio(p) {
 }
 
 
-// ── UI 공통 ───────────────────────────────────────────────────────────────────
+// ---------- UI 공통 ----------
 function Spinner({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ animation: "spin 1s linear infinite", display: "block" }}>
@@ -268,16 +268,16 @@ function Badge({ children, color }) {
   );
 }
 
-// ── 시장 인사이트 탭 ──────────────────────────────────────────────────────────
+// ---------- 시장 인사이트 탭 ----------
 const MARKET_TABS = [
-  { id:"summary",     label:"🌐 종합",    color:"#e2e8f0" },
-  { id:"kr",          label:"🇰🇷 한국",   color:"#0ea5e9" },
-  { id:"us",          label:"🇺🇸 미국",   color:"#7c3aed" },
-  { id:"asia",        label:"🌏 아시아",  color:"#10b981" },
-  { id:"europe",      label:"🇪🇺 유럽",  color:"#ec4899" },
-  { id:"commodities", label:"🛢️ 원자재", color:"#f59e0b" },
-  { id:"crypto",      label:"💰 가상화폐",color:"#f97316" },
-  { id:"ipo",         label:"🆕 신규상장",color:"#06b6d4" },
+  { id:"summary",     label:"[글로벌] 종합",    color:"#e2e8f0" },
+  { id:"kr",          label:"[KR] 한국",   color:"#0ea5e9" },
+  { id:"us",          label:"[US] 미국",   color:"#7c3aed" },
+  { id:"asia",        label:"[아시아] 아시아",  color:"#10b981" },
+  { id:"europe",      label:"[EU] 유럽",  color:"#ec4899" },
+  { id:"commodities", label:"[원자재] 원자재", color:"#f59e0b" },
+  { id:"crypto",      label:"[코인] 가상화폐",color:"#f97316" },
+  { id:"ipo",         label:"[신규] 신규상장",color:"#06b6d4" },
 ];
 
 const MARKET_PROMPTS = {
@@ -479,7 +479,7 @@ function MarketInsight({ onRefreshAll }) {
       {/* 지수 급등락 경고 */}
       {d.index_alerts?.some(a => a.status !== "normal") && (
         <div style={{ background:"#1a0808", border:"1px solid #ef444466", borderRadius:12, padding:16, marginBottom:14 }}>
-          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>🚨 지수 급등락 경고</div>
+          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>[경고] 지수 급등락 경고</div>
           {d.index_alerts.filter(a=>a.status!=="normal").map((a,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
               <div>
@@ -491,7 +491,7 @@ function MarketInsight({ onRefreshAll }) {
           ))}
           {d.vix && d.vix.status !== "normal" && (
             <div style={{ marginTop:8, padding:"8px 12px", background:"#2a0a0a", borderRadius:8, fontSize:15, color:"#fca5a5" }}>
-              VIX {d.vix.value} — 공포지수 {d.vix.status==="danger"?"위험":"주의"} 구간
+              VIX {d.vix.value} - 공포지수 {d.vix.status==="danger"?"위험":"주의"} 구간
             </div>
           )}
         </div>
@@ -522,14 +522,14 @@ function MarketInsight({ onRefreshAll }) {
 
       {d.global_flow && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-          <div style={{ fontSize:13, color:"#0ea5e9", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🌊 글로벌 자금 흐름</div>
+          <div style={{ fontSize:13, color:"#0ea5e9", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[파도] 글로벌 자금 흐름</div>
           <div style={{ color:"#cbd5e1", lineHeight:1.8, fontSize:16 }}>{d.global_flow}</div>
         </div>
       )}
 
       {d.sector_cycle?.leading?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🔥 주도 섹터</div>
+      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[핫] 주도 섹터</div>
       
           {d.sector_cycle.leading.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
         
@@ -537,7 +537,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.sector_cycle?.turnaround?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>📈 턴어라운드 섹터</div>
+      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[상승] 턴어라운드 섹터</div>
       
           {d.sector_cycle.turnaround.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
         
@@ -545,7 +545,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.sector_cycle?.declining?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>📉 하강 섹터</div>
+      <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[하락] 하강 섹터</div>
       
           {d.sector_cycle.declining.map((s,i) => (
             <div key={i} style={{ marginBottom:10, fontSize:16 }}>
@@ -558,7 +558,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.black_swan?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#7c3aed", fontWeight:700, marginBottom:12, letterSpacing:2 }}>💀 블랙스완 리스크</div>
+      <div style={{ fontSize:13, color:"#7c3aed", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[위험] 블랙스완 리스크</div>
       
           {d.black_swan.map((b,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
@@ -589,7 +589,7 @@ function MarketInsight({ onRefreshAll }) {
     </div>
       {d.strong?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🔥 모멘텀 강한 섹터</div>
+      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[핫] 모멘텀 강한 섹터</div>
       
           {d.strong.map((s,i) => <SectorRow key={i} item={s} showScore />)}
         
@@ -597,7 +597,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.rebound?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>📈 턴어라운드 섹터</div>
+      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[상승] 턴어라운드 섹터</div>
       
           {d.rebound.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
         
@@ -605,7 +605,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.weakening?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>📉 하강 섹터 (주의)</div>
+      <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[하락] 하강 섹터 (주의)</div>
       
           {d.weakening.map((s,i) => (
             <div key={i} style={{ marginBottom:10 }}>
@@ -620,14 +620,14 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 이벤트</div>
       
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {e}</div>)}
         
     </div>
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
-          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>⚠️ 리스크</div>
-          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>• {r}</div>)}
+          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>[!] 리스크</div>
+          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>- {r}</div>)}
         </div>
       )}
     </>
@@ -651,7 +651,7 @@ function MarketInsight({ onRefreshAll }) {
                 <span style={{ fontSize:13, color:"#475569", fontWeight:700, minWidth:22 }}>#{item.rank||i+1}</span>
                 <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
                 <span style={{ fontSize:14, fontWeight:700, color:item.trend==="up"?"#10b981":item.trend==="down"?"#ef4444":"#64748b" }}>
-                  {item.trend==="up"?"▲":item.trend==="down"?"▼":"→"} {item.change_pct}
+                  {item.trend==="up"?"^":item.trend==="down"?"v":">"} {item.change_pct}
                 </span>
               </div>
               <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{item.price}</span>
@@ -664,7 +664,7 @@ function MarketInsight({ onRefreshAll }) {
     </div>
       {d.hot_picks?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#f97316", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🔥 핫픽 원자재</div>
+      <div style={{ fontSize:13, color:"#f97316", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[핫] 핫픽 원자재</div>
       
           {d.hot_picks.map((h,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
@@ -682,7 +682,7 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#0ea5e9", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 동인</div>
       
-          {d.drivers.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
+          {d.drivers.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {e}</div>)}
         
     </div>
       )}
@@ -702,15 +702,15 @@ function MarketInsight({ onRefreshAll }) {
           <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>{mkt.country} {mkt.index_change||""}</div>
           {mkt.strong?.length > 0 && (
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>▲ 강한 섹터</div>
+              <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>^ 강한 섹터</div>
               {mkt.strong.map((s,j) => <SectorRow key={j} item={s} showScore={false} />)}
             </div>
           )}
           {mkt.weak?.length > 0 && (
             <div>
-              <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>▼ 약한 섹터</div>
+              <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>v 약한 섹터</div>
               {mkt.weak.map((s,j) => (
-                <div key={j} style={{ fontSize:16, color:"#64748b", marginBottom:6 }}>• {s.name}: {s.reason}</div>
+                <div key={j} style={{ fontSize:16, color:"#64748b", marginBottom:6 }}>- {s.name}: {s.reason}</div>
               ))}
             </div>
           )}
@@ -761,7 +761,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.hot_sectors?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🔥 핫한 섹터</div>
+      <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[핫] 핫한 섹터</div>
       
           {d.hot_sectors.map((s,i) => <SectorRow key={i} item={s} showScore={false} />)}
         
@@ -769,8 +769,8 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
-          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>⚠️ 리스크</div>
-          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>• {r}</div>)}
+          <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>[!] 리스크</div>
+          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>- {r}</div>)}
         </div>
       )}
     </>
@@ -786,7 +786,7 @@ function MarketInsight({ onRefreshAll }) {
     </div>
       {d.strong?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>▲ 강한 섹터</div>
+      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>^ 강한 섹터</div>
       
           {d.strong.map((s,i) => <SectorRow key={i} item={{...s, reason:`[${s.country}] ${s.reason}`}} showScore={false} />)}
         
@@ -794,9 +794,9 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.weak?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>▼ 약한 섹터</div>
+      <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>v 약한 섹터</div>
       
-          {d.weak.map((s,i) => <div key={i} style={{ fontSize:16, color:"#64748b", marginBottom:8 }}>• {s.name}: {s.reason}</div>)}
+          {d.weak.map((s,i) => <div key={i} style={{ fontSize:16, color:"#64748b", marginBottom:8 }}>- {s.name}: {s.reason}</div>)}
         
     </div>
       )}
@@ -804,7 +804,7 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 이벤트</div>
       
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>• {e}</div>)}
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {e}</div>)}
         
     </div>
       )}
@@ -821,7 +821,7 @@ function MarketInsight({ onRefreshAll }) {
     </div>
       {d.upcoming?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#06b6d4", fontWeight:700, marginBottom:12, letterSpacing:2 }}>⏰ 상장 예정</div>
+      <div style={{ fontSize:13, color:"#06b6d4", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[예정] 상장 예정</div>
       
           {d.upcoming.map((item,i) => (
             <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
@@ -834,7 +834,7 @@ function MarketInsight({ onRefreshAll }) {
               </div>
               <div style={{ fontSize:15, color:"#64748b", marginBottom:4 }}>{item.issuer}</div>
               <div style={{ fontSize:15, color:"#94a3b8" }}>{item.description}</div>
-              {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>★ {item.highlight}</div>}
+              {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>* {item.highlight}</div>}
             </div>
           ))}
         
@@ -842,7 +842,7 @@ function MarketInsight({ onRefreshAll }) {
       )}
       {d.recent?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🆕 최근 상장 (1개월 이내)</div>
+      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>[신규] 최근 상장 (1개월 이내)</div>
       
           {d.recent.map((item,i) => (
             <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
@@ -861,7 +861,7 @@ function MarketInsight({ onRefreshAll }) {
                 </span>
               </div>
               <div style={{ fontSize:15, color:"#94a3b8" }}>{item.description}</div>
-              {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>★ {item.highlight}</div>}
+              {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>* {item.highlight}</div>}
             </div>
           ))}
         
@@ -882,7 +882,7 @@ function MarketInsight({ onRefreshAll }) {
     return null;
   };
 
-  const tabIcons = { summary:"🌐", kr:"🇰🇷", us:"🇺🇸", commodities:"🛢️", asia:"🌏", crypto:"💰", europe:"🇪🇺", ipo:"🆕" };
+  const tabIcons = { summary:"[글로벌]", kr:"[KR]", us:"[US]", commodities:"[원자재]", asia:"[아시아]", crypto:"[코인]", europe:"[EU]", ipo:"[신규]" };
 
   return (
     <div style={{ padding:"0 4px" }}>
@@ -911,7 +911,7 @@ function MarketInsight({ onRefreshAll }) {
           fontWeight:700, fontSize:15, display:"flex", alignItems:"center", gap:6,
           opacity:loading?0.7:1,
         }}>
-          {isLoad ? <Spinner size={13}/> : "↻"} {isLoad ? "분석 중..." : "분석 시작"}
+          {isLoad ? <Spinner size={13}/> : "[새로고침]"} {isLoad ? "분석 중..." : "분석 시작"}
         </button>
       </div>
 
@@ -930,7 +930,7 @@ function MarketInsight({ onRefreshAll }) {
         </div>
       )}
       {err && !isLoad && (
-        <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:16, color:"#fca5a5", fontSize:16 }}>⚠️ {err}</div>
+        <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:16, color:"#fca5a5", fontSize:16 }}>[!] {err}</div>
       )}
       {data && !isLoad && renderData(activeTab, data)}
     </div>
@@ -938,17 +938,17 @@ function MarketInsight({ onRefreshAll }) {
 }
 
 
-// ── 차트 (순수 SVG) ──────────────────────────────────────────────────────────
+// ---------- 차트 (순수 SVG) ----------
 const PIE_COLORS = ["#0ea5e9","#7c3aed","#f59e0b","#10b981","#ef4444","#ec4899","#f97316","#06b6d4","#84cc16","#6b7280","#a78bfa","#34d399","#fb923c","#fbbf24"];
 
 function guessRegion(name) {
   if (!name) return "기타";
   const n = name.toUpperCase();
-  if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("우주테크")||n.includes("배당다우")||n.includes("테크TOP")||n.includes("서학개미")) return "🇺🇸 미국";
-  if (n.includes("차이나")||n.includes("중국")) return "🇨🇳 중국";
-  if (n.includes("인도")||n.includes("빌리언")) return "🇮🇳 인도";
-  if (n.includes("글로벌")||n.includes("TOP4")||n.includes("원자력")||n.includes("K방산")||n.includes("조선")) return "🌍 글로벌";
-  return "🇰🇷 한국";
+  if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("우주테크")||n.includes("배당다우")||n.includes("테크TOP")||n.includes("서학개미")) return "[US] 미국";
+  if (n.includes("차이나")||n.includes("중국")) return "[CN] 중국";
+  if (n.includes("인도")||n.includes("빌리언")) return "[IN] 인도";
+  if (n.includes("글로벌")||n.includes("TOP4")||n.includes("원자력")||n.includes("K방산")||n.includes("조선")) return "[글로벌] 글로벌";
+  return "[KR] 한국";
 }
 
 function getSectorLabel(sector, name) {
@@ -1041,7 +1041,7 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
     const rk=guessRegion(h.name);
     regionMap[rk]=(regionMap[rk]||0)+sv;
   });
-  if(cash>0){sectorMap["💵 현금"]=cash; regionMap["💵 현금"]=cash;}
+  if(cash>0){sectorMap["[현금] 현금"]=cash; regionMap["[현금] 현금"]=cash;}
 
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
@@ -1119,7 +1119,7 @@ function ReturnHistoryChart({ portfolio }) {
 
       {history.length===0?(
         <div style={{textAlign:"center",padding:"24px 0",color:"#475569",fontSize:13}}>
-          ↻ 가격 새로고침 후 히스토리가 쌓입니다
+          [새로고침] 가격 새로고침 후 히스토리가 쌓입니다
         </div>
       ):(
         <div>
@@ -1156,7 +1156,7 @@ function ReturnHistoryChart({ portfolio }) {
   );
 }
 
-// ── 직접입력 모달 ─────────────────────────────────────────────────────────────
+// ---------- 직접입력 모달 ----------
 const ACCOUNTS = ["국내계좌", "해외계좌", "ISA", "연금저축", "IRP", "기타"];
 const SECTORS  = ["기술","반도체","AI","에너지","금융","헬스케어","소비재","방산","부동산","기타"];
 
@@ -1208,12 +1208,12 @@ function EditHoldingModal({ holding, onClose, onSave }) {
             <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{holding.name}</div>
             <div style={{ fontSize:13, color:"#475569", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
           </div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer" }}>✕</button>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer" }}>x</button>
         </div>
         <div style={{ display:"flex", gap:6, marginBottom:20, background:"#1e293b", borderRadius:10, padding:4 }}>
-          {tabBtn("edit","✏️ 수정")}
-          {tabBtn("buy","📈 추가매수")}
-          {tabBtn("sell","📉 일부매도")}
+          {tabBtn("edit","[편집] 수정")}
+          {tabBtn("buy","[상승] 추가매수")}
+          {tabBtn("sell","[하락] 일부매도")}
         </div>
         {mode==="edit" && (
           <>
@@ -1256,7 +1256,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
             {sellShares && (
               <div style={{ fontSize:13, marginBottom:12, color:parseFloat(sellShares)>=(holding.shares||0)?"#ef4444":"#10b981" }}>
-                {parseFloat(sellShares)>=(holding.shares||0)?"⚠️ 전량매도 — 종목 삭제":`잔여 ${(holding.shares||0)-(parseFloat(sellShares)||0)}주`}
+                {parseFloat(sellShares)>=(holding.shares||0)?"[!] 전량매도 - 종목 삭제":`잔여 ${(holding.shares||0)-(parseFloat(sellShares)||0)}주`}
               </div>
             )}
           </>
@@ -1316,7 +1316,7 @@ function ManualInputModal({ onClose, onAdd }) {
       <div style={{ width: "100%", maxWidth: 480, margin: "0 auto", background: "#0f172a", borderRadius: "20px 20px 0 0", padding: "24px 20px 48px", maxHeight: "88vh", overflowY: "auto", border: "1px solid #1e293b" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0" }}>종목 직접 입력</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>x</button>
         </div>
 
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>계좌 선택</div>
@@ -1374,7 +1374,7 @@ function ManualInputModal({ onClose, onAdd }) {
   );
 }
 
-// ── 포트폴리오 탭 ─────────────────────────────────────────────────────────────
+// ---------- 포트폴리오 탭 ----------
 function Portfolio() {
   const [portfolio, setPortfolio] = useState(loadPortfolio);
   const [uploading, setUploading]   = useState(false);
@@ -1385,7 +1385,7 @@ function Portfolio() {
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [editTarget, setEditTarget] = useState(null); // {holding, index}
 
-  // 이미지 → Claude Vision
+  // 이미지 > Claude Vision
   const analyzeImage = async (file) => {
     setUploadMsg("AI가 계좌 이미지 분석 중...");
     const base64 = await new Promise((res, rej) => {
@@ -1431,7 +1431,7 @@ function Portfolio() {
         const idx = holdings.findIndex(h => h.ticker===trade.ticker || h.name===trade.name);
         if (trade.type === "buy") {
           if (idx >= 0) {
-            // 기존 종목 추가매수 → 평단 재계산
+            // 기존 종목 추가매수 > 평단 재계산
             const h = holdings[idx];
             const newShares = (h.shares||0) + trade.shares;
             const newAvg = newShares>0 ? Math.round(((h.shares||0)*(h.avg_price||0)+trade.shares*trade.price)/newShares) : trade.price;
@@ -1455,7 +1455,7 @@ function Portfolio() {
     setUploading(false); setUploadMsg("");
   };
 
-  // 엑셀/CSV → Claude
+  // 엑셀/CSV > Claude
   const analyzeSpreadsheet = async (file) => {
     setUploadMsg("스프레드시트 파싱 중...");
     let textContent = "";
@@ -1575,7 +1575,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
         try {
           // 제어문자 제거 + JSON 추출
           const clean = text
-            .replace(/[ -]/g, " ")
+            .split("").filter(function(c){return c.charCodeAt(0)>31&&c.charCodeAt(0)!==127;}).join("")
             .replace(/```json\s*/gi, "")
             .replace(/```\s*/g, "")
             .replace(/\[cite[^\]]*\]/g, "")
@@ -1606,7 +1606,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
       };
       savePortfolio(updated); setPortfolio(updated);
       addHistoryPoint(updated);
-      alert(`✅ ${allPrices.length}개 종목 가격 업데이트 완료`);
+      alert(`[OK] ${allPrices.length}개 종목 가격 업데이트 완료`);
     } catch (e) { alert("가격 업데이트 실패: " + e.message); }
     setUpdating(false);
   };
@@ -1644,13 +1644,13 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
   const totalValue = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.current_price||h.avg_price||0), 0);
   const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
 
-  // 업로드 패널 — label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
+  // 업로드 패널 - label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
   const renderUploadPanel = (addToExisting = false) => {
     const imgId  = addToExisting ? "file-img-add"  : "file-img-new";
     const xlsId  = addToExisting ? "file-xls-add"  : "file-xls-new";
     return (
       <div>
-        {/* 숨김 input — label과 id로 연결, 항상 DOM에 존재 */}
+        {/* 숨김 input - label과 id로 연결, 항상 DOM에 존재 */}
         <input
           id={imgId} type="file" accept="image/*"
           style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
@@ -1669,7 +1669,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
           </div>
         ) : (
           <div>
-            {/* 드래그앤드롭 — PC용 */}
+            {/* 드래그앤드롭 - PC용 */}
             <div
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
@@ -1680,12 +1680,12 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 background: dragOver ? "#0ea5e911" : "#0a0f1a", marginBottom: 12, transition: "all 0.2s",
               }}
             >
-              <div style={{ fontSize: 26, marginBottom: 5 }}>📂</div>
+              <div style={{ fontSize: 26, marginBottom: 5 }}>[파일]</div>
               <div style={{ fontSize: 14, color: "#475569" }}>PC: 파일을 여기로 드래그</div>
               <div style={{ fontSize: 13, color: "#334155", marginTop: 2 }}>이미지 · xlsx · csv</div>
             </div>
 
-            {/* label 버튼 — htmlFor로 input 직접 연결 (모바일에서 가장 확실) */}
+            {/* label 버튼 - htmlFor로 input 직접 연결 (모바일에서 가장 확실) */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <label
                 htmlFor={imgId}
@@ -1696,7 +1696,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                   alignItems: "center", gap: 6, userSelect: "none",
                 }}
               >
-                <span style={{ fontSize: 24 }}>📱</span>
+                <span style={{ fontSize: 24 }}>[모바일]</span>
                 <span>갤러리 / 스크린샷</span>
               </label>
               <label
@@ -1708,7 +1708,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                   alignItems: "center", gap: 6, userSelect: "none",
                 }}
               >
-                <span style={{ fontSize: 24 }}>📊</span>
+                <span style={{ fontSize: 24 }}>[차트]</span>
                 <span>엑셀 / CSV</span>
               </label>
             </div>
@@ -1721,7 +1721,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}
             >
-              ✏️ 직접 입력
+              [편집] 직접 입력
             </button>
             {addToExisting && (
               <button onClick={() => setShowAddPanel(false)} style={{ width: "100%", marginTop: 8, padding: "10px", background: "none", border: "none", color: "#64748b", fontSize: 15, cursor: "pointer" }}>
@@ -1750,11 +1750,11 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
         <ManualInputModal onClose={() => setShowManual(false)} onAdd={h => { addManualHolding(h); setShowManual(false); }} />
       )}
 
-      {/* 포폴 없음 → 초기 등록 */}
+      {/* 포폴 없음 > 초기 등록 */}
       {!portfolio ? (
         <div>
           <div style={{ textAlign: "center", marginBottom: 20 }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>💼</div>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>[포폴]</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>포트폴리오 등록</div>
             <div style={{ fontSize: 14, color: "#64748b" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
           </div>
@@ -1791,7 +1791,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={updatePrices} disabled={updating} style={{ background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                  {updating ? <Spinner size={11} /> : "↻"} 가격
+                  {updating ? <Spinner size={11} /> : "[새로고침]"} 가격
                 </button>
                 <button onClick={() => {
                   const accs = [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))];
@@ -1802,7 +1802,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                     const updated = { ...portfolio, holdings: portfolio.holdings.filter(h=>h.account!==target), updatedAt:new Date().toISOString() };
                     savePortfolio(updated); setPortfolio(updated);
                   }
-                }} style={{ background: "#1e293b", color: "#ef4444", border: "1px solid #ef444433", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13 }}>🗑️ 삭제</button>
+                }} style={{ background: "#1e293b", color: "#ef4444", border: "1px solid #ef444433", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 13 }}>[삭제] 삭제</button>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -1819,7 +1819,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
             </div>
           </div>
 
-          {/* 종목 추가 버튼 — 상단 배치 */}
+          {/* 종목 추가 버튼 - 상단 배치 */}
           <div style={{marginBottom:14}}>
             <input id="add-img" type="file" accept="image/*"
               style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
@@ -1831,12 +1831,12 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
               onChange={e=>{const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f);}}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-              <label htmlFor="add-img" style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}>📱 스크린샷</label>
-              <label htmlFor="add-xls" style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}>📊 엑셀/CSV</label>
-              <button onClick={()=>setShowManual(true)} style={{padding:"10px 6px",borderRadius:10,background:"#7c3aed22",border:"1px solid #7c3aed44",color:"#a78bfa",fontWeight:700,fontSize:13,cursor:"pointer"}}>✏️ 직접입력</button>
+              <label htmlFor="add-img" style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}>[모바일] 스크린샷</label>
+              <label htmlFor="add-xls" style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}>[차트] 엑셀/CSV</label>
+              <button onClick={()=>setShowManual(true)} style={{padding:"10px 6px",borderRadius:10,background:"#7c3aed22",border:"1px solid #7c3aed44",color:"#a78bfa",fontWeight:700,fontSize:13,cursor:"pointer"}}>[편집] 직접입력</button>
             </div>
             <label htmlFor="order-img-top" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13,userSelect:"none"}}>
-              📋 주문체결/실현손익 캡처 반영
+              [주문] 주문체결/실현손익 캡처 반영
             </label>
           </div>
 
@@ -1860,7 +1860,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 savePortfolio(p); setPortfolio(p);
               }
             }} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, color:"#e2e8f0", padding:"7px 14px", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-              ✏️ 수정
+              [편집] 수정
             </button>
           </div>
 
@@ -1902,7 +1902,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 background:sortBy===s.id?"#0ea5e922":"transparent",
                 color:sortBy===s.id?"#0ea5e9":"#64748b", fontWeight:sortBy===s.id?700:400,
               }}>
-                {s.label}{sortBy===s.id?(sortDir==="desc"?" ↓":" ↑"):""}
+                {s.label}{sortBy===s.id?(sortDir==="desc"?" v":" ^"):""}
               </button>
             ))}
           </div>
@@ -1938,15 +1938,15 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                         <div style={{ fontSize: 13, color: "#334155" }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 8px", marginRight: 4 }}>✏️</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>✕</button>
+                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 8px", marginRight: 4 }}>[편집]</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>x</button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* 종목 추가 — hidden input + label 방식 */}
+          {/* 종목 추가 - hidden input + label 방식 */}
           <input id="add-img" type="file" accept="image/*"
             style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
             onChange={e => onFileChange(e, true)} />
@@ -1962,9 +1962,9 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
           ) : (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom:8 }}>
-                <label htmlFor="add-img" style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📱 스크린샷</label>
-                <label htmlFor="add-xls" style={{ padding: "10px 6px", borderRadius: 10, background: "#10b98122", border: "1px solid #10b98144", color: "#10b981", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>📊 엑셀/CSV</label>
-                <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✏️ 직접입력</button>
+                <label htmlFor="add-img" style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>[모바일] 스크린샷</label>
+                <label htmlFor="add-xls" style={{ padding: "10px 6px", borderRadius: 10, background: "#10b98122", border: "1px solid #10b98144", color: "#10b981", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}>[차트] 엑셀/CSV</label>
+                <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>[편집] 직접입력</button>
               </div>
               <input id="order-img" type="file" accept="image/*"
                 style={{ position:"absolute", width:1, height:1, opacity:0, overflow:"hidden" }}
@@ -1973,7 +1973,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 display:"flex", alignItems:"center", justifyContent:"center", gap:8,
                 padding:"11px", borderRadius:10, cursor:"pointer",
                 background:"#1e293b", border:"1px solid #334155", color:"#e2e8f0", fontWeight:700, fontSize:13,
-              }}>📋 주문체결/실현손익 캡처 반영</label>
+              }}>[주문] 주문체결/실현손익 캡처 반영</label>
             </div>
           )}
         </div>
@@ -1982,7 +1982,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
   );
 }
 
-// ── AI 조언 탭 ────────────────────────────────────────────────────────────────
+// ---------- AI 조언 탭 ----------
 function Advisor() {
   const [loading, setLoading]       = useState(false);
   const [question, setQuestion]     = useState("");
@@ -2004,11 +2004,11 @@ function Advisor() {
 - 마크다운(###, **, -) 절대 사용 금지. 일반 텍스트로만 작성
 - 핵심만 간결하게. 불필요한 인사말 없이 바로 본론
 - 질문에 딱 맞는 답변만
-- 종목 추천 시: [보유중] 또는 [신규] 표시 후 종목명 + 이유 + ETF(시총 3000억↑ 우선)
-- ETF 시총 1000억↓ 추천 불가. 1000~3000억이면 "(소규모 주의)" 명시
+- 종목 추천 시: [보유중] 또는 [신규] 표시 후 종목명 + 이유 + ETF(시총 3000억^ 우선)
+- ETF 시총 1000억v 추천 불가. 1000~3000억이면 "(소규모 주의)" 명시
 - 수치 기반 근거 제시
 - 답변 길이: 핵심만 간결하게
-⚠️ 참고용. 투자 손실 책임은 투자자 본인.`,
+[!] 참고용. 투자 손실 책임은 투자자 본인.`,
         user: `[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
       });
       setChatHistory(prev => [...prev, { role: "user", content: q }, { role: "ai", content: text }]);
@@ -2025,7 +2025,7 @@ function Advisor() {
     <div style={{ padding: "0 4px" }}>
       {!portfolio && (
         <div style={{ background: "#1a0a0a", border: "1px solid #ef444433", borderRadius: 12, padding: 14, marginBottom: 16, fontSize: 15, color: "#fca5a5" }}>
-          ⚠️ 포트폴리오 탭에서 계좌를 등록하면 더 정확한 맞춤 조언을 받을 수 있어요
+          [!] 포트폴리오 탭에서 계좌를 등록하면 더 정확한 맞춤 조언을 받을 수 있어요
         </div>
       )}
 
@@ -2055,7 +2055,7 @@ function Advisor() {
 
       {chatHistory.length === 0 && !loading && (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
-          <div style={{ fontSize: 44, marginBottom: 12 }}>🤖</div>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>[AI]</div>
           <div style={{ fontSize: 16 }}>AI 투자 어드바이저에게 질문해보세요</div>
           <div style={{ fontSize: 14, marginTop: 6 }}>실시간 웹 검색으로 최신 시장 정보를 반영합니다</div>
         </div>
@@ -2088,7 +2088,7 @@ function Advisor() {
 }
 
 
-// ── 설정 탭 ───────────────────────────────────────────────────────────────────
+// ---------- 설정 탭 ----------
 function Settings() {
   const [apiKey, setApiKey] = useState(localStorage.getItem("investiq_api_key") || "");
   const [saved, setSaved] = useState(false);
@@ -2105,7 +2105,7 @@ function Settings() {
     setApiKey("");
   };
 
-  const maskedKey = apiKey ? apiKey.slice(0, 8) + "•".repeat(Math.max(0, apiKey.length - 12)) + apiKey.slice(-4) : "";
+  const maskedKey = apiKey ? apiKey.slice(0, 8) + "-".repeat(Math.max(0, apiKey.length - 12)) + apiKey.slice(-4) : "";
 
   return (
     <div style={{ padding: "0 4px" }}>
@@ -2142,7 +2142,7 @@ function Settings() {
             background: saved ? "#10b981" : "linear-gradient(135deg,#0ea5e9,#7c3aed)",
             color: "#fff", fontWeight: 700, fontSize: 16,
           }}>
-            {saved ? "✓ 저장됨" : "저장"}
+            {saved ? "v 저장됨" : "저장"}
           </button>
           {apiKey && (
             <button onClick={handleClear} style={{
@@ -2169,7 +2169,7 @@ function Settings() {
           </div>
         ))}
         <div style={{ marginTop: 8, padding: "10px 14px", background: "#1e293b", borderRadius: 8, fontSize: 14, color: "#64748b", lineHeight: 1.6 }}>
-          💡 API 사용료는 Google에서 별도 청구됩니다. Gemini 2.5 Flash 기준 입력 $0.30/1M 토큰. 일반적인 사용량이면 월 $0.3~1 수준입니다.
+          [팁] API 사용료는 Google에서 별도 청구됩니다. Gemini 2.5 Flash 기준 입력 $0.30/1M 토큰. 일반적인 사용량이면 월 $0.3~1 수준입니다.
         </div>
       </div>
 
@@ -2203,7 +2203,7 @@ function Settings() {
           <div>버전: 1.0.0</div>
           <div>InvestIQ - AI 투자 어드바이저</div>
           <div style={{ marginTop: 8, fontSize: 13, color: "#334155" }}>
-            ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
+            [!] 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
           </div>
         </div>
       </div>
@@ -2211,14 +2211,14 @@ function Settings() {
   );
 }
 
-// ── 메인 앱 ───────────────────────────────────────────────────────────────────
+// ---------- 메인 앱 ----------
 function App() {
   const [tab, setTab] = useState("market");
   const tabs = [
-    { id: "market",    label: "시장 인사이트", icon: "📊" },
-    { id: "portfolio", label: "포트폴리오",    icon: "💼" },
-    { id: "advisor",   label: "AI 조언",       icon: "🤖" },
-    { id: "settings",  label: "설정",          icon: "⚙️" },
+    { id: "market",    label: "시장 인사이트", icon: "[차트]" },
+    { id: "portfolio", label: "포트폴리오",    icon: "[포폴]" },
+    { id: "advisor",   label: "AI 조언",       icon: "[AI]" },
+    { id: "settings",  label: "설정",          icon: "[설정]" },
   ];
 
   return (
@@ -2236,7 +2236,7 @@ function App() {
       <div style={{ padding: "18px 18px 14px", borderBottom: "1px solid #0f172a", background: "#020617", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: "linear-gradient(135deg,#0ea5e9,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📈</div>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: "linear-gradient(135deg,#0ea5e9,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>[상승]</div>
             <div>
               <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.5 }}>InvestIQ</div>
               <div style={{ fontSize: 13, color: "#475569", letterSpacing: 1 }}>AI INVESTMENT ADVISOR</div>
@@ -2253,7 +2253,7 @@ function App() {
               fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6,
             }}
           >
-            🔄 전체 새로고침
+            [갱신] 전체 새로고침
           </button>
         </div>
         <div style={{ display: "flex", gap: 4, background: "#0f172a", borderRadius: 10, padding: 4 }}>
