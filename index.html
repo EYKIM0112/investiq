@@ -29,7 +29,8 @@ const { useState, useCallback, useEffect, useRef } = React;
 
 
 const STORAGE_KEY = "portfolio_v1";
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL      = "gemini-2.5-flash";       // 이미지 분석용 (비전)
+const GEMINI_MODEL_FAST = "gemini-2.5-flash-lite";  // 텍스트/검색용 (빠름)
 
 const SECTOR_COLORS = {
   "기술": "#00d4ff", "반도체": "#7c3aed", "AI": "#f59e0b",
@@ -50,34 +51,98 @@ function getApiKey() {
   return localStorage.getItem("investiq_api_key") || "";
 }
 
-// ---------- Gemini API 공통 호출 ----------
-async function callGemini({ system, user, maxTokens = 2000, useSearch = false }) {
+// ---------- 안전한 JSON 파싱 ----------
+function safeParseJSON(text) {
+  // 마크다운 코드블록 제거
+  let cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  // JSON 블록 추출 시도
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) cleaned = match[0];
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // 끊긴 JSON 복구 시도: 열린 괄호/따옴표 닫기
+    let fixed = cleaned;
+    // 문자열이 끊긴 경우 따옴표 닫기
+    const quoteCount = (fixed.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) fixed += '"';
+    // 배열/오브젝트 닫기
+    const opens = (fixed.match(/\[|\{/g) || []).length;
+    const closes = (fixed.match(/\]|\}/g) || []).length;
+    for (let i = 0; i < opens - closes; i++) fixed += i % 2 === 0 ? "]" : "}";
+    try {
+      return JSON.parse(fixed);
+    } catch (e2) {
+      throw new Error("JSON 파싱 실패. AI 응답이 올바르지 않습니다.");
+    }
+  }
+}
+
+// ---------- Gemini API 스트리밍 호출 ----------
+async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, onChunk }) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
 
+  const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
-  if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]
-${system}
-
-[사용자 질문]
-${user}` }] });
+  if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
   else contents.push({ role: "user", parts: [{ text: user }] });
 
-  const body = {
-    contents,
-    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
-  };
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 } };
+  if (useSearch) body.tools = [{ googleSearch: {} }];
 
-  if (useSearch) {
-    body.tools = [{ googleSearch: {} }];
-  }
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+  let buf = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const json = line.slice(6).trim();
+      if (json === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(json);
+        if (parsed.error) throw new Error(parsed.error.message);
+        const chunk = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+        if (chunk) { fullText += chunk; onChunk && onChunk(fullText); }
+      } catch {}
+    }
+  }
+  return fullText;
+}
+
+// ---------- Gemini API 일반 호출 (이미지 등 스트리밍 불필요한 경우) ----------
+async function callGemini({ system, user, maxTokens = 2000, useSearch = false }) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
+
+  const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
+  const contents = [];
+  if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
+  else contents.push({ role: "user", parts: [{ text: user }] });
+
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 } };
+  if (useSearch) body.tools = [{ googleSearch: {} }];
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
@@ -88,10 +153,7 @@ async function callGeminiWithImage({ system, user, imageBase64, mediaType, maxTo
   if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
 
   const parts = [];
-  if (system) parts.push({ text: `[시스템 지시]
-${system}
-
-` });
+  if (system) parts.push({ text: `[시스템 지시]\n${system}\n\n` });
   parts.push({ inlineData: { mimeType: mediaType, data: imageBase64 } });
   parts.push({ text: user });
 
@@ -101,17 +163,13 @@ ${system}
   };
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
 }
 
-// 기존 함수명 호환성 유지 (내부에서 Gemini 호출)
+// 기존 함수명 호환성 유지
 async function callClaude({ system, user, maxTokens = 1000 }) {
   return callGemini({ system, user, maxTokens, useSearch: false });
 }
@@ -370,8 +428,10 @@ function MarketInsight({ onRefreshAll }) {
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
       const today = new Date().toLocaleDateString("ko-KR");
-      const text = await callClaudeWithSearch({
+      // 스트리밍으로 응답 받기 (로딩 중 진행 표시)
+      const text = await callGeminiStream({
         maxTokens: 4000,
+        useSearch: true,
         system: `You are a global investment analyst. CRITICAL RULES:
 1. Search the web for ONLY the latest 2-3 days of news and market data
 2. Your ENTIRE response must be ONLY a valid JSON object
@@ -1402,7 +1462,7 @@ function Portfolio() {
       imageBase64: base64, mediaType: file.type,
       user: "이 계좌 스크린샷에서 모든 보유 종목(코드, 종목명, 수량, 평균단가)을 추출해줘. JSON만.",
     });
-    return JSON.parse(text.replace(/```json|```/g, "").trim());
+    return safeParseJSON(text);
   };
 
   // 주문체결/실현손익 캡처 분석
@@ -1418,7 +1478,7 @@ function Portfolio() {
       imageBase64:base64, mediaType:file.type,
       user:"이 주문체결/실현손익 화면에서 모든 거래 내역(종목명, 수량, 단가, 매수/매도)을 추출해줘. JSON만.",
     });
-    const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+    const parsed = safeParseJSON(text);
     return parsed.trades || [];
   };
 
@@ -1483,7 +1543,7 @@ function Portfolio() {
 {"holdings":[{"ticker":"코드","name":"종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":"섹터"}],"account_type":"","broker":""}`,
       user: `종목 정보 추출:\n\n${textContent.slice(0, 6000)}`,
     });
-    return JSON.parse(text.replace(/```json|```/g, "").trim());
+    return safeParseJSON(text);
   };
 
   // 공통 파일 처리
@@ -2002,12 +2062,16 @@ function Advisor() {
   const getAdvice = async (q) => {
     if (!q) return;
     setLoading(true);
+    const portfolioStr = portfolio
+      ? portfolio.holdings.map(h => `${h.name}(${h.ticker}) ${h.shares}주 평단${h.avg_price}`).join(", ")
+      : "포트폴리오 정보 없음";
+    // 질문 먼저 추가, AI 응답은 스트리밍으로 실시간 업데이트
+    setChatHistory(prev => [...prev, { role: "user", content: q }, { role: "ai", content: "" }]);
+    setQuestion("");
     try {
-      const portfolioStr = portfolio
-        ? portfolio.holdings.map(h => `${h.name}(${h.ticker}) ${h.shares}주 평단${h.avg_price}`).join(", ")
-        : "포트폴리오 정보 없음";
-      const text = await callClaudeWithSearch({
+      await callGeminiStream({
         maxTokens: 4000,
+        useSearch: true,
         system: `당신은 실전 투자 어드바이저입니다. 웹 검색으로 최신 2~3일 시장 정보를 수집한 뒤 답변하세요.
 
 규칙:
@@ -2020,11 +2084,20 @@ function Advisor() {
 - 답변 길이: 핵심만 간결하게
 [!] 참고용. 투자 손실 책임은 투자자 본인.`,
         user: `[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
+        onChunk: (text) => {
+          setChatHistory(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "ai", content: text };
+            return updated;
+          });
+        },
       });
-      setChatHistory(prev => [...prev, { role: "user", content: q }, { role: "ai", content: text }]);
-      setQuestion("");
     } catch (e) {
-      setChatHistory(prev => [...prev, { role: "ai", content: "오류: " + e.message }]);
+      setChatHistory(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: "ai", content: "오류: " + e.message };
+        return updated;
+      });
     }
     setLoading(false);
   };
