@@ -29,7 +29,7 @@ const { useState, useCallback, useEffect, useRef } = React;
 
 
 const STORAGE_KEY = "portfolio_v1";
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash-preview-05-20";
 
 const SECTOR_COLORS = {
   "기술": "#00d4ff", "반도체": "#7c3aed", "AI": "#f59e0b",
@@ -1511,9 +1511,11 @@ function Portfolio() {
       savePortfolio(updated);
       setPortfolio(updated);
       setShowAddPanel(false);
-    } catch (e) { alert("분석 실패: " + e.message); }
+      const count = newHoldings.length;
+      setUploadMsg(`✅ ${count}개 종목 추가 완료!`);
+      setTimeout(() => setUploadMsg(""), 3000);
+    } catch (e) { alert("분석 실패: " + e.message); setUploadMsg(""); }
     setUploading(false);
-    setUploadMsg("");
   };
 
   // 파일 change 핸들러
@@ -1966,10 +1968,10 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
             style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
             onChange={e => onFileChange(e, true)} />
 
-          {uploading ? (
-            <div style={{ textAlign: "center", padding: "28px", background: "#0a0f1a", borderRadius: 12, border: "1px solid #1e293b" }}>
-              <Spinner size={28} />
-              <div style={{ marginTop: 12, color: "#0ea5e9", fontWeight: 700, fontSize: 15 }}>{uploadMsg}</div>
+          {uploading || uploadMsg ? (
+            <div style={{ textAlign: "center", padding: "28px", background: "#0a0f1a", borderRadius: 12, border: `1px solid ${uploading ? "#1e293b" : "#10b98144"}` }}>
+              {uploading ? <Spinner size={28} /> : <div style={{ fontSize: 28 }}>✅</div>}
+              <div style={{ marginTop: 12, color: uploading ? "#0ea5e9" : "#10b981", fontWeight: 700, fontSize: 15 }}>{uploadMsg}</div>
             </div>
           ) : (
             <div>
@@ -2077,19 +2079,28 @@ function Advisor() {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {[...chatHistory].reverse().map((msg, i) => (
-          <div key={i} style={{
-            background: msg.role === "user" ? "#1e293b" : "#0f172a",
-            border: `1px solid ${msg.role === "user" ? "#334155" : "#1e293b"}`,
-            borderRadius: 12, padding: 16,
-            borderLeft: msg.role === "ai" ? "3px solid #7c3aed" : "none",
-          }}>
-            <div style={{ fontSize: 12, color: msg.role === "user" ? "#64748b" : "#7c3aed", fontWeight: 700, marginBottom: 7, letterSpacing: 1 }}>
-              {msg.role === "user" ? "나의 질문" : "AI 어드바이저"}
-            </div>
-            <div style={{ color: "#cbd5e1", fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
-          </div>
-        ))}
+        {(() => {
+          // 쌍 단위로 묶어서 역순 (최신 대화가 위에)
+          const pairs = [];
+          for (let i = 0; i < chatHistory.length; i += 2) {
+            pairs.push(chatHistory.slice(i, i + 2));
+          }
+          return pairs.reverse().map((pair, pi) =>
+            pair.map((msg, mi) => (
+              <div key={`${pi}-${mi}`} style={{
+                background: msg.role === "user" ? "#1e293b" : "#0f172a",
+                border: `1px solid ${msg.role === "user" ? "#334155" : "#1e293b"}`,
+                borderRadius: 12, padding: 16,
+                borderLeft: msg.role === "ai" ? "3px solid #7c3aed" : "none",
+              }}>
+                <div style={{ fontSize: 12, color: msg.role === "user" ? "#64748b" : "#7c3aed", fontWeight: 700, marginBottom: 7, letterSpacing: 1 }}>
+                  {msg.role === "user" ? "나의 질문" : "AI 어드바이저"}
+                </div>
+                <div style={{ color: "#cbd5e1", fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
+              </div>
+            ))
+          );
+        })()}
       </div>
     </div>
   );
