@@ -340,11 +340,30 @@ function SectorRow({ item, showScore }) {
 }
 
 function MarketInsight({ onRefreshAll }) {
+  // localStorage 캐시 초기 로드
+  const loadCachedResults = () => {
+    const cached = {};
+    const cachedTimes = {};
+    const tabs = ["summary","kr","us","asia","europe","commodities","crypto","ipo"];
+    tabs.forEach(tabId => {
+      try {
+        const item = localStorage.getItem(`market_cache_${tabId}`);
+        if (item) {
+          const { data, time } = JSON.parse(item);
+          cached[tabId] = data;
+          cachedTimes[tabId] = new Date(time);
+        }
+      } catch(e) {}
+    });
+    return { cached, cachedTimes };
+  };
+
+  const { cached: initCache, cachedTimes: initTimes } = loadCachedResults();
   const [activeTab, setActiveTab] = useState("summary");
-  const [results, setResults]     = useState({});
+  const [results, setResults]     = useState(initCache);
   const [loading, setLoading]     = useState(null);
   const [errors, setErrors]       = useState({});
-  const [updatedAt, setUpdatedAt] = useState({});
+  const [updatedAt, setUpdatedAt] = useState(initTimes);
 
   const fetchTab = async (tabId, retryCount = 0) => {
     setLoading(tabId);
@@ -418,6 +437,10 @@ function MarketInsight({ onRefreshAll }) {
       }
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
+      // localStorage 캐시 저장
+      try {
+        localStorage.setItem(`market_cache_${tabId}`, JSON.stringify({ data: parsed, time: new Date().toISOString() }));
+      } catch(e) {}
     } catch(e) {
       setErrors(er => ({ ...er, [tabId]: "분석 실패: "+e.message }));
     }
@@ -429,6 +452,10 @@ function MarketInsight({ onRefreshAll }) {
     const handler = () => {
       setResults({});
       setErrors({});
+      // localStorage 캐시도 초기화
+      ["summary","kr","us","asia","europe","commodities","crypto","ipo"].forEach(t => {
+        localStorage.removeItem(`market_cache_${t}`);
+      });
       setActiveTab("summary");
       setTimeout(() => fetchTab("summary"), 150);
     };
@@ -645,7 +672,7 @@ function MarketInsight({ onRefreshAll }) {
                 <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{h.name}</div>
                 <div style={{ fontSize:15, color:"#64748b" }}>{h.reason}</div>
               </div>
-              <span style={{ fontWeight:700, color:parseFloat(h.change_pct)>=0?"#10b981":"#ef4444", fontSize:16 }}>{h.change_pct}</span>
+              {h.change_pct && h.change_pct !== "정보없음" && h.change_pct !== "없음" && (<span style={{ fontWeight:700, color:parseFloat(h.change_pct)>=0?"#10b981":"#ef4444", fontSize:16 }}>{h.change_pct}</span>)}
             </div>
           ))}
         
@@ -713,10 +740,11 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
       
     </div>
+      {d.majors?.length > 2 && (
       <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f97316", fontWeight:700, marginBottom:12, letterSpacing:2 }}>메이저 코인</div>
       
-        {d.majors?.map((c,i) => (
+        {d.majors?.slice(2).map((c,i) => (
           <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
             <div>
               <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{c.name}</div>
@@ -730,6 +758,7 @@ function MarketInsight({ onRefreshAll }) {
         ))}
       
     </div>
+      )}
       {d.hot_sectors?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>🔥 핫한 섹터</div>
@@ -940,7 +969,7 @@ function getSectorLabel(sector, name) {
   return "기타";
 }
 
-function SvgPieChart({ data, colors }) {
+function SvgPieChart({ data, colors, totalValue }) {
   const [hov, setHov] = useState(null);
   const cx=110, cy=100, r=78, ri=44, W=220, H=200;
   const total = data.reduce((s,d)=>s+d.value,0);
@@ -959,20 +988,23 @@ function SvgPieChart({ data, colors }) {
     return {...d,path,color:colors[i%colors.length],pct:(pct*100).toFixed(1)};
   });
   const h = hov!==null?slices[hov]:null;
+  const handleTouch = (i) => setHov(prev => prev===i ? null : i);
   return (
     <svg width={W} height={H} style={{display:"block",margin:"0 auto"}}>
       {slices.map((s,i)=>(
-        <path key={i} d={s.path} fill={s.color} opacity={hov===null||hov===i?1:0.45}
-          onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}
+        <path key={i} d={s.path} fill={s.color}
+          opacity={hov===null||hov===i?1:0.45}
+          onClick={()=>handleTouch(i)}
+          onTouchStart={(e)=>{e.preventDefault();handleTouch(i);}}
           style={{cursor:"pointer",transition:"opacity 0.15s"}}/>
       ))}
-      {h&&<>
-        <text x={cx} y={cy-8} textAnchor="middle" fill="#e2e8f0" fontSize="11" fontWeight="700">{h.name.slice(0,9)}</text>
-        <text x={cx} y={cy+10} textAnchor="middle" fill={h.color} fontSize="15" fontWeight="800">{h.pct}%</text>
-      </>}
-      {!h&&<>
-        <text x={cx} y={cy-4} textAnchor="middle" fill="#64748b" fontSize="11">터치하면</text>
-        <text x={cx} y={cy+12} textAnchor="middle" fill="#64748b" fontSize="11">상세 표시</text>
+      {h ? <>
+        <text x={cx} y={cy-14} textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="700">{h.name.length>8?h.name.slice(0,8)+"..":h.name}</text>
+        <text x={cx} y={cy+6} textAnchor="middle" fill={h.color} fontSize="18" fontWeight="800">{h.pct}%</text>
+        <text x={cx} y={cy+22} textAnchor="middle" fill="#64748b" fontSize="11">{Math.round(h.value/10000).toLocaleString()}만원</text>
+      </> : <>
+        <text x={cx} y={cy-8} textAnchor="middle" fill="#475569" fontSize="12">총 자산</text>
+        <text x={cx} y={cy+10} textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{totalValue?Math.round(totalValue/10000).toLocaleString()+"만":""}</text>
       </>}
     </svg>
   );
@@ -992,14 +1024,17 @@ function PieLegend({data, colors, grand}) {
   );
 }
 
-function PortfolioPieCharts({ portfolio }) {
+function PortfolioPieCharts({ portfolio, filterAccount }) {
   if (!portfolio) return null;
-  const totalValue = portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
-  const cash = portfolio.cash||0;
+  const holdings = filterAccount && filterAccount !== "all"
+    ? portfolio.holdings.filter(h => h.account === filterAccount)
+    : portfolio.holdings;
+  const totalValue = holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const cash = (!filterAccount || filterAccount === "all") ? (portfolio.cash||0) : 0;
   const grand = totalValue+cash;
 
   const sectorMap={}, regionMap={};
-  portfolio.holdings.forEach(h=>{
+  holdings.forEach(h=>{
     const sv=(h.shares||0)*(h.current_price||h.avg_price||0);
     const sk=getSectorLabel(h.sector,h.name);
     sectorMap[sk]=(sectorMap[sk]||0)+sv;
@@ -1010,17 +1045,18 @@ function PortfolioPieCharts({ portfolio }) {
 
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
+  const tv = totalValue + cash;
 
   return (
     <>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
-        <SvgPieChart data={sectorData} colors={PIE_COLORS}/>
+        <SvgPieChart data={sectorData} colors={PIE_COLORS} totalValue={tv}/>
         <PieLegend data={sectorData} colors={PIE_COLORS} grand={grand}/>
       </div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
-        <SvgPieChart data={regionData} colors={PIE_COLORS}/>
+        <SvgPieChart data={regionData} colors={PIE_COLORS} totalValue={tv}/>
         <PieLegend data={regionData} colors={PIE_COLORS} grand={grand}/>
       </div>
     </>
@@ -1517,37 +1553,92 @@ function Portfolio() {
     if (!portfolio) return;
     setUpdating(true);
     try {
-      const tickers = portfolio.holdings.map(h => `${h.ticker || h.name}(${h.currency || "KRW"})`).join(", ");
-      const text = await callClaudeWithSearch({
-        maxTokens: 1500,
-        system: `주식 현재가 검색 후 JSON만. {"prices":[{"ticker":"","current_price":0,"change_pct":0}]}`,
-        user: `다음 종목 현재가 검색: ${tickers}. JSON만 반환.`,
-      });
-      const { prices } = JSON.parse(text.replace(/```json|```/g, "").trim());
+      // 종목을 20개씩 나눠서 요청 (너무 많으면 응답 잘림)
+      const holdings = portfolio.holdings;
+      const chunkSize = 20;
+      const chunks = [];
+      for (let i = 0; i < holdings.length; i += chunkSize) {
+        chunks.push(holdings.slice(i, i + chunkSize));
+      }
+
+      let allPrices = [];
+      for (const chunk of chunks) {
+        const tickers = chunk.map(h => `${h.name}(${h.ticker||h.name})`).join(", ");
+        const text = await callClaudeWithSearch({
+          maxTokens: 2000,
+          system: `한국 ETF/주식 현재가를 검색하라. 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 절대 금지.
+형식: {"prices":[{"ticker":"종목코드","name":"종목명","current_price":숫자,"change_pct":숫자}]}
+current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
+          user: `다음 종목들의 오늘 현재가를 검색해서 JSON으로만 반환: ${tickers}`,
+        });
+
+        try {
+          // 제어문자 제거 + JSON 추출
+          const clean = text
+            .replace(/[ -]/g, " ")
+            .replace(/```json\s*/gi, "")
+            .replace(/```\s*/g, "")
+            .replace(/\[cite[^\]]*\]/g, "")
+            .replace(/\[\d+\]/g, "")
+            .trim();
+          const firstBrace = clean.indexOf("{");
+          const lastBrace = clean.lastIndexOf("}");
+          if (firstBrace !== -1 && lastBrace !== -1) {
+            const jsonStr = clean.slice(firstBrace, lastBrace + 1);
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.prices) allPrices = [...allPrices, ...parsed.prices];
+          }
+        } catch(e) { console.warn("청크 파싱 실패:", e.message); }
+      }
+
+      if (allPrices.length === 0) throw new Error("현재가 데이터를 가져오지 못했습니다.");
+
       const updated = {
         ...portfolio, updatedAt: new Date().toISOString(),
         holdings: portfolio.holdings.map(h => {
-          const p = prices.find(x => x.ticker === h.ticker || x.ticker === h.name);
-          return p ? { ...h, current_price: p.current_price, change_pct: p.change_pct } : h;
+          const p = allPrices.find(x =>
+            x.ticker === h.ticker ||
+            x.ticker === h.name ||
+            x.name === h.name
+          );
+          return p ? { ...h, current_price: Number(p.current_price)||h.current_price, change_pct: Number(p.change_pct)||0 } : h;
         }),
       };
       savePortfolio(updated); setPortfolio(updated);
-      // 히스토리 포인트 저장
-      const period = localStorage.getItem("history_period") || "daily";
-      addHistoryPoint(updated, period);
+      addHistoryPoint(updated);
+      alert(`✅ ${allPrices.length}개 종목 가격 업데이트 완료`);
     } catch (e) { alert("가격 업데이트 실패: " + e.message); }
     setUpdating(false);
   };
 
-  const [viewMode, setViewMode] = useState("all"); // "all" | 계좌명
+  const [viewMode, setViewMode] = useState("all");
+  const [sortBy, setSortBy] = useState("name"); // name | value | profit
+  const [sortDir, setSortDir] = useState("desc"); // asc | desc
 
   // 계좌 목록
   const accounts = portfolio ? [...new Set(portfolio.holdings.map(h => h.account).filter(Boolean))] : [];
 
   // 현재 뷰에 따른 종목 필터
-  const visibleHoldings = portfolio
+  const rawHoldings = portfolio
     ? (viewMode === "all" ? portfolio.holdings : portfolio.holdings.filter(h => h.account === viewMode))
     : [];
+
+  const visibleHoldings = [...rawHoldings].sort((a, b) => {
+    let av, bv;
+    if (sortBy === "value") {
+      av = (a.shares||0)*(a.current_price||a.avg_price||0);
+      bv = (b.shares||0)*(b.current_price||b.avg_price||0);
+      return sortDir === "asc" ? av-bv : bv-av;
+    } else if (sortBy === "profit") {
+      const ac=(a.shares||0)*(a.avg_price||0), bc=(b.shares||0)*(b.avg_price||0);
+      av = ac>0?((a.shares||0)*(a.current_price||a.avg_price||0)-ac)/ac*100:0;
+      bv = bc>0?((b.shares||0)*(b.current_price||b.avg_price||0)-bc)/bc*100:0;
+      return sortDir === "asc" ? av-bv : bv-av;
+    } else {
+      av = a.name||""; bv = b.name||"";
+      return sortDir === "asc" ? av.localeCompare(bv,"ko") : bv.localeCompare(av,"ko");
+    }
+  });
 
   const totalCost  = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.avg_price||0), 0);
   const totalValue = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.current_price||h.avg_price||0), 0);
@@ -1750,7 +1841,7 @@ function Portfolio() {
           </div>
 
           {/* 원형 그래프 */}
-          <PortfolioPieCharts portfolio={portfolio} />
+          <PortfolioPieCharts portfolio={portfolio} filterAccount={viewMode} />
 
           {/* 수익률 히스토리 */}
           <ReturnHistoryChart portfolio={portfolio} />
@@ -1796,6 +1887,24 @@ function Portfolio() {
                 </div>
               );
             })}
+          </div>
+
+          {/* 정렬 버튼 */}
+          <div style={{ display:"flex", gap:6, marginBottom:10, alignItems:"center" }}>
+            <span style={{ fontSize:12, color:"#475569" }}>정렬:</span>
+            {[{id:"name",label:"종목명"},{id:"value",label:"평가액"},{id:"profit",label:"수익률"}].map(s => (
+              <button key={s.id} onClick={() => {
+                if (sortBy===s.id) setSortDir(d=>d==="asc"?"desc":"asc");
+                else { setSortBy(s.id); setSortDir("desc"); }
+              }} style={{
+                padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer",
+                border:`1px solid ${sortBy===s.id?"#0ea5e9":"#334155"}`,
+                background:sortBy===s.id?"#0ea5e922":"transparent",
+                color:sortBy===s.id?"#0ea5e9":"#64748b", fontWeight:sortBy===s.id?700:400,
+              }}>
+                {s.label}{sortBy===s.id?(sortDir==="desc"?" ↓":" ↑"):""}
+              </button>
+            ))}
           </div>
 
           {/* 종목 목록 */}
@@ -1960,7 +2069,7 @@ function Advisor() {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {chatHistory.map((msg, i) => (
+        {[...chatHistory].reverse().map((msg, i) => (
           <div key={i} style={{
             background: msg.role === "user" ? "#1e293b" : "#0f172a",
             border: `1px solid ${msg.role === "user" ? "#334155" : "#1e293b"}`,
