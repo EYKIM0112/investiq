@@ -1575,7 +1575,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
         try {
           // 제어문자 제거 + JSON 추출
           const clean = text
-            .replace(/[ -]/g, " ")
+            .replace(/[ -]/g, " ")
             .replace(/```json\s*/gi, "")
             .replace(/```\s*/g, "")
             .replace(/\[cite[^\]]*\]/g, "")
