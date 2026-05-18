@@ -1912,7 +1912,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
 
           {/* 종목 추가 버튼 - 상단 배치 */}
           <div style={{marginBottom:14}}>
-            <input id="add-img" type="file" accept="image/*" multiple
+            <input id="add-img-top" type="file" accept="image/*" multiple
               style={{display:"none"}}
               onChange={e=>{
                 if(e.target.files&&e.target.files.length>0){
@@ -1925,18 +1925,18 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 }
                 setTimeout(() => { e.target.value=""; }, 1000);
               }}/>
-            <input id="add-xls" type="file" accept=".xlsx,.xls,.csv"
+            <input id="add-xls-top" type="file" accept=".xlsx,.xls,.csv"
               style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
               onChange={e=>onFileChange(e,true)}/>
             <input id="order-img-top" type="file" accept="image/*"
               style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
               onChange={e=>{const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f);}}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-              <button onClick={() => document.getElementById("add-img").click()} style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}> 스크린샷</button>
-              <button onClick={() => document.getElementById('add-xls').click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
+              <button onClick={() => document.getElementById("add-img-top").click()} style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}> 스크린샷</button>
+              <button onClick={() => document.getElementById('add-xls-top').click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
               <button onClick={()=>setShowManual(true)} style={{padding:"10px 6px",borderRadius:10,background:"#7c3aed22",border:"1px solid #7c3aed44",color:"#a78bfa",fontWeight:700,fontSize:13,cursor:"pointer"}}>✎ 직접입력</button>
             </div>
-            <button onClick={() => { const el = document.getElementById('order-img-top') || document.getElementById('order-img'); if(el) el.click(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
+            <button onClick={() => document.getElementById('order-img-top').click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
           </div>
 
           {/* 원형 그래프 */}
@@ -2045,14 +2045,6 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
             })}
           </div>
 
-          {/* 종목 추가 - hidden input + label 방식 */}
-          <input id="add-img" type="file" accept="image/*"
-            style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
-            onChange={e => onFileChange(e, true)} />
-          <input id="add-xls" type="file" accept=".xlsx,.xls,.csv"
-            style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
-            onChange={e => onFileChange(e, true)} />
-
           {uploading || uploadMsg ? (
             <div style={{ textAlign: "center", padding: "28px", background: "#0a0f1a", borderRadius: 12, border: `1px solid ${uploading ? "#1e293b" : uploadMsg.startsWith("❌") ? "#ef444444" : "#10b98144"}` }}>
               {uploading ? <Spinner size={28} /> : <div style={{ fontSize: 28 }}>{uploadMsg.startsWith("❌") ? "❌" : "✅"}</div>}
@@ -2061,14 +2053,11 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
           ) : (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom:8 }}>
-                <button onClick={() => document.getElementById("add-img").click()} style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}> 스크린샷</button>
-                <button onClick={() => document.getElementById('add-xls').click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
+                <button onClick={() => document.getElementById("add-img-top").click()} style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}> 스크린샷</button>
+                <button onClick={() => document.getElementById('add-xls-top').click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
                 <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✎ 직접입력</button>
               </div>
-              <input id="order-img" type="file" accept="image/*"
-                style={{ position:"absolute", width:1, height:1, opacity:0, overflow:"hidden" }}
-                onChange={e => { const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f); }} />
-              <button onClick={() => { const el = document.getElementById('order-img-top') || document.getElementById('order-img'); if(el) el.click(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
+              <button onClick={() => document.getElementById('order-img-top').click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
             </div>
           )}
         </div>
@@ -2095,7 +2084,7 @@ function Advisor() {
     setQuestion("");
     try {
       await callGeminiStream({
-        maxTokens: 4000,
+        maxTokens: 8000,
         useSearch: true,
         system: `당신은 실전 투자 어드바이저입니다. 웹 검색으로 최신 2~3일 시장 정보를 수집한 뒤 답변하세요.
 
@@ -2126,6 +2115,13 @@ function Advisor() {
     }
     setLoading(false);
   };
+
+  const chatBottomRef = useRef(null);
+
+  // 스트리밍 중 자동 스크롤
+  React.useEffect(() => {
+    if (loading) chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory, loading]);
 
   const quickActions = ["내 포폴 리밸런싱 방향 조언해줘", "현재 모멘텀 섹터에 내 포폴 노출도가 충분한가?", "지금 추가 매수하기 좋은 종목 추천해줘", "내 포폴의 리스크 분석해줘"];
 
@@ -2177,28 +2173,20 @@ function Advisor() {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {(() => {
-          // 쌍 단위로 묶어서 역순 (최신 대화가 위에)
-          const pairs = [];
-          for (let i = 0; i < chatHistory.length; i += 2) {
-            pairs.push(chatHistory.slice(i, i + 2));
-          }
-          return pairs.reverse().map((pair, pi) =>
-            pair.map((msg, mi) => (
-              <div key={`${pi}-${mi}`} style={{
-                background: msg.role === "user" ? "#1e293b" : "#0f172a",
-                border: `1px solid ${msg.role === "user" ? "#334155" : "#1e293b"}`,
-                borderRadius: 12, padding: 16,
-                borderLeft: msg.role === "ai" ? "3px solid #7c3aed" : "none",
-              }}>
-                <div style={{ fontSize: 12, color: msg.role === "user" ? "#64748b" : "#7c3aed", fontWeight: 700, marginBottom: 7, letterSpacing: 1 }}>
-                  {msg.role === "user" ? "나의 질문" : "AI 어드바이저"}
-                </div>
-                <div style={{ color: "#cbd5e1", fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
-              </div>
-            ))
-          );
-        })()}
+        {chatHistory.map((msg, i) => (
+          <div key={i} style={{
+            background: msg.role === "user" ? "#1e293b" : "#0f172a",
+            border: `1px solid ${msg.role === "user" ? "#334155" : "#1e293b"}`,
+            borderRadius: 12, padding: 16,
+            borderLeft: msg.role === "ai" ? "3px solid #7c3aed" : "none",
+          }}>
+            <div style={{ fontSize: 12, color: msg.role === "user" ? "#64748b" : "#7c3aed", fontWeight: 700, marginBottom: 7, letterSpacing: 1 }}>
+              {msg.role === "user" ? "나의 질문" : "AI 어드바이저"}
+            </div>
+            <div style={{ color: "#cbd5e1", fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
+          </div>
+        ))}
+        <div ref={chatBottomRef} />
       </div>
     </div>
   );
