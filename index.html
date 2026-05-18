@@ -79,7 +79,7 @@ function safeParseJSON(text) {
 }
 
 // ---------- Gemini API 스트리밍 호출 ----------
-async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, onChunk }) {
+async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, onChunk, _retry = 0 }) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
 
@@ -100,7 +100,15 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+    const msg = err.error?.message || `HTTP ${res.status}`;
+    // 과부하(429/503) 시 최대 3회 재시도
+    if ((res.status === 429 || res.status === 503) && _retry < 3) {
+      const delay = (res.status === 429 ? 5000 : 2000) * (_retry + 1);
+      onChunk && onChunk(`[재시도 중... ${_retry + 1}/3]`);
+      await new Promise(r => setTimeout(r, delay));
+      return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
+    }
+    throw new Error(msg);
   }
 
   const reader = res.body.getReader();
@@ -120,10 +128,18 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
       if (json === "[DONE]") continue;
       try {
         const parsed = JSON.parse(json);
-        if (parsed.error) throw new Error(parsed.error.message);
+        if (parsed.error) {
+          const errMsg = parsed.error.message || "";
+          // 스트리밍 중 과부하 에러도 재시도
+          if ((parsed.error.code === 429 || parsed.error.code === 503) && _retry < 3) {
+            await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
+            return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
+          }
+          throw new Error(errMsg);
+        }
         const chunk = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
         if (chunk) { fullText += chunk; onChunk && onChunk(fullText); }
-      } catch {}
+      } catch (e) { if (e.message && !e.message.includes("JSON")) throw e; }
     }
   }
   return fullText;
@@ -1448,7 +1464,11 @@ function Portfolio() {
   const [dragOver, setDragOver]     = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
-  const [editTarget, setEditTarget] = useState(null); // {holding, index}
+  const [editTarget, setEditTarget] = useState(null);
+
+  const imgInputRef      = useRef(null);
+  const xlsInputRef      = useRef(null);
+  const orderImgInputRef = useRef(null);
 
   // 이미지 > Claude Vision
   const analyzeImage = async (file) => {
@@ -1912,7 +1932,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
 
           {/* 종목 추가 버튼 - 상단 배치 */}
           <div style={{marginBottom:14}}>
-            <input id="add-img-top" type="file" accept="image/*" multiple
+            <input ref={imgInputRef} type="file" accept="image/*" multiple
               style={{display:"none"}}
               onChange={e=>{
                 if(e.target.files&&e.target.files.length>0){
@@ -1925,18 +1945,18 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 }
                 setTimeout(() => { e.target.value=""; }, 1000);
               }}/>
-            <input id="add-xls-top" type="file" accept=".xlsx,.xls,.csv"
-              style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
+            <input ref={xlsInputRef} type="file" accept=".xlsx,.xls,.csv"
+              style={{display:"none"}}
               onChange={e=>onFileChange(e,true)}/>
-            <input id="order-img-top" type="file" accept="image/*"
-              style={{position:"absolute",width:1,height:1,opacity:0,overflow:"hidden"}}
+            <input ref={orderImgInputRef} type="file" accept="image/*"
+              style={{display:"none"}}
               onChange={e=>{const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f);}}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-              <button onClick={() => document.getElementById("add-img-top").click()} style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}> 스크린샷</button>
-              <button onClick={() => document.getElementById('add-xls-top').click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
+              <button onClick={() => imgInputRef.current?.click()} style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}> 스크린샷</button>
+              <button onClick={() => xlsInputRef.current?.click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
               <button onClick={()=>setShowManual(true)} style={{padding:"10px 6px",borderRadius:10,background:"#7c3aed22",border:"1px solid #7c3aed44",color:"#a78bfa",fontWeight:700,fontSize:13,cursor:"pointer"}}>✎ 직접입력</button>
             </div>
-            <button onClick={() => document.getElementById('order-img-top').click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
+            <button onClick={() => orderImgInputRef.current?.click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
           </div>
 
           {/* 원형 그래프 */}
@@ -2053,11 +2073,11 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
           ) : (
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom:8 }}>
-                <button onClick={() => document.getElementById("add-img-top").click()} style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}> 스크린샷</button>
-                <button onClick={() => document.getElementById('add-xls-top').click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
+                <button onClick={() => imgInputRef.current?.click()} style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}> 스크린샷</button>
+                <button onClick={() => xlsInputRef.current?.click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
                 <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✎ 직접입력</button>
               </div>
-              <button onClick={() => document.getElementById('order-img-top').click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
+              <button onClick={() => orderImgInputRef.current?.click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
             </div>
           )}
         </div>
