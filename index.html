@@ -356,37 +356,45 @@ const MARKET_TABS = [
 ];
 
 const MARKET_PROMPTS = {
-  summary: (d) => `오늘은 ${d}이다. 최근 2~3일 뉴스와 시장 데이터를 검색하여 분석하라.
+  summary: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 최신 데이터를 웹 검색으로 수집하라. 오늘자 또는 어제자 데이터만 사용할 것.
 반드시 아래 JSON 형식으로만 응답. {로 시작 }로 끝. JSON 외 텍스트/마크다운/인용 절대 금지. 모든 값 한국어.
-지수는 정확히 이 8개: 코스피/코스닥/S&P500/나스닥100/닛케이225/상해종합/DAX/FTSE100
-{"index_alerts":[{"name":"코스피","value":"현재값","change_pct":"등락%","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"리스크명","level":"medium","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["ETF"]}],"turnaround":[{"name":"섹터","leaders":["종목"],"etf":["ETF"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}`,
+지수는 정확히 이 5개만: 코스피/코스닥/닛케이225/상해종합/S&P500 (나스닥/다우 제외)
+각 지수의 value와 change_pct는 오늘 실제 시장 데이터로 채울 것. 어제 데이터 사용 금지.
+{"index_alerts":[{"name":"코스피","value":"현재값","change_pct":"등락%","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"전쟁/금융위기/금리/지정학 등 거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
+[ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 예: 방산섹터→방산ETF, 반도체섹터→반도체ETF. 다른 섹터 ETF 절대 금지.
+[중복 규칙] leading(모멘텀)과 turnaround(턴어라운드)의 섹터명은 반드시 서로 달라야 함.
+[black_swan 규칙] 현재 실제로 진행 중인 거시 리스크만 포함. 전쟁/지정학/금리/금융위기/환율/에너지 위기 등. 해당 없으면 빈 배열 [].`,
 
-  kr: (d) => `오늘은 ${d}이다. 최근 2~3일 한국 주식시장 뉴스 검색 후 분석.
+  kr: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 한국 주식시장 최신 데이터를 웹 검색으로 수집하라. 오늘자 데이터 우선.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
-{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
+[ETF 규칙] 각 섹터의 etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만. 다른 섹터 ETF 절대 금지.
+[중복 규칙] strong(모멘텀강한)과 rebound(턴어라운드) 섹터명은 서로 달라야 함.
+{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["직접관련ETF"]}],"rebound":[{"name":"다른섹터","reason":"1문장","leaders":["종목"],"etf":["직접관련ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  us: (d) => `오늘은 ${d}이다. 최근 2~3일 미국 주식시장 뉴스 검색 후 분석.
+  us: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 미국 주식시장 최신 데이터를 웹 검색으로 수집하라. 오늘자 데이터 우선.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
-{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["ETF"]}],"rebound":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
+[ETF 규칙] 각 섹터의 etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만. 다른 섹터 ETF 절대 금지.
+[중복 규칙] strong(모멘텀강한)과 rebound(턴어라운드) 섹터명은 서로 달라야 함.
+{"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["직접관련ETF"]}],"rebound":[{"name":"다른섹터","reason":"1문장","leaders":["종목"],"etf":["직접관련ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  commodities: (d) => `오늘은 ${d}이다. 최근 2~3일 글로벌 원자재 시장 뉴스 검색 후 분석.
+  commodities: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 글로벌 원자재 시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어. 시장규모 순 상위 10개.
 {"summary":"2문장","items":[{"rank":1,"name":"원자재명","price":"현재가","change_pct":"등락%","trend":"up","reason":"1문장","outlook":"1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1"],"risks":["리스크1"]}`,
 
-  asia: (d) => `오늘은 ${d}이다. 최근 2~3일 일본/중국/인도 주식시장 뉴스 검색 후 분석.
+  asia: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 아시아 주식시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 {"summary":"2문장","markets":[{"country":"일본","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
 
-  crypto: (d) => `오늘은 ${d}이다. 최근 2~3일 가상화폐 시장 뉴스 검색 후 분석.
+  crypto: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 가상화폐 시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 majors 첫 두 개는 반드시 비트코인(BTC)과 이더리움(ETH)으로 시작할 것.
 {"summary":"2문장","majors":[{"name":"비트코인(BTC)","price":"현재가(달러)","change_24h":"24h%","trend":"up","comment":"1문장"},{"name":"이더리움(ETH)","price":"현재가(달러)","change_24h":"24h%","trend":"up","comment":"1문장"}],"hot_sectors":[{"name":"섹터명","reason":"1문장","leaders":["코인1","코인2"]}],"events":["이벤트1"],"risks":["리스크1"]}`,
 
-  europe: (d) => `오늘은 ${d}이다. 최근 2~3일 유럽 주식시장 뉴스 검색 후 분석.
+  europe: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 유럽 주식시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 {"summary":"2문장","strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
 
-  ipo: (d) => `오늘은 ${d}이다. 한국 거래소 최근 1개월 신규상장 및 향후 1개월 상장예정 검색.
+  ipo: (d) => `오늘 날짜: ${d}. 한국 거래소 최근 1개월 신규상장 및 향후 1개월 상장예정 검색.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 {"upcoming":[{"name":"종목명","type":"주식/ETF","expected_date":"예정일","issuer":"회사명","description":"1문장","highlight":"주목이유"}],"recent":[{"name":"종목명","type":"주식/ETF","listed_date":"상장일","market_cap":"시총억원","issuer":"회사명","description":"1문장","highlight":"주목이유","size_note":"소규모참고또는없음"}],"summary":"1문장"}`,
 };
@@ -447,17 +455,18 @@ function MarketInsight({ onRefreshAll }) {
       const today = new Date().toLocaleDateString("ko-KR");
       // 스트리밍으로 응답 받기 (로딩 중 진행 표시)
       const text = await callGeminiStream({
-        maxTokens: 4000,
+        maxTokens: 6000,
         useSearch: true,
-        system: `You are a global investment analyst. CRITICAL RULES:
-1. Search the web for ONLY the latest 2-3 days of news and market data
-2. Your ENTIRE response must be ONLY a valid JSON object
-3. Start your response IMMEDIATELY with { and end with }
-4. ABSOLUTELY NO text before or after the JSON
-5. NO markdown, NO code blocks, NO backticks
-6. NO citations like [1] [2] or [cite:...] anywhere
-7. All string values must be in Korean (한국어)
-8. Keep each string value concise`,
+        system: `You are a global investment analyst with real-time market data access. CRITICAL RULES:
+1. Search the web for TODAY's or YESTERDAY's market data ONLY. Never use data older than 2 days.
+2. For index values (KOSPI, NASDAQ etc), find the most recent actual price from today's trading session.
+3. Your ENTIRE response must be ONLY a valid JSON object
+4. Start your response IMMEDIATELY with { and end with }
+5. ABSOLUTELY NO text before or after the JSON
+6. NO markdown, NO code blocks, NO backticks
+7. NO citations like [1] [2] or [cite:...] anywhere
+8. All string values must be in Korean (한국어)
+9. Keep each string value concise`,
         user: MARKET_PROMPTS[tabId](today),
       });
       let parsed;
@@ -534,12 +543,14 @@ function MarketInsight({ onRefreshAll }) {
     const handler = () => {
       setResults({});
       setErrors({});
-      // localStorage 캐시도 초기화
       ["summary","kr","us","asia","europe","commodities","crypto","ipo"].forEach(t => {
         localStorage.removeItem(`market_cache_${t}`);
       });
-      setActiveTab("summary");
-      setTimeout(() => fetchTab("summary"), 150);
+      // 현재 활성 탭 새로고침 (summary가 아닌 경우도 처리)
+      setActiveTab(prev => {
+        setTimeout(() => fetchTab(prev), 150);
+        return prev;
+      });
     };
     window.addEventListener("globalRefresh", handler);
     return () => window.removeEventListener("globalRefresh", handler);
@@ -596,18 +607,35 @@ function MarketInsight({ onRefreshAll }) {
     </div>
 
       <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#e2e8f0", fontWeight:700, marginBottom:12, letterSpacing:2 }}>GLOBAL SUMMARY</div>
-      
-        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      
-    </div>
-
-      {d.global_flow && (
-        <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-          <div style={{ fontSize:13, color:"#0ea5e9", fontWeight:700, marginBottom:12, letterSpacing:2 }}>글로벌 자금 흐름</div>
-          <div style={{ color:"#cbd5e1", lineHeight:1.8, fontSize:16 }}>{d.global_flow}</div>
-        </div>
-      )}
+        <div style={{ fontSize:13, color:"#e2e8f0", fontWeight:700, marginBottom:12, letterSpacing:2 }}>GLOBAL SUMMARY</div>
+        <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16, marginBottom: (d.global_flow || d.black_swan?.length > 0) ? 14 : 0 }}>{d.summary}</div>
+        {d.global_flow && (
+          <>
+            <div style={{ height:1, background:"#1e293b", marginBottom:12 }} />
+            <div style={{ fontSize:12, color:"#0ea5e9", fontWeight:700, marginBottom:6, letterSpacing:1 }}>글로벌 자금 흐름</div>
+            <div style={{ color:"#cbd5e1", lineHeight:1.8, fontSize:15 }}>{d.global_flow}</div>
+          </>
+        )}
+        {d.black_swan?.length > 0 && (
+          <>
+            <div style={{ height:1, background:"#1e293b", margin:"12px 0" }} />
+            <div style={{ fontSize:12, color:"#ef4444", fontWeight:700, marginBottom:8, letterSpacing:1 }}>⚠ 거시 리스크</div>
+            {d.black_swan.map((b,i) => (
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+                <div>
+                  <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:15 }}>{b.risk}</div>
+                  <div style={{ fontSize:14, color:"#64748b" }}>{b.comment}</div>
+                </div>
+                <span style={{ fontSize:12, fontWeight:700, padding:"2px 7px", borderRadius:4, flexShrink:0, marginLeft:8,
+                  background: b.level==="high"?"#ef444422":b.level==="medium"?"#f59e0b22":"#10b98122",
+                  color: b.level==="high"?"#ef4444":b.level==="medium"?"#f59e0b":"#10b981" }}>
+                  {b.level==="high"?"고위험":b.level==="medium"?"중위험":"저위험"}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
 
       {d.sector_cycle?.leading?.length > 0 && (
         <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
@@ -633,26 +661,6 @@ function MarketInsight({ onRefreshAll }) {
             <div key={i} style={{ marginBottom:10, fontSize:16 }}>
               <span style={{ fontWeight:700, color:"#fca5a5" }}>{s.name}</span>
               <span style={{ fontSize:15, color:"#64748b", marginLeft:8 }}>{s.comment}</span>
-            </div>
-          ))}
-        
-    </div>
-      )}
-      {d.black_swan?.length > 0 && (
-        <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#7c3aed", fontWeight:700, marginBottom:12, letterSpacing:2 }}>! 블랙스완 리스크</div>
-      
-          {d.black_swan.map((b,i) => (
-            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
-              <div>
-                <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{b.risk}</div>
-                <div style={{ fontSize:15, color:"#64748b" }}>{b.comment}</div>
-              </div>
-              <span style={{ fontSize:13, fontWeight:700, padding:"3px 8px", borderRadius:4,
-                background: b.level==="high"?"#ef444422":b.level==="medium"?"#f59e0b22":"#10b98122",
-                color: b.level==="high"?"#ef4444":b.level==="medium"?"#f59e0b":"#10b981" }}>
-                {b.level==="high"?"고위험":b.level==="medium"?"중위험":"저위험"}
-              </span>
             </div>
           ))}
         
@@ -1935,15 +1943,11 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
             <input ref={imgInputRef} type="file" accept="image/*" multiple
               style={{display:"none"}}
               onChange={e=>{
-                if(e.target.files&&e.target.files.length>0){
-                  Array.from(e.target.files).forEach((file, idx) => {
-                    setTimeout(() => {
-                      const fakeEvent = { target: { files: [file] } };
-                      onFileChange(fakeEvent, true);
-                    }, idx * 500);
-                  });
-                }
-                setTimeout(() => { e.target.value=""; }, 1000);
+                const files = Array.from(e.target.files || []);
+                e.target.value = "";
+                files.forEach((file, idx) => {
+                  setTimeout(() => processFile(file, true), idx * 800);
+                });
               }}/>
             <input ref={xlsInputRef} type="file" accept=".xlsx,.xls,.csv"
               style={{display:"none"}}
@@ -2337,6 +2341,144 @@ function Settings() {
 }
 
 // ---------- 메인 앱 ----------
+// ---------- 메인 지수 위젯 ----------
+function IndexWidget() {
+  const CACHE_KEY = "investiq_index_widget";
+  const BTC_CACHE_KEY = "investiq_btc_widget";
+
+  const loadCache = () => {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
+  };
+  const loadBtcCache = () => {
+    try { return JSON.parse(localStorage.getItem(BTC_CACHE_KEY) || "null"); } catch { return null; }
+  };
+
+  const [indices, setIndices] = useState(loadCache);
+  const [btc, setBtc] = useState(loadBtcCache);
+  const [loading, setLoading] = useState(false);
+
+  // SVG 미니차트
+  const MiniChart = ({ points, color, width = 80, height = 32 }) => {
+    if (!points || points.length < 2) return <div style={{ width, height }} />;
+    const min = Math.min(...points);
+    const max = Math.max(...points);
+    const range = max - min || 1;
+    const w = width, h = height, pad = 2;
+    const xs = points.map((_, i) => pad + (i / (points.length - 1)) * (w - pad * 2));
+    const ys = points.map(v => pad + (1 - (v - min) / range) * (h - pad * 2));
+    const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
+    const fillD = d + ` L${xs[xs.length-1].toFixed(1)},${h} L${xs[0].toFixed(1)},${h} Z`;
+    return (
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+        <defs>
+          <linearGradient id={`grad-${color.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={fillD} fill={`url(#grad-${color.replace("#","")})`} />
+        <path d={d} stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  };
+
+  const fetchIndices = async () => {
+    setLoading(true);
+    try {
+      // BTC: CoinGecko API
+      const btcRes = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1&interval=hourly");
+      if (btcRes.ok) {
+        const btcData = await btcRes.json();
+        const prices = btcData.prices?.map(p => p[1]) || [];
+        const current = prices[prices.length - 1] || 0;
+        const open = prices[0] || current;
+        const change = open ? ((current - open) / open * 100) : 0;
+        const btcResult = {
+          name: "BTC", price: `$${Math.round(current).toLocaleString()}`,
+          change: `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`,
+          up: change >= 0, points: prices.slice(-24),
+        };
+        setBtc(btcResult);
+        localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
+      }
+
+      // 주요 지수: Gemini로 검색
+      const apiKey = localStorage.getItem("investiq_api_key") || "";
+      if (!apiKey) { setLoading(false); return; }
+      const today = new Date().toLocaleDateString("ko-KR");
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+      const body = {
+        contents: [{ role: "user", parts: [{ text: `오늘(${today}) 현재 기준 실시간 시장 데이터를 검색하여 아래 5개 지수의 현재값과 전일대비 등락률을 JSON으로만 반환하라. 마크다운/설명 없이 JSON만.
+{"indices":[{"name":"코스피","value":"7265.30","change":"-3.34"},{"name":"코스닥","value":"1079.25","change":"-2.87"},{"name":"다우","value":"42000.00","change":"+0.5"},{"name":"나스닥","value":"18000.00","change":"+1.2"},{"name":"S&P500","value":"5600.00","change":"+0.8"}]}
+위 형식으로 5개 지수 실제 현재 데이터로 채워서 반환.` }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: { maxOutputTokens: 500, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+      };
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+      const clean = text.replace(/```json|```/g, "").trim();
+      const match = clean.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.indices) {
+          const result = parsed.indices.map(idx => ({
+            ...idx,
+            up: !idx.change.startsWith("-"),
+            points: [], // 지수는 포인트 없이
+          }));
+          setIndices(result);
+          localStorage.setItem(CACHE_KEY, JSON.stringify(result));
+        }
+      }
+    } catch (e) { console.error("위젯 오류:", e); }
+    setLoading(false);
+  };
+
+  // 전체새로고침 이벤트 수신
+  React.useEffect(() => {
+    const handler = () => fetchIndices();
+    window.addEventListener("globalRefresh", handler);
+    return () => window.removeEventListener("globalRefresh", handler);
+  }, []);
+
+  const allItems = [
+    ...(indices || []),
+    ...(btc ? [btc] : []),
+  ];
+
+  if (!allItems.length && !loading) return null;
+
+  return (
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginBottom: 0 }}>
+      <div style={{ display: "flex", gap: 8, padding: "12px 16px", minWidth: "max-content" }}>
+        {loading && !allItems.length && (
+          <div style={{ color: "#475569", fontSize: 13, padding: "8px 0" }}>지수 로딩 중...</div>
+        )}
+        {allItems.map((idx, i) => {
+          const color = idx.up ? "#10b981" : "#ef4444";
+          return (
+            <div key={i} style={{
+              background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10,
+              padding: "10px 12px", minWidth: 90, flexShrink: 0,
+            }}>
+              <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginBottom: 2 }}>{idx.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 1 }}>{idx.value || idx.price}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color }}>{idx.up ? "+" : ""}{idx.change}</div>
+              {idx.points?.length > 1 && (
+                <div style={{ marginTop: 4 }}>
+                  <MiniChart points={idx.points} color={color} width={70} height={24} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ height: 1, background: "#0f172a" }} />
+    </div>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("market");
   const tabs = [
@@ -2396,6 +2538,7 @@ function App() {
         </div>
       </div>
 
+      <IndexWidget />
       <div style={{ padding: "18px 16px 48px" }}>
         {tab === "market"    && <MarketInsight />}
         {tab === "portfolio" && <Portfolio />}
