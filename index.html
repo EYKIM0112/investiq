@@ -358,7 +358,7 @@ const MARKET_TABS = [
 const MARKET_PROMPTS = {
   summary: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 최신 데이터를 웹 검색으로 수집하라. 오늘자 또는 어제자 데이터만 사용할 것.
 반드시 아래 JSON 형식으로만 응답. {로 시작 }로 끝. JSON 외 텍스트/마크다운/인용 절대 금지. 모든 값 한국어.
-지수는 정확히 이 5개만: 닛케이225/상해종합/홍콩항셍/인도SENSEX/독일DAX (코스피/코스닥/S&P500/나스닥/다우 제외 - 별도 표시됨)
+지수는 정확히 이 5개만: 닛케이225/상해종합/홍콩항셍/인도Nifty50/유로스탁스50 (코스피/코스닥/S&P500/나스닥/다우/독일DAX 제외 - 별도 표시됨)
 각 지수의 value와 change_pct는 오늘 실제 시장 데이터로 채울 것.
 {"index_alerts":[{"name":"닛케이225","value":"현재값","change_pct":"등락%","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"전쟁/금융위기/금리/지정학 등 거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
 [ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 예: 방산섹터→방산ETF, 반도체섹터→반도체ETF. 다른 섹터 ETF 절대 금지.
@@ -381,9 +381,10 @@ const MARKET_PROMPTS = {
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어. 시장규모 순 상위 10개.
 {"summary":"2문장","items":[{"rank":1,"name":"원자재명","price":"현재가","change_pct":"등락%","trend":"up","reason":"1문장","outlook":"1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1"],"risks":["리스크1"]}`,
 
-  asia: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 아시아 주식시장 최신 데이터를 웹 검색으로 수집하라.
+  asia: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 아시아 주식시장 최신 데이터를 웹 검색으로 수집하라. 한국 증시는 제외.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
-{"summary":"2문장","markets":[{"country":"일본","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
+대상 국가: 일본, 중국, 홍콩, 대만, 인도, 싱가포르, 베트남 중 주요 4~5개국.
+{"summary":"2문장(한국 제외)","markets":[{"country":"일본","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
 
   crypto: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 가상화폐 시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
@@ -444,20 +445,29 @@ function MarketInsight({ onRefreshAll }) {
   const { cached: initCache, cachedTimes: initTimes } = loadCachedResults();
   const [activeTab, setActiveTab] = useState("summary");
   const [results, setResults]     = useState(initCache);
-  const [loading, setLoading]     = useState(null);
+  const [loading, setLoading]     = useState(new Set()); // 탭별 독립 로딩
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState(initTimes);
 
+  const isLoading = (tabId) => loading.has(tabId);
+  const setTabLoading = (tabId, val) => setLoading(prev => {
+    const next = new Set(prev);
+    val ? next.add(tabId) : next.delete(tabId);
+    return next;
+  });
+
   const fetchTab = async (tabId, retryCount = 0) => {
-    setLoading(tabId);
+    setTabLoading(tabId, true);
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
       const today = new Date().toLocaleDateString("ko-KR");
-      // 스트리밍으로 응답 받기 (로딩 중 진행 표시)
-      const text = await callGeminiStream({
-        maxTokens: 6000,
-        useSearch: true,
-        system: `You are a global investment analyst with real-time market data access. CRITICAL RULES:
+      // 30초 타임아웃
+      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error("타임아웃 (30초)")), 30000));
+      const text = await Promise.race([
+        callGeminiStream({
+          maxTokens: 6000,
+          useSearch: true,
+          system: `You are a global investment analyst with real-time market data access. CRITICAL RULES:
 1. Search the web for TODAY's or YESTERDAY's market data ONLY. Never use data older than 2 days.
 2. For index values (KOSPI, NASDAQ etc), find the most recent actual price from today's trading session.
 3. Your ENTIRE response must be ONLY a valid JSON object
@@ -467,34 +477,25 @@ function MarketInsight({ onRefreshAll }) {
 7. NO citations like [1] [2] or [cite:...] anywhere
 8. All string values must be in Korean (한국어)
 9. Keep each string value concise`,
-        user: MARKET_PROMPTS[tabId](today),
-      });
+          user: MARKET_PROMPTS[tabId](today),
+        }),
+        timeoutPromise,
+      ]);
       let parsed;
       try {
-        // 마크다운, cite 태그 제거
         let clean = text
-          .replace(/```json\s*/gi, "")
-          .replace(/```\s*/g, "")
-          .replace(/\[cite[^\]]*\]/g, "")
-          .replace(/\[source[^\]]*\]/g, "")
-          .replace(/\[\d+\]/g, "")
-          .replace(/\[\d+,\s*\d+[^\]]*\]/g, "")
-          .replace(/\.\s*\[cite/g, ". ")
-          .trim();
-
-        // 첫 { 부터 마지막 } 까지만 추출 (앞뒤 텍스트 제거)
+          .replace(/```json\s*/gi, "").replace(/```\s*/g, "")
+          .replace(/\[cite[^\]]*\]/g, "").replace(/\[source[^\]]*\]/g, "")
+          .replace(/\[\d+\]/g, "").replace(/\[\d+,\s*\d+[^\]]*\]/g, "")
+          .replace(/\.\s*\[cite/g, ". ").trim();
         const firstBrace = clean.indexOf("{");
         const lastBrace = clean.lastIndexOf("}");
         if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON");
         clean = clean.slice(firstBrace, lastBrace + 1);
-
-        // 직접 파싱
         try { parsed = JSON.parse(clean); }
         catch {
-          // 복구 시도 1: 잘린 JSON
           const suffixes = ["}", "]}", "}]}", "}]}}"];
           for (const s of suffixes) { try { parsed = JSON.parse(clean + s); break; } catch {} }
-          // 복구 시도 2: 마지막 완전한 필드까지
           if (!parsed) {
             const lc = clean.lastIndexOf(",");
             if (lc > 0) {
@@ -502,40 +503,35 @@ function MarketInsight({ onRefreshAll }) {
               for (const s of suffixes) { try { parsed = JSON.parse(t2 + s); break; } catch {} }
             }
           }
-          // 복구 실패시 raw 표시
           if (!parsed) {
-            // 파싱 실패시 자동 재시도 (최대 2회)
-            if (retryCount < 2) {
-              setLoading(null);
-              setTimeout(() => fetchTab(tabId, retryCount + 1), 1000);
+            if (retryCount < 1) { // 재시도 1회로 제한
+              setTabLoading(tabId, false);
+              setTimeout(() => fetchTab(tabId, retryCount + 1), 2000);
               return;
             }
             parsed = { summary: "분석 결과를 파싱하지 못했습니다. 다시 시도해주세요.", _raw: true };
           }
         }
       } catch {
-        if (retryCount < 2) {
-          setLoading(null);
-          setTimeout(() => fetchTab(tabId, retryCount + 1), 1000);
+        if (retryCount < 1) {
+          setTabLoading(tabId, false);
+          setTimeout(() => fetchTab(tabId, retryCount + 1), 2000);
           return;
         }
         parsed = { summary: "분석 중 오류가 발생했습니다. 다시 시도해주세요.", _raw: true };
       }
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
-      // localStorage 캐시 저장
-      try {
-        localStorage.setItem(`market_cache_${tabId}`, JSON.stringify({ data: parsed, time: new Date().toISOString() }));
-      } catch(e) {}
+      try { localStorage.setItem(`market_cache_${tabId}`, JSON.stringify({ data: parsed, time: new Date().toISOString() })); } catch(e) {}
     } catch(e) {
-      if (retryCount < 2) {
-        setLoading(null);
+      if (retryCount < 1) {
+        setTabLoading(tabId, false);
         setTimeout(() => fetchTab(tabId, retryCount + 1), 2000);
         return;
       }
       setErrors(er => ({ ...er, [tabId]: "분석 실패: "+e.message }));
     }
-    setLoading(null);
+    setTabLoading(tabId, false);
   };
 
   // 전체 새로고침 이벤트
@@ -543,10 +539,10 @@ function MarketInsight({ onRefreshAll }) {
     const handler = () => {
       setResults({});
       setErrors({});
+      setLoading(new Set());
       ["summary","kr","us","asia","europe","commodities","crypto","ipo"].forEach(t => {
         localStorage.removeItem(`market_cache_${t}`);
       });
-      // 현재 활성 탭 새로고침 (summary가 아닌 경우도 처리)
       setActiveTab(prev => {
         setTimeout(() => fetchTab(prev), 150);
         return prev;
@@ -559,7 +555,7 @@ function MarketInsight({ onRefreshAll }) {
   const tab  = MARKET_TABS.find(t => t.id === activeTab);
   const data = results[activeTab];
   const err  = errors[activeTab];
-  const isLoad = loading === activeTab;
+  const isLoad = isLoading(activeTab);
   const upAt = updatedAt[activeTab];
 
 
@@ -1607,22 +1603,35 @@ function Portfolio() {
         const text = await callGeminiWithImage({
           maxTokens: 3000,
           system: `주식 계좌 스크린샷에서 종목 정보를 추출하여 순수 JSON만 반환. 마크다운 없이.
-규칙:
-- shares(수량)와 avg_price(평균단가)가 직접 없으면: 매수금액÷수량으로 avg_price 역산
-- 화면에 평가금액+매수금액+수량이 있으면: avg_price = 매수금액 ÷ 수량
-- broker: 증권사명 추출 (삼성증권/미래에셋/키움/한국투자/NH/신한 등)
-- account: 계좌 유형 (개인연금/IRP/DC/일반/ISA 등) - 화면에서 추출
-- cash: 예수금/현금 잔고 (없으면 0)
-{"holdings":[{"ticker":"종목코드","name":"종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":"섹터","account":"계좌명"}],"account_type":"국내/해외/혼합","broker":"증권사명","account":"계좌명(증권사+유형)","cash":예수금}
-[중요] shares나 avg_price를 확인할 수 없으면 반드시 "error":"수량 또는 평균단가를 확인할 수 없습니다" 필드 추가`,
+
+[레이아웃 패턴별 처리]
+1. 삼성증권: 종목명/평가금액+매수금액+보유수량 → avg_price = 매수금액÷수량
+2. 미래에셋: 종목명(위)\n수량(아래) / 평가손익\n손익률% / 평가금액\n매입금액 → avg_price = 매입금액÷수량
+3. 신한/키움 등: 종목명 / 보유수량+매입단가 / 평가금액+매수금액 → avg_price = 매입단가 직접 사용
+4. 기타: 어떤 형태든 종목명/수량/평균단가(또는 역산 가능한 값) 추출
+
+[중요 규칙]
+- 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함할 것 (예: "TIGER 미국우주테크")
+- shares(수량)와 avg_price(평균단가)를 반드시 숫자로 추출
+- 매입단가/매입금액이 있으면 우선 사용, 없으면 매수금액÷수량으로 역산
+- 인식 불가능한 종목은 "error" 필드에 종목명 기록
+- broker: 증권사명 (삼성증권/미래에셋/키움/한국투자/NH/신한/하나 등)
+- account: 계좌 유형 (개인연금/IRP/DC/일반/ISA 등)
+- cash: 예수금/현금 (없으면 0)
+
+{"holdings":[{"ticker":"종목코드","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":"섹터","account":"계좌명"}],"account_type":"국내/해외/혼합","broker":"증권사명","account":"증권사+계좌유형","cash":예수금,"partial_fail":["인식실패종목명1","인식실패종목명2"]}`,
           imageBase64: base64,
           mediaType,
           user: "이 계좌 스크린샷에서 모든 보유 종목과 계좌 정보를 추출해줘. JSON만.",
         });
         parsed = safeParseJSON(text);
 
-        // 인식 오류 체크
-        if (parsed?.error) throw new Error(parsed.error + "\n해당 정보가 보이는 화면 스크린샷을 올려주세요.");
+        // 부분 인식 실패 안내
+        if (parsed.partial_fail?.length > 0) {
+          const failList = parsed.partial_fail.join(", ");
+          const proceed = window.confirm(`${parsed.holdings.length}개 종목 인식 완료.\n\n다음 ${parsed.partial_fail.length}개 종목을 확인할 수 없습니다:\n${failList}\n\n나머지 종목만 등록하시겠습니까?\n(취소 시 직접 입력으로 추가 가능)`);
+          if (!proceed) { setUploading(false); setUploadMsg(""); return; }
+        }
         if (!parsed?.holdings?.length) throw new Error("종목을 인식할 수 없습니다.\n계좌 잔고 화면의 스크린샷을 올려주세요.");
         const missingData = parsed.holdings.filter(h => !h.shares || !h.avg_price);
         if (missingData.length > 0) throw new Error(`${missingData.length}개 종목의 수량/단가를 확인할 수 없습니다.\n수량과 평균단가가 보이는 화면을 올려주세요.`);
@@ -1782,10 +1791,32 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
   // 계좌 목록
   const accounts = portfolio ? [...new Set(portfolio.holdings.map(h => h.account).filter(Boolean))] : [];
 
-  // 현재 뷰에 따른 종목 필터
-  const rawHoldings = portfolio
-    ? (viewMode === "all" ? portfolio.holdings : portfolio.holdings.filter(h => h.account === viewMode))
-    : [];
+  // 현재 뷰에 따른 종목 필터 + 전체 탭에서 중복 합산
+  const rawHoldings = (() => {
+    if (!portfolio) return [];
+    const holdings = viewMode === "all" ? portfolio.holdings : portfolio.holdings.filter(h => h.account === viewMode);
+    if (viewMode !== "all") return holdings;
+    // 전체 탭: ticker 기준 합산
+    const map = new Map();
+    holdings.forEach(h => {
+      const key = h.ticker || h.name;
+      if (map.has(key)) {
+        const ex = map.get(key);
+        const totalShares = (ex.shares||0) + (h.shares||0);
+        const totalCost = (ex.shares||0)*(ex.avg_price||0) + (h.shares||0)*(h.avg_price||0);
+        map.set(key, {
+          ...ex,
+          shares: totalShares,
+          avg_price: totalShares > 0 ? totalCost / totalShares : ex.avg_price,
+          current_price: h.current_price || ex.current_price,
+          _accounts: [...(ex._accounts||[ex.account]), h.account].filter(Boolean),
+        });
+      } else {
+        map.set(key, { ...h, _accounts: [h.account].filter(Boolean) });
+      }
+    });
+    return Array.from(map.values());
+  })();
 
   const visibleHoldings = [...rawHoldings].sort((a, b) => {
     let av, bv;
@@ -2015,17 +2046,22 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 </div>
               );
             })()}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {[
-                { label: "총 매입", value: totalCost >= 100000000 ? `₩${(totalCost/100000000).toFixed(1)}억` : `₩${Math.round(totalCost/10000)}만`, color: "#94a3b8" },
-                { label: "평가금액", value: totalValue >= 100000000 ? `₩${(totalValue/100000000).toFixed(1)}억` : `₩${Math.round(totalValue/10000)}만`, color: "#e2e8f0" },
-                { label: "수익률", value: `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`, color: totalReturn >= 0 ? "#10b981" : "#ef4444" },
-              ].map((m, i) => (
-                <div key={i} style={{ textAlign: "center", background: "#0f172a55", borderRadius: 8, padding: "10px 4px" }}>
-                  <div style={{ fontSize: 9, color: "#64748b", marginBottom: 3 }}>{m.label}</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{m.value}</div>
+            <div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>총 평가액</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#e2e8f0", letterSpacing: -1 }}>
+                  {totalValue >= 100000000 ? `₩${(totalValue/100000000).toFixed(2)}억` : `₩${Math.round(totalValue/10000).toLocaleString()}만`}
                 </div>
-              ))}
+                <div style={{ fontSize: 20, fontWeight: 700, color: totalReturn >= 0 ? "#10b981" : "#ef4444", marginTop: 2 }}>
+                  {totalReturn >= 0 ? "+" : ""}{totalReturn.toFixed(2)}%
+                  <span style={{ fontSize: 14, marginLeft: 8, color: totalReturn >= 0 ? "#10b98199" : "#ef444499" }}>
+                    ({totalReturn >= 0 ? "+" : ""}₩{Math.round((totalValue-totalCost)/10000).toLocaleString()}만)
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#475569" }}>
+                총 매입 {totalCost >= 100000000 ? `₩${(totalCost/100000000).toFixed(2)}억` : `₩${Math.round(totalCost/10000).toLocaleString()}만`}
+              </div>
             </div>
           </div>
 
@@ -2130,49 +2166,47 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               const cost  = (h.shares||0)*(h.avg_price||0);
               const value = (h.shares||0)*(h.current_price||h.avg_price||0);
               const ret   = cost > 0 ? ((value-cost)/cost)*100 : 0;
+              const hasPrice = !!h.current_price;
+              // 브랜드명이 종목명에 없으면 앞에 붙이기
+              const brand = h.ticker && h.ticker !== h.name ? "" : "";
+              const displayName = h.name || "";
               return (
                 <div key={i} style={{ padding: "12px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 16 }}>{h.name}</span>
-                      {h.account && <span style={{ fontSize: 12, color: "#475569", background: "#1e293b", padding: "1px 5px", borderRadius: 3 }}>{h.account}</span>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 15, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {displayName}
                     </div>
-                    <div style={{ fontSize: 13, color: "#64748b" }}>
-                      {h.ticker && h.ticker !== h.name ? h.ticker + " · " : ""}{h.shares}주 · 평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      {h.shares}주 · 평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                     <div style={{ textAlign: "right" }}>
-                      {h.current_price ? (
+                      {hasPrice ? (
                         <>
-                          <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 15 }}>{h.current_price.toLocaleString()}</div>
-                          <div style={{ fontSize: 14, color: ret >= 0 ? "#10b981" : "#ef4444", fontWeight: 700 }}>{ret >= 0 ? "+" : ""}{ret.toFixed(2)}%</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
+                            {value >= 100000000 ? `₩${(value/100000000).toFixed(1)}억` : `₩${Math.round(value/10000).toLocaleString()}만`}
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: ret >= 0 ? "#10b981" : "#ef4444" }}>
+                            {ret >= 0 ? "+" : ""}{ret.toFixed(1)}%
+                          </div>
                         </>
                       ) : (
-                        <div style={{ fontSize: 13, color: "#334155" }}>미조회</div>
+                        <div style={{ fontSize: 12, color: "#334155" }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 8px", marginRight: 4 }}>✎</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>x</button>
+                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 6px" }}>✎</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {uploading || uploadMsg ? (
-            <div style={{ textAlign: "center", padding: "28px", background: "#0a0f1a", borderRadius: 12, border: `1px solid ${uploading ? "#1e293b" : uploadMsg.startsWith("❌") ? "#ef444444" : "#10b98144"}` }}>
+          {(uploading || uploadMsg) && (
+            <div style={{ textAlign: "center", padding: "20px", background: "#0a0f1a", borderRadius: 12, marginBottom: 14, border: `1px solid ${uploading ? "#1e293b" : uploadMsg.startsWith("❌") ? "#ef444444" : "#10b98144"}` }}>
               {uploading ? <Spinner size={28} /> : <div style={{ fontSize: 28 }}>{uploadMsg.startsWith("❌") ? "❌" : "✅"}</div>}
-              <div style={{ marginTop: 12, color: uploading ? "#0ea5e9" : uploadMsg.startsWith("❌") ? "#ef4444" : "#10b981", fontWeight: 700, fontSize: 15 }}>{uploadMsg}</div>
-            </div>
-          ) : (
-            <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom:8 }}>
-                <button onClick={() => imgInputRef.current?.click()} style={{ padding: "10px 6px", borderRadius: 10, background: "#0ea5e922", border: "1px solid #0ea5e944", color: "#0ea5e9", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", userSelect: "none" }}> 스크린샷</button>
-                <button onClick={() => xlsInputRef.current?.click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
-                <button onClick={() => setShowManual(true)} style={{ padding: "10px 6px", borderRadius: 10, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✎ 직접입력</button>
-              </div>
-              <button onClick={() => orderImgInputRef.current?.click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
+              <div style={{ marginTop: 12, color: uploading ? "#0ea5e9" : uploadMsg.startsWith("❌") ? "#ef4444" : "#10b981", fontWeight: 700, fontSize: 15 }}>{uploadMsg || "분석 중..."}</div>
             </div>
           )}
         </div>
@@ -2506,22 +2540,29 @@ function IndexWidget() {
       ];
 
       const fetchStooq = async (symbol) => {
-        // corsproxy.io 사용 (무료, 신뢰성 높음)
         const base = `https://stooq.com/q/d/l/?s=${symbol}&i=d`;
         const proxy = `https://corsproxy.io/?${encodeURIComponent(base)}`;
-        const res = await fetch(proxy);
-        if (!res.ok) throw new Error(`${res.status}`);
+        const res = await fetch(proxy, { headers: { "x-requested-with": "XMLHttpRequest" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
-        const lines = text.trim().split("\n").slice(1).filter(l => l.trim());
-        const recent = lines.slice(-35); // 최근 35거래일 (약 7주)
-        const points = recent.map(l => parseFloat(l.split(",")[4])).filter(v => !isNaN(v));
-        if (points.length < 2) throw new Error("데이터 부족");
+        // CSV 헤더: Date,Open,High,Low,Close,Volume
+        const lines = text.trim().split("\n").filter(l => l.trim() && !l.startsWith("Date"));
+        if (lines.length < 2) throw new Error("데이터 없음");
+        const recent = lines.slice(-35);
+        // Close는 인덱스 4
+        const points = recent.map(l => {
+          const cols = l.split(",");
+          return parseFloat(cols[4]);
+        }).filter(v => !isNaN(v) && v > 0);
+        if (points.length < 2) throw new Error("파싱 실패");
         const current = points[points.length - 1];
         const prev = points[points.length - 2];
         const changeVal = prev ? ((current - prev) / prev * 100) : 0;
         return {
-          name: null, // 나중에 채움
-          value: current.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+          name: null,
+          value: current >= 1000
+            ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+            : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
           change: String(Math.abs(changeVal).toFixed(2)),
           up: changeVal >= 0,
           points,
@@ -2542,6 +2583,8 @@ function IndexWidget() {
       if (validResults.length > 0) {
         setIndices(validResults);
         localStorage.setItem(CACHE_KEY, JSON.stringify(validResults));
+      } else {
+        console.warn("Stooq 데이터 로드 실패 - 캐시 사용");
       }
     } catch (e) { console.error("위젯 오류:", e); }
     setLoading(false);
