@@ -461,8 +461,7 @@ function MarketInsight({ onRefreshAll }) {
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
       const today = new Date().toLocaleDateString("ko-KR");
-      // 30초 타임아웃
-      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error("타임아웃 (30초)")), 30000));
+      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error("타임아웃 (60초)")), 60000));
       const text = await Promise.race([
         callGeminiStream({
           maxTokens: 6000,
@@ -504,7 +503,7 @@ function MarketInsight({ onRefreshAll }) {
             }
           }
           if (!parsed) {
-            if (retryCount < 1) { // 재시도 1회로 제한
+            if (retryCount < 2) {
               setTabLoading(tabId, false);
               setTimeout(() => fetchTab(tabId, retryCount + 1), 2000);
               return;
@@ -513,7 +512,7 @@ function MarketInsight({ onRefreshAll }) {
           }
         }
       } catch {
-        if (retryCount < 1) {
+        if (retryCount < 2) {
           setTabLoading(tabId, false);
           setTimeout(() => fetchTab(tabId, retryCount + 1), 2000);
           return;
@@ -524,14 +523,15 @@ function MarketInsight({ onRefreshAll }) {
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
       try { localStorage.setItem(`market_cache_${tabId}`, JSON.stringify({ data: parsed, time: new Date().toISOString() })); } catch(e) {}
     } catch(e) {
-      if (retryCount < 1) {
+      if (retryCount < 2) {
         setTabLoading(tabId, false);
-        setTimeout(() => fetchTab(tabId, retryCount + 1), 2000);
+        setTimeout(() => fetchTab(tabId, retryCount + 1), 3000);
         return;
       }
       setErrors(er => ({ ...er, [tabId]: "분석 실패: "+e.message }));
+    } finally {
+      setTabLoading(tabId, false);
     }
-    setTabLoading(tabId, false);
   };
 
   // 전체 새로고침 이벤트
@@ -2468,8 +2468,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget";
-  const BTC_CACHE_KEY = "investiq_btc_widget";
+  const CACHE_KEY = "investiq_index_widget_v3";  // v3: 캐시 강제 초기화
+  const BTC_CACHE_KEY = "investiq_btc_widget_v3";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -2545,16 +2545,23 @@ function IndexWidget() {
         const res = await fetch(proxy, { headers: { "x-requested-with": "XMLHttpRequest" } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
-        // CSV 헤더: Date,Open,High,Low,Close,Volume
-        const lines = text.trim().split("\n").filter(l => l.trim() && !l.startsWith("Date"));
-        if (lines.length < 2) throw new Error("데이터 없음");
+        // HTML 에러 페이지 감지
+        if (text.trim().startsWith("<") || text.includes("<!DOCTYPE")) throw new Error("HTML 응답 (CORS 차단)");
+        const allLines = text.trim().split("\n");
+        if (allLines.length < 3) throw new Error("데이터 부족");
+        // 헤더에서 Close 컬럼 인덱스 동적 확인
+        const header = allLines[0]?.toLowerCase() || "";
+        const headers = header.split(",").map(h => h.trim());
+        const closeIdx = headers.indexOf("close");
+        const colIdx = closeIdx >= 0 ? closeIdx : 4;
+        const lines = allLines.slice(1).filter(l => l.trim());
         const recent = lines.slice(-35);
-        // Close는 인덱스 4
         const points = recent.map(l => {
           const cols = l.split(",");
-          return parseFloat(cols[4]);
+          return parseFloat(cols[colIdx]);
         }).filter(v => !isNaN(v) && v > 0);
-        if (points.length < 2) throw new Error("파싱 실패");
+        // 유효 데이터 최소 10개 이상 있어야 신뢰 가능
+        if (points.length < 10) throw new Error(`유효 데이터 부족 (${points.length}개)`);
         const current = points[points.length - 1];
         const prev = points[points.length - 2];
         const changeVal = prev ? ((current - prev) / prev * 100) : 0;
