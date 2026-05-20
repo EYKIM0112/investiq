@@ -358,7 +358,7 @@ const MARKET_TABS = [
 const MARKET_PROMPTS = {
   summary: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 최신 데이터를 웹 검색으로 수집하라. 오늘자 또는 어제자 데이터만 사용할 것.
 반드시 아래 JSON 형식으로만 응답. {로 시작 }로 끝. JSON 외 텍스트/마크다운/인용 절대 금지. 모든 값 한국어.
-지수는 정확히 이 5개만: 닛케이225/상해종합/홍콩항셍/인도Nifty50/유로스탁스50 (코스피/코스닥/S&P500/나스닥/다우/독일DAX 제외 - 별도 표시됨)
+지수는 정확히 이 6개만: 닛케이225/상해종합/홍콩항셍/인도Nifty50/유로스탁스50/대만가권 (코스피/코스닥/S&P500/나스닥/다우/독일DAX 제외 - 별도 표시됨)
 각 지수의 value와 change_pct는 오늘 실제 시장 데이터로 채울 것.
 {"index_alerts":[{"name":"닛케이225","value":"현재값","change_pct":"등락%","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"전쟁/금융위기/금리/지정학 등 거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
 [ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 예: 방산섹터→방산ETF, 반도체섹터→반도체ETF. 다른 섹터 ETF 절대 금지.
@@ -990,7 +990,7 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ fontSize:14, color:"#64748b" }}>
           {upAt ? `업데이트: ${upAt.toLocaleTimeString("ko-KR")}` : "버튼을 눌러 분석 시작"}
         </div>
-        <button onClick={() => fetchTab(activeTab)} disabled={!!loading} style={{
+        <button onClick={() => fetchTab(activeTab)} disabled={isLoad} style={{
           background: tab.color==="#e2e8f0"?"#334155":tab.color,
           color:"#fff", border:"none", borderRadius:8,
           padding:"9px 18px", cursor:loading?"not-allowed":"pointer",
@@ -1656,27 +1656,25 @@ function Portfolio() {
       const existingAccounts = portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : [];
       const sameAccount = existingAccounts.find(a => a === detectedAccount);
 
+      let latestPortfolio;
       if (sameAccount && portfolio) {
         // 기존 계좌 덮어쓰기 확인
         const confirm = window.confirm(`"${sameAccount}" 계좌가 이미 있습니다.\n기존 포트폴리오를 새 데이터로 교체하시겠습니까?\n\n취소 시 기존 데이터 유지.`);
         if (!confirm) { setUploading(false); setUploadMsg(""); return; }
-        // 해당 계좌 holdings만 교체
         const otherHoldings = portfolio.holdings.filter(h => h.account !== sameAccount);
-        const updated = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...otherHoldings, ...newHoldings] };
-        savePortfolio(updated); setPortfolio(updated);
+        latestPortfolio = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...otherHoldings, ...newHoldings] };
       } else if (portfolio) {
-        // 새 계좌 추가
-        const updated = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...portfolio.holdings, ...newHoldings] };
-        savePortfolio(updated); setPortfolio(updated);
+        latestPortfolio = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...portfolio.holdings, ...newHoldings] };
       } else {
-        // 최초 등록
-        const updated = { holdings: newHoldings, account_type: parsed.account_type || "혼합", broker: parsed.broker || "", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-        savePortfolio(updated); setPortfolio(updated);
+        latestPortfolio = { holdings: newHoldings, account_type: parsed.account_type || "혼합", broker: parsed.broker || "", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       }
+      savePortfolio(latestPortfolio);
+      setPortfolio(latestPortfolio);
 
       setShowAddPanel(false);
-      setUploadMsg(`✅ ${newHoldings.length}개 종목 등록 완료! (${detectedAccount})`);
-      setTimeout(() => setUploadMsg(""), 4000);
+      setUploadMsg(`✅ ${newHoldings.length}개 종목 등록! 현재가 조회 중...`);
+      // 업로드 완료 후 현재가 자동 갱신 (최신 포트폴리오 직접 전달)
+      setTimeout(() => updatePrices(latestPortfolio), 300);
     } catch (e) {
       setUploadMsg(`❌ ${e.message}`);
       setTimeout(() => setUploadMsg(""), 6000);
@@ -1720,13 +1718,14 @@ function Portfolio() {
     setPortfolio(p);
   };
 
-  // 현재가 업데이트
-  const updatePrices = async () => {
-    if (!portfolio) return;
+  // 현재가 업데이트 (targetPortfolio: 업로드 직후 호출 시 최신 포트폴리오 직접 전달)
+  const updatePrices = async (targetPortfolio) => {
+    const pf = targetPortfolio || portfolio;
+    if (!pf) return;
     setUpdating(true);
     try {
       // 종목을 20개씩 나눠서 요청 (너무 많으면 응답 잘림)
-      const holdings = portfolio.holdings;
+      const holdings = pf.holdings;
       const chunkSize = 20;
       const chunks = [];
       for (let i = 0; i < holdings.length; i += chunkSize) {
@@ -1766,8 +1765,8 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
       if (allPrices.length === 0) throw new Error("현재가 데이터를 가져오지 못했습니다.");
 
       const updated = {
-        ...portfolio, updatedAt: new Date().toISOString(),
-        holdings: portfolio.holdings.map(h => {
+        ...pf, updatedAt: new Date().toISOString(),
+        holdings: pf.holdings.map(h => {
           const p = allPrices.find(x =>
             x.ticker === h.ticker ||
             x.ticker === h.name ||
@@ -1778,8 +1777,12 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
       };
       savePortfolio(updated); setPortfolio(updated);
       addHistoryPoint(updated);
-      alert(`v ${allPrices.length}개 종목 가격 업데이트 완료`);
-    } catch (e) { alert("가격 업데이트 실패: " + e.message); }
+      setUploadMsg(`✅ ${allPrices.length}개 종목 가격 업데이트 완료`);
+      setTimeout(() => setUploadMsg(""), 4000);
+    } catch (e) {
+      setUploadMsg(`❌ 가격 업데이트 실패: ${e.message}`);
+      setTimeout(() => setUploadMsg(""), 5000);
+    }
     setUpdating(false);
   };
 
@@ -1835,8 +1838,9 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
     }
   });
 
+  const cash = (viewMode === "all") ? (portfolio?.cash || 0) : 0;
   const totalCost  = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.avg_price||0), 0);
-  const totalValue = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.current_price||h.avg_price||0), 0);
+  const totalValue = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.current_price||h.avg_price||0), 0) + cash;
   const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
 
   // 업로드 패널 - label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
@@ -2096,47 +2100,32 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
           {/* 수익률 히스토리 */}
           <ReturnHistoryChart portfolio={portfolio} />
 
-          {/* 현금/배당 잔고 */}
-          <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:"14px 16px", marginBottom:14, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div>
-              <div style={{ fontSize:12, color:"#f59e0b", fontWeight:700, letterSpacing:2, marginBottom:4 }}>현금 잔고</div>
-              <div style={{ fontSize:18, fontWeight:800, color:"#e2e8f0" }}>₩{((portfolio.cash)||0).toLocaleString()}</div>
-              <div style={{ fontSize:13, color:"#475569", marginTop:2 }}>예수금 + 배당금</div>
-            </div>
-            <button onClick={() => {
-              const input = prompt("현금 잔고 입력 (원):", portfolio.cash || 0);
-              if (input !== null) {
-                const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() };
-                savePortfolio(p); setPortfolio(p);
-              }
-            }} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, color:"#e2e8f0", padding:"7px 14px", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-              수정
-            </button>
-          </div>
-
-          {/* 섹터 분포 */}
+          {/* 섹터 분포 (현금 포함) */}
           <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 16, marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700, marginBottom: 12, letterSpacing: 2 }}>섹터 분포</div>
-            {Object.entries(
-              visibleHoldings.reduce((acc, h) => {
+            {(() => {
+              const sectorMap = visibleHoldings.reduce((acc, h) => {
                 const s = h.sector || "기타";
                 acc[s] = (acc[s] || 0) + (h.shares||0)*(h.current_price||h.avg_price||0);
                 return acc;
-              }, {})
-            ).sort((a,b) => b[1]-a[1]).map(([sector, val]) => {
-              const pct = totalValue > 0 ? (val/totalValue)*100 : 0;
-              return (
-                <div key={sector} style={{ marginBottom: 9 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 14 }}>
-                    <span style={{ color: getSectorColor(sector), fontWeight: 600 }}>{sector}</span>
-                    <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}%</span>
+              }, {});
+              if (cash > 0) sectorMap["₩ 현금"] = cash;
+              return Object.entries(sectorMap).sort((a,b) => b[1]-a[1]).map(([sector, val]) => {
+                const pct = totalValue > 0 ? (val/totalValue)*100 : 0;
+                const color = sector === "₩ 현금" ? "#94a3b8" : getSectorColor(sector);
+                return (
+                  <div key={sector} style={{ marginBottom: 9 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 14 }}>
+                      <span style={{ color, fontWeight: 600 }}>{sector}</span>
+                      <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}%</span>
+                    </div>
+                    <div style={{ background: "#1e293b", borderRadius: 4, height: 5 }}>
+                      <div style={{ width: `${pct}%`, height: 5, borderRadius: 4, background: color }} />
+                    </div>
                   </div>
-                  <div style={{ background: "#1e293b", borderRadius: 4, height: 5 }}>
-                    <div style={{ width: `${pct}%`, height: 5, borderRadius: 4, background: getSectorColor(sector) }} />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
 
           {/* 정렬 버튼 */}
@@ -2157,18 +2146,59 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
             ))}
           </div>
 
-          {/* 종목 목록 */}
+          {/* 종목 목록 (현금 최상단 포함) */}
           <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
             <div style={{ padding: "13px 16px", borderBottom: "1px solid #1e293b" }}>
-              <span style={{ fontSize: 12, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2 }}>보유 종목 ({visibleHoldings.length})</span>
+              <span style={{ fontSize: 12, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2 }}>보유 종목 ({visibleHoldings.length}{cash > 0 ? " + 현금" : ""})</span>
             </div>
+
+            {/* 현금 행 - 최상단 */}
+            {cash > 0 && (
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#0f172a" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: "#94a3b8", fontSize: 15, marginBottom: 2 }}>
+                    💵 현금 (예수금)
+                  </div>
+                  <div style={{ fontSize: 12, color: "#475569" }}>예수금 · 배당금 포함</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
+                      {cash >= 100000000 ? `₩${(cash/100000000).toFixed(1)}억` : `₩${Math.round(cash/10000).toLocaleString()}만`}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      {totalValue > 0 ? `${((cash/totalValue)*100).toFixed(1)}%` : ""}
+                    </div>
+                  </div>
+                  <button onClick={() => {
+                    const input = prompt("현금 잔고 입력 (원):", portfolio.cash || 0);
+                    if (input !== null) {
+                      const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() };
+                      savePortfolio(p); setPortfolio(p);
+                    }
+                  }} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 6px" }}>✎</button>
+                </div>
+              </div>
+            )}
+            {cash === 0 && (
+              <div style={{ padding: "8px 16px", borderBottom: "1px solid #0f1929" }}>
+                <button onClick={() => {
+                  const input = prompt("현금 잔고 입력 (원):", 0);
+                  if (input !== null) {
+                    const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() };
+                    savePortfolio(p); setPortfolio(p);
+                  }
+                }} style={{ background: "none", border: "none", color: "#334155", fontSize: 12, cursor: "pointer", padding: 0 }}>
+                  + 현금 잔고 추가
+                </button>
+              </div>
+            )}
+
             {visibleHoldings.map((h, i) => {
               const cost  = (h.shares||0)*(h.avg_price||0);
               const value = (h.shares||0)*(h.current_price||h.avg_price||0);
               const ret   = cost > 0 ? ((value-cost)/cost)*100 : 0;
               const hasPrice = !!h.current_price;
-              // 브랜드명이 종목명에 없으면 앞에 붙이기
-              const brand = h.ticker && h.ticker !== h.name ? "" : "";
               const displayName = h.name || "";
               return (
                 <div key={i} style={{ padding: "12px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2468,8 +2498,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v3";  // v3: 캐시 강제 초기화
-  const BTC_CACHE_KEY = "investiq_btc_widget_v3";
+  const CACHE_KEY = "investiq_index_widget_v4";  // v4: 프록시 폴백 + 등락률 방어
+  const BTC_CACHE_KEY = "investiq_btc_widget_v4";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -2478,7 +2508,17 @@ function IndexWidget() {
     try { return JSON.parse(localStorage.getItem(BTC_CACHE_KEY) || "null"); } catch { return null; }
   };
 
-  const [indices, setIndices] = useState(loadCache);
+  const [indices, setIndices] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      // 캐시 유효성 검사: change가 100 이상이면 이전 포인트값 캐시 → 무효화
+      if (cached && cached.some(idx => parseFloat(idx.change) > 50)) {
+        localStorage.removeItem(CACHE_KEY);
+        return null;
+      }
+      return cached;
+    } catch { return null; }
+  });
   const [btc, setBtc] = useState(loadBtcCache);
   const [loading, setLoading] = useState(false);
 
@@ -2539,32 +2579,33 @@ function IndexWidget() {
         { name: "금(Gold)", symbol: "gc.f"   },
       ];
 
-      const fetchStooq = async (symbol) => {
-        const base = `https://stooq.com/q/d/l/?s=${symbol}&i=d`;
-        const proxy = `https://corsproxy.io/?${encodeURIComponent(base)}`;
-        const res = await fetch(proxy, { headers: { "x-requested-with": "XMLHttpRequest" } });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        // HTML 에러 페이지 감지
-        if (text.trim().startsWith("<") || text.includes("<!DOCTYPE")) throw new Error("HTML 응답 (CORS 차단)");
-        const allLines = text.trim().split("\n");
+      // CSV 파싱 공통 함수
+      const parseStooqCSV = (text) => {
+        const trimmed = text.trim();
+        // HTML 응답 완전 차단 (프록시가 에러 페이지 반환하는 경우)
+        if (
+          trimmed.startsWith("<") ||
+          trimmed.toLowerCase().includes("<!doctype") ||
+          trimmed.toLowerCase().includes("<html") ||
+          !trimmed.includes(",")
+        ) throw new Error("HTML/비CSV 응답");
+        const allLines = trimmed.split("\n");
         if (allLines.length < 3) throw new Error("데이터 부족");
-        // 헤더에서 Close 컬럼 인덱스 동적 확인
         const header = allLines[0]?.toLowerCase() || "";
         const headers = header.split(",").map(h => h.trim());
+        // 헤더에 date가 없으면 CSV가 아님
+        if (!headers.some(h => h === "date" || h === "data")) throw new Error("유효하지 않은 헤더");
         const closeIdx = headers.indexOf("close");
         const colIdx = closeIdx >= 0 ? closeIdx : 4;
-        const lines = allLines.slice(1).filter(l => l.trim());
+        const lines = allLines.slice(1).filter(l => l.trim() && l.includes(","));
         const recent = lines.slice(-35);
-        const points = recent.map(l => {
-          const cols = l.split(",");
-          return parseFloat(cols[colIdx]);
-        }).filter(v => !isNaN(v) && v > 0);
-        // 유효 데이터 최소 10개 이상 있어야 신뢰 가능
+        const points = recent.map(l => parseFloat(l.split(",")[colIdx])).filter(v => !isNaN(v) && v > 0);
         if (points.length < 10) throw new Error(`유효 데이터 부족 (${points.length}개)`);
         const current = points[points.length - 1];
         const prev = points[points.length - 2];
         const changeVal = prev ? ((current - prev) / prev * 100) : 0;
+        // ±50% 초과는 잘못된 데이터 (단위 오류 등) → Gemini fallback으로
+        if (Math.abs(changeVal) > 50) throw new Error(`비정상 등락률 ${changeVal.toFixed(1)}%`);
         return {
           name: null,
           value: current >= 1000
@@ -2576,22 +2617,80 @@ function IndexWidget() {
         };
       };
 
-      const results = await Promise.allSettled(
+      const fetchStooq = async (symbol) => {
+        const base = `https://stooq.com/q/d/l/?s=${symbol}&i=d`;
+        // 프록시 목록 (순서대로 시도)
+        const proxies = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+          `https://corsproxy.io/?${encodeURIComponent(base)}`,
+        ];
+        let lastErr = null;
+        for (const proxy of proxies) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 10000);
+            const res = await fetch(proxy, { signal: controller.signal });
+            clearTimeout(timer);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const text = await res.text();
+            return parseStooqCSV(text); // 성공 시 반환
+          } catch (e) {
+            lastErr = e;
+            console.warn(`Stooq [${symbol}] 프록시 실패:`, e.message);
+          }
+        }
+        throw lastErr || new Error("모든 프록시 실패");
+      };
+
+      // Stooq 시도
+      const stooqResults = await Promise.allSettled(
         STOOQ_SYMBOLS.map(async ({ name, symbol }) => {
           const data = await fetchStooq(symbol);
           return { ...data, name };
         })
       );
+      const validStooq = stooqResults.filter(r => r.status === "fulfilled").map(r => r.value);
+      const failedNames = STOOQ_SYMBOLS.filter((_, i) => stooqResults[i].status === "rejected").map(s => s.name);
 
-      const validResults = results
-        .filter(r => r.status === "fulfilled")
-        .map(r => r.value);
+      let finalResults = [...validStooq];
 
-      if (validResults.length > 0) {
-        setIndices(validResults);
-        localStorage.setItem(CACHE_KEY, JSON.stringify(validResults));
-      } else {
-        console.warn("Stooq 데이터 로드 실패 - 캐시 사용");
+      // 실패한 종목은 Gemini fallback
+      if (failedNames.length > 0 && apiKey) {
+        try {
+          const today = new Date().toLocaleDateString("ko-KR");
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+          const body = {
+            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준 다음 지수들의 현재값과 전일대비 등락률(%)을 JSON으로만 반환. 마크다운 없이.
+{"indices":[{"name":"코스피","value":"7265.30","change":"-3.34"},{"name":"금(Gold)","value":"3320.50","change":"+0.45"}]}
+대상: ${failedNames.join(", ")}` }] }],
+            tools: [{ googleSearch: {} }],
+            generationConfig: { maxOutputTokens: 500, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+          };
+          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+          const match = text.replace(/```json|```/g, "").trim().match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            parsed.indices?.forEach(idx => {
+              const changeNum = parseFloat(String(idx.change).replace(/[+%]/g, "")) || 0;
+              finalResults.push({
+                name: idx.name,
+                value: idx.value,
+                change: String(Math.abs(changeNum).toFixed(2)),
+                up: !String(idx.change).startsWith("-"),
+                points: [],
+              });
+            });
+          }
+        } catch(e) { console.warn("Gemini fallback 실패:", e); }
+      }
+
+      if (finalResults.length > 0) {
+        // 원래 순서 유지
+        const ordered = STOOQ_SYMBOLS.map(s => finalResults.find(r => r.name === s.name)).filter(Boolean);
+        setIndices(ordered);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(ordered));
       }
     } catch (e) { console.error("위젯 오류:", e); }
     setLoading(false);
