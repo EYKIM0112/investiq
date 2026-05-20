@@ -1115,7 +1115,7 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
     ? portfolio.holdings.filter(h => h.account === filterAccount)
     : portfolio.holdings;
   const totalValue = holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
-  const cash = (!filterAccount || filterAccount === "all") ? (portfolio.cash||0) : 0;
+  const cash = portfolio.cash || 0;
   const grand = totalValue+cash;
 
   const sectorMap={}, regionMap={};
@@ -1838,7 +1838,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
     }
   });
 
-  const cash = (viewMode === "all") ? (portfolio?.cash || 0) : 0;
+  const cash = portfolio?.cash || 0;
   const totalCost  = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.avg_price||0), 0);
   const totalValue = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.current_price||h.avg_price||0), 0) + cash;
   const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
@@ -2099,34 +2099,6 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
 
           {/* 수익률 히스토리 */}
           <ReturnHistoryChart portfolio={portfolio} />
-
-          {/* 섹터 분포 (현금 포함) */}
-          <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700, marginBottom: 12, letterSpacing: 2 }}>섹터 분포</div>
-            {(() => {
-              const sectorMap = visibleHoldings.reduce((acc, h) => {
-                const s = h.sector || "기타";
-                acc[s] = (acc[s] || 0) + (h.shares||0)*(h.current_price||h.avg_price||0);
-                return acc;
-              }, {});
-              if (cash > 0) sectorMap["₩ 현금"] = cash;
-              return Object.entries(sectorMap).sort((a,b) => b[1]-a[1]).map(([sector, val]) => {
-                const pct = totalValue > 0 ? (val/totalValue)*100 : 0;
-                const color = sector === "₩ 현금" ? "#94a3b8" : getSectorColor(sector);
-                return (
-                  <div key={sector} style={{ marginBottom: 9 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 14 }}>
-                      <span style={{ color, fontWeight: 600 }}>{sector}</span>
-                      <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}%</span>
-                    </div>
-                    <div style={{ background: "#1e293b", borderRadius: 4, height: 5 }}>
-                      <div style={{ width: `${pct}%`, height: 5, borderRadius: 4, background: color }} />
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
 
           {/* 정렬 버튼 */}
           <div style={{ display:"flex", gap:6, marginBottom:10, alignItems:"center" }}>
