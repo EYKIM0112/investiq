@@ -563,6 +563,13 @@ function MarketInsight({ onRefreshAll }) {
 
 
   const alertColor = (status) => status==="danger"?"#ef4444":status==="warning"?"#f59e0b":"#10b981";
+  // change_pct 문자열에서 부호 파싱 → 상승=초록, 하락=빨강
+  const changePctColor = (changePct) => {
+    const s = String(changePct || "").trim();
+    if (s.startsWith("-")) return "#ef4444";
+    if (s.startsWith("+") || parseFloat(s) > 0) return "#10b981";
+    return "#94a3b8"; // 0 또는 파싱불가
+  };
 
   const renderSummary = (d) => (
     <>
@@ -595,7 +602,7 @@ function MarketInsight({ onRefreshAll }) {
           {d.index_alerts?.map((a,i) => (
             <div key={i} style={{ background:"#1e293b", borderRadius:8, padding:"10px 12px" }}>
               <div style={{ fontSize:14, color:"#64748b", marginBottom:3 }}>{a.name}</div>
-              <div style={{ fontSize:17, fontWeight:700, color:alertColor(a.status) }}>{a.change_pct}</div>
+              <div style={{ fontSize:17, fontWeight:700, color:changePctColor(a.change_pct) }}>{a.change_pct}</div>
               <div style={{ fontSize:13, color:"#475569" }}>{a.value}</div>
             </div>
           ))}
@@ -2617,21 +2624,23 @@ function IndexWidget() {
 
       const fetchStooq = async (symbol) => {
         const base = `https://stooq.com/q/d/l/?s=${symbol}&i=d`;
-        // 프록시 목록 (순서대로 시도)
         const proxies = [
           `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
+          `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(base)}`,
           `https://corsproxy.io/?${encodeURIComponent(base)}`,
+          `https://htmldriven.com/cors-proxy?url=${encodeURIComponent(base)}`,
         ];
         let lastErr = null;
         for (const proxy of proxies) {
           try {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 10000);
+            const timer = setTimeout(() => controller.abort(), 15000);
             const res = await fetch(proxy, { signal: controller.signal });
             clearTimeout(timer);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const text = await res.text();
-            return parseStooqCSV(text); // 성공 시 반환
+            return parseStooqCSV(text);
           } catch (e) {
             lastErr = e;
             console.warn(`Stooq [${symbol}] 프록시 실패:`, e.message);
@@ -2648,40 +2657,58 @@ function IndexWidget() {
         })
       );
       const validStooq = stooqResults.filter(r => r.status === "fulfilled").map(r => r.value);
-      const failedNames = STOOQ_SYMBOLS.filter((_, i) => stooqResults[i].status === "rejected").map(s => s.name);
+      const failedSymbols = STOOQ_SYMBOLS.filter((_, i) => stooqResults[i].status === "rejected");
+      const failedNames = failedSymbols.map(s => s.name);
 
       let finalResults = [...validStooq];
 
-      // 실패한 종목은 Gemini fallback
-      if (failedNames.length > 0 && apiKey) {
+      // 실패 종목 Gemini fallback (재시도 포함)
+      const geminiIndexFallback = async (names, retry = 0) => {
+        if (!apiKey || names.length === 0) return;
         try {
           const today = new Date().toLocaleDateString("ko-KR");
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
           const body = {
-            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준 다음 지수들의 현재값과 전일대비 등락률(%)을 JSON으로만 반환. 마크다운 없이.
-{"indices":[{"name":"코스피","value":"7265.30","change":"-3.34"},{"name":"금(Gold)","value":"3320.50","change":"+0.45"}]}
-대상: ${failedNames.join(", ")}` }] }],
+            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준 다음 지수/자산들의 현재값과 전일대비 등락률(%)을 JSON으로만 반환. 마크다운 없이.
+예시: {"indices":[{"name":"코스피","value":"2650.30","change":"-0.34"},{"name":"금(Gold)","value":"3320.50","change":"+0.45"}]}
+대상: ${names.join(", ")}` }] }],
             tools: [{ googleSearch: {} }],
-            generationConfig: { maxOutputTokens: 500, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+            generationConfig: { maxOutputTokens: 600, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
           };
           const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (res.status === 503 && retry < 3) {
+            await new Promise(r => setTimeout(r, 2000 * (retry + 1)));
+            return geminiIndexFallback(names, retry + 1);
+          }
+          if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
           const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
           const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
           const match = text.replace(/```json|```/g, "").trim().match(/\{[\s\S]*\}/);
           if (match) {
             const parsed = JSON.parse(match[0]);
             parsed.indices?.forEach(idx => {
-              const changeNum = parseFloat(String(idx.change).replace(/[+%]/g, "")) || 0;
+              const rawChange = String(idx.change || "0");
+              const changeNum = parseFloat(rawChange.replace(/[+%]/g, "")) || 0;
               finalResults.push({
                 name: idx.name,
-                value: idx.value,
+                value: String(idx.value || ""),
                 change: String(Math.abs(changeNum).toFixed(2)),
-                up: !String(idx.change).startsWith("-"),
+                up: !rawChange.trim().startsWith("-"),
                 points: [],
               });
             });
           }
-        } catch(e) { console.warn("Gemini fallback 실패:", e); }
+        } catch(e) { console.warn("Gemini 지수 fallback 실패:", e.message); }
+      };
+
+      if (failedNames.length > 0) {
+        await geminiIndexFallback(failedNames);
+      }
+      // Stooq 전체 실패 시 전 종목 Gemini로 재시도
+      if (validStooq.length === 0 && apiKey) {
+        finalResults = [];
+        await geminiIndexFallback(STOOQ_SYMBOLS.map(s => s.name));
       }
 
       if (finalResults.length > 0) {
