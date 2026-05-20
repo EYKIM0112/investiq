@@ -1372,9 +1372,10 @@ function InputField({ label, value, onChange, inputMode = "text" }) {
   );
 }
 
-function ManualInputModal({ onClose, onAdd }) {
-  const [account, setAccount]           = useState("국내계좌");
-  const [customAccount, setCustomAccount] = useState("");
+function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
+  const [account, setAccount]           = useState(existingAccounts[0] || "");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [showNewAccount, setShowNewAccount] = useState(existingAccounts.length === 0);
   const [name, setName]                 = useState("");
   const [ticker, setTicker]             = useState("");
   const [avgPrice, setAvgPrice]         = useState("");
@@ -1382,8 +1383,11 @@ function ManualInputModal({ onClose, onAdd }) {
   const [currency, setCurrency]         = useState("KRW");
   const [sector, setSector]             = useState("기타");
 
+  const finalAccount = showNewAccount ? newAccountName : account;
+
   const handleAdd = () => {
     if (!name || !avgPrice || !shares) { alert("종목명, 평균단가, 수량은 필수입니다."); return; }
+    if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
     onAdd({
       ticker: ticker || name,
       name,
@@ -1391,12 +1395,11 @@ function ManualInputModal({ onClose, onAdd }) {
       avg_price: parseFloat(String(avgPrice).replace(/,/g, "")),
       currency,
       sector,
-      account: account === "기타" ? (customAccount || "기타") : account,
+      account: finalAccount,
       current_price: null,
     });
     setName(""); setTicker(""); setAvgPrice(""); setShares("");
   };
-
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 300, display: "flex", alignItems: "flex-end" }}
@@ -1410,18 +1413,26 @@ function ManualInputModal({ onClose, onAdd }) {
 
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>계좌 선택</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-          {ACCOUNTS.map(a => (
-            <button key={a} onClick={() => setAccount(a)} style={{
+          {existingAccounts.map(a => (
+            <button key={a} onClick={() => { setAccount(a); setShowNewAccount(false); }} style={{
               padding: "6px 12px", borderRadius: 20,
-              border: `1px solid ${account === a ? "#0ea5e9" : "#334155"}`,
-              background: account === a ? "#0ea5e922" : "transparent",
-              color: account === a ? "#0ea5e9" : "#94a3b8", fontSize: 14, cursor: "pointer", fontWeight: account === a ? 700 : 400,
+              border: `1px solid ${!showNewAccount && account === a ? "#0ea5e9" : "#334155"}`,
+              background: !showNewAccount && account === a ? "#0ea5e922" : "transparent",
+              color: !showNewAccount && account === a ? "#0ea5e9" : "#94a3b8",
+              fontSize: 14, cursor: "pointer", fontWeight: !showNewAccount && account === a ? 700 : 400,
             }}>{a}</button>
           ))}
+          <button onClick={() => setShowNewAccount(true)} style={{
+            padding: "6px 12px", borderRadius: 20,
+            border: `1px solid ${showNewAccount ? "#10b981" : "#334155"}`,
+            background: showNewAccount ? "#10b98122" : "transparent",
+            color: showNewAccount ? "#10b981" : "#94a3b8",
+            fontSize: 14, cursor: "pointer", fontWeight: showNewAccount ? 700 : 400,
+          }}>+ 신규 계좌</button>
         </div>
-        {account === "기타" && (
-          <input placeholder="계좌명 직접 입력" value={customAccount} onChange={e => setCustomAccount(e.target.value)}
-            style={{ width: "100%", background: "#020617", border: "1px solid #334155", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontSize: 16, outline: "none", marginBottom: 10 }} />
+        {showNewAccount && (
+          <input placeholder="새 계좌명 입력 (예: 삼성 개인연금)" value={newAccountName} onChange={e => setNewAccountName(e.target.value)}
+            style={{ width: "100%", background: "#020617", border: "1px solid #10b981", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontSize: 16, outline: "none", marginBottom: 10, boxSizing: "border-box" }} />
         )}
 
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>통화</div>
@@ -1900,7 +1911,11 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
         />
       )}
       {showManual && (
-        <ManualInputModal onClose={() => setShowManual(false)} onAdd={h => { addManualHolding(h); setShowManual(false); }} />
+        <ManualInputModal
+          onClose={() => setShowManual(false)}
+          onAdd={h => { addManualHolding(h); setShowManual(false); }}
+          existingAccounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
+        />
       )}
 
       {/* 포폴 없음 > 초기 등록 */}
@@ -2016,7 +2031,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
 
           {/* 종목 추가 버튼 - 상단 배치 */}
           <div style={{marginBottom:14}}>
-            <input ref={imgInputRef} type="file" accept="image/*" multiple
+            <input ref={imgInputRef} id="input-img-upload" type="file" accept="image/*" multiple
               style={{display:"none"}}
               onChange={e=>{
                 const files = Array.from(e.target.files || []);
@@ -2025,18 +2040,18 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                   setTimeout(() => processFile(file, true), idx * 800);
                 });
               }}/>
-            <input ref={xlsInputRef} type="file" accept=".xlsx,.xls,.csv"
+            <input ref={xlsInputRef} id="input-xls-upload" type="file" accept=".xlsx,.xls,.csv"
               style={{display:"none"}}
-              onChange={e=>onFileChange(e,true)}/>
-            <input ref={orderImgInputRef} type="file" accept="image/*"
+              onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) processFile(f, true); }}/>
+            <input ref={orderImgInputRef} id="input-order-upload" type="file" accept="image/*"
               style={{display:"none"}}
               onChange={e=>{const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f);}}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-              <button onClick={() => imgInputRef.current?.click()} style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none"}}> 스크린샷</button>
-              <button onClick={() => xlsInputRef.current?.click()} style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer"}}>엑셀/CSV</button>
+              <label htmlFor="input-img-upload" style={{padding:"10px 6px",borderRadius:10,background:"#0ea5e922",border:"1px solid #0ea5e944",color:"#0ea5e9",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",userSelect:"none",display:"block"}}> 스크린샷</label>
+              <label htmlFor="input-xls-upload" style={{padding:"10px 6px",borderRadius:10,background:"#10b98122",border:"1px solid #10b98144",color:"#10b981",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"center",display:"block"}}>엑셀/CSV</label>
               <button onClick={()=>setShowManual(true)} style={{padding:"10px 6px",borderRadius:10,background:"#7c3aed22",border:"1px solid #7c3aed44",color:"#a78bfa",fontWeight:700,fontSize:13,cursor:"pointer"}}>✎ 직접입력</button>
             </div>
-            <button onClick={() => orderImgInputRef.current?.click()} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13}}>주문체결/실현손익 캡처</button>
+            <label htmlFor="input-order-upload" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13,boxSizing:"border-box"}}>주문체결/실현손익 캡처</label>
           </div>
 
           {/* 원형 그래프 */}
@@ -2461,58 +2476,72 @@ function IndexWidget() {
   const fetchIndices = async () => {
     setLoading(true);
     try {
-      // BTC: CoinGecko API
-      const btcRes = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1&interval=hourly");
+      // BTC: CoinGecko 7주 주봉 (49일)
+      const btcRes = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=49&interval=daily");
       if (btcRes.ok) {
         const btcData = await btcRes.json();
         const prices = btcData.prices?.map(p => p[1]) || [];
         const current = prices[prices.length - 1] || 0;
-        const open = prices[0] || current;
-        const change = open ? ((current - open) / open * 100) : 0;
+        const prev = prices[prices.length - 2] || current;
+        const change = prev ? ((current - prev) / prev * 100) : 0;
         const btcResult = {
-          name: "BTC", price: `$${Math.round(current).toLocaleString()}`,
-          change: `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`,
-          up: change >= 0, points: prices.slice(-24),
+          name: "BTC",
+          price: `$${Math.round(current).toLocaleString()}`,
+          change: String(Math.abs(change).toFixed(2)),
+          up: change >= 0,
+          points: prices,
         };
         setBtc(btcResult);
         localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
       }
 
-      // 주요 지수 + 금: Gemini로 검색
-      const apiKey = localStorage.getItem("investiq_api_key") || "";
-      if (!apiKey) { setLoading(false); return; }
-      const today = new Date().toLocaleDateString("ko-KR");
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
-      const body = {
-        contents: [{ role: "user", parts: [{ text: `오늘(${today}) 현재 기준 실시간 시장 데이터를 검색하라. 아래 6개 항목의 현재값, 전일대비 등락률, 오늘 시간대별 가격 포인트(최소 5개)를 JSON으로만 반환. 마크다운/설명 없이 JSON만.
-{"indices":[
-  {"name":"코스피","value":"7265.30","change":"-3.34","points":[7400,7380,7350,7300,7265]},
-  {"name":"코스닥","value":"1079.25","change":"-2.87","points":[1110,1100,1095,1085,1079]},
-  {"name":"다우","value":"42000.00","change":"+0.32","points":[41900,41950,42000,42050,42000]},
-  {"name":"나스닥","value":"18000.00","change":"+1.2","points":[17800,17850,17900,17950,18000]},
-  {"name":"S&P500","value":"5600.00","change":"+0.8","points":[5560,5570,5580,5590,5600]},
-  {"name":"금(Gold)","value":"3200.00","change":"+0.5","points":[3180,3185,3190,3195,3200]}
-]}
-위 형식으로 6개 항목 실제 현재 데이터로 채워서 반환. points는 오늘 장중 가격 변화 흐름.` }] }],
-        tools: [{ googleSearch: {} }],
-        generationConfig: { maxOutputTokens: 800, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+      // 주요 지수 + 금: Stooq에서 7주 일봉 직접 (CORS 프록시 경유)
+      const STOOQ_SYMBOLS = [
+        { name: "코스피",   symbol: "^kospi" },
+        { name: "코스닥",   symbol: "^kq11"  },
+        { name: "다우",     symbol: "^dji"   },
+        { name: "나스닥",   symbol: "^ndq"   },
+        { name: "S&P500",  symbol: "^spx"   },
+        { name: "금(Gold)", symbol: "gc.f"   },
+      ];
+
+      const fetchStooq = async (symbol) => {
+        // corsproxy.io 사용 (무료, 신뢰성 높음)
+        const base = `https://stooq.com/q/d/l/?s=${symbol}&i=d`;
+        const proxy = `https://corsproxy.io/?${encodeURIComponent(base)}`;
+        const res = await fetch(proxy);
+        if (!res.ok) throw new Error(`${res.status}`);
+        const text = await res.text();
+        const lines = text.trim().split("\n").slice(1).filter(l => l.trim());
+        const recent = lines.slice(-35); // 최근 35거래일 (약 7주)
+        const points = recent.map(l => parseFloat(l.split(",")[4])).filter(v => !isNaN(v));
+        if (points.length < 2) throw new Error("데이터 부족");
+        const current = points[points.length - 1];
+        const prev = points[points.length - 2];
+        const changeVal = prev ? ((current - prev) / prev * 100) : 0;
+        return {
+          name: null, // 나중에 채움
+          value: current.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+          change: String(Math.abs(changeVal).toFixed(2)),
+          up: changeVal >= 0,
+          points,
+        };
       };
-      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      const match = clean.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (parsed.indices) {
-          const result = parsed.indices.map(idx => ({
-            ...idx,
-            up: !String(idx.change).startsWith("-"),
-            points: Array.isArray(idx.points) ? idx.points : [],
-          }));
-          setIndices(result);
-          localStorage.setItem(CACHE_KEY, JSON.stringify(result));
-        }
+
+      const results = await Promise.allSettled(
+        STOOQ_SYMBOLS.map(async ({ name, symbol }) => {
+          const data = await fetchStooq(symbol);
+          return { ...data, name };
+        })
+      );
+
+      const validResults = results
+        .filter(r => r.status === "fulfilled")
+        .map(r => r.value);
+
+      if (validResults.length > 0) {
+        setIndices(validResults);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(validResults));
       }
     } catch (e) { console.error("위젯 오류:", e); }
     setLoading(false);
@@ -2539,7 +2568,12 @@ function IndexWidget() {
           <div style={{ color: "#475569", fontSize: 13, padding: "8px 0" }}>지수 로딩 중...</div>
         )}
         {allItems.map((idx, i) => {
-          const color = idx.up ? "#10b981" : "#ef4444";
+          // change에서 기존 +/- 제거 후 숫자만 추출
+          const rawChange = String(idx.change || "0").replace(/[+\-%]/g, "").trim();
+          const changeNum = parseFloat(rawChange) || 0;
+          const isUp = idx.up ?? changeNum >= 0;
+          const color = isUp ? "#10b981" : "#ef4444";
+          const changeStr = `${isUp ? "+" : "-"}${Math.abs(changeNum).toFixed(2)}%`;
           return (
             <div key={i} style={{
               background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10,
@@ -2547,7 +2581,7 @@ function IndexWidget() {
             }}>
               <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, marginBottom: 2 }}>{idx.name}</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 1 }}>{idx.value || idx.price}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color }}>{idx.up ? "+" : ""}{idx.change}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color }}>{changeStr}</div>
               {idx.points?.length > 1 && (
                 <div style={{ marginTop: 4 }}>
                   <MiniChart points={idx.points} color={color} width={70} height={24} />
