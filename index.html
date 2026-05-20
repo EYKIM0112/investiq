@@ -461,7 +461,8 @@ function MarketInsight({ onRefreshAll }) {
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
       const today = new Date().toLocaleDateString("ko-KR");
-      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error("타임아웃 (60초)")), 60000));
+      const timeoutMs = (tabId === "summary" || tabId === "commodities") ? 90000 : 60000;
+      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error(`타임아웃 (${timeoutMs/1000}초)`)), timeoutMs));
       const text = await Promise.race([
         callGeminiStream({
           maxTokens: 6000,
@@ -1480,6 +1481,7 @@ function Portfolio() {
   const [showManual, setShowManual] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
+  const [autoUpdated, setAutoUpdated] = useState(false); // 탭 진입 자동갱신 여부
 
   const imgInputRef      = useRef(null);
   const xlsInputRef      = useRef(null);
@@ -1790,6 +1792,17 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
   const [viewMode, setViewMode] = useState("all");
   const [sortBy, setSortBy] = useState("name"); // name | value | profit
   const [sortDir, setSortDir] = useState("desc"); // asc | desc
+
+  // 포트폴리오 탭 첫 진입 시 현재가 자동갱신 (현재가 미조회 종목이 있는 경우만)
+  useEffect(() => {
+    if (!autoUpdated && portfolio && getApiKey()) {
+      const hasUnpriced = portfolio.holdings.some(h => !h.current_price);
+      if (hasUnpriced) {
+        setAutoUpdated(true);
+        setTimeout(() => updatePrices(), 500);
+      }
+    }
+  }, []);
 
   // 계좌 목록
   const accounts = portfolio ? [...new Set(portfolio.holdings.map(h => h.account).filter(Boolean))] : [];
@@ -2170,35 +2183,39 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               const cost  = (h.shares||0)*(h.avg_price||0);
               const value = (h.shares||0)*(h.current_price||h.avg_price||0);
               const ret   = cost > 0 ? ((value-cost)/cost)*100 : 0;
+              const gain  = value - cost;
               const hasPrice = !!h.current_price;
               const displayName = h.name || "";
               return (
-                <div key={i} style={{ padding: "12px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 15, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div key={i} style={{ padding: "11px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+                    <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 14, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {displayName}
                     </div>
-                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                    <div style={{ fontSize: 11, color: "#475569" }}>
                       {h.shares}주 · 평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                     <div style={{ textAlign: "right" }}>
                       {hasPrice ? (
                         <>
                           <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
-                            {value >= 100000000 ? `₩${(value/100000000).toFixed(1)}억` : `₩${Math.round(value/10000).toLocaleString()}만`}
+                            {value >= 100000000 ? `₩${(value/100000000).toFixed(2)}억` : `₩${Math.round(value/10000).toLocaleString()}만`}
                           </div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: ret >= 0 ? "#10b981" : "#ef4444" }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: ret >= 0 ? "#10b981" : "#ef4444" }}>
                             {ret >= 0 ? "+" : ""}{ret.toFixed(1)}%
+                            <span style={{ fontWeight: 400, marginLeft: 4, color: ret >= 0 ? "#10b98199" : "#ef444499" }}>
+                              ({gain >= 0 ? "+" : ""}{Math.round(gain/10000).toLocaleString()}만)
+                            </span>
                           </div>
                         </>
                       ) : (
-                        <div style={{ fontSize: 12, color: "#334155" }}>미조회</div>
+                        <div style={{ fontSize: 11, color: "#334155" }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 6px" }}>✎</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 18, cursor: "pointer", padding: "4px", lineHeight: 1 }}>×</button>
+                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "1px solid #1e293b", borderRadius: 6, color: "#475569", fontSize: 13, cursor: "pointer", padding: "3px 5px" }}>✎</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#334155", fontSize: 17, cursor: "pointer", padding: "3px", lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
@@ -2206,9 +2223,17 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
           </div>
 
           {(uploading || uploadMsg) && (
-            <div style={{ textAlign: "center", padding: "20px", background: "#0a0f1a", borderRadius: 12, marginBottom: 14, border: `1px solid ${uploading ? "#1e293b" : uploadMsg.startsWith("❌") ? "#ef444444" : "#10b98144"}` }}>
-              {uploading ? <Spinner size={28} /> : <div style={{ fontSize: 28 }}>{uploadMsg.startsWith("❌") ? "❌" : "✅"}</div>}
-              <div style={{ marginTop: 12, color: uploading ? "#0ea5e9" : uploadMsg.startsWith("❌") ? "#ef4444" : "#10b981", fontWeight: 700, fontSize: 15 }}>{uploadMsg || "분석 중..."}</div>
+            <div style={{
+              position: "fixed", bottom: 60, left: "50%", transform: "translateX(-50%)",
+              zIndex: 999, maxWidth: 380, width: "90%",
+              background: uploading ? "#0ea5e9" : uploadMsg.startsWith("❌") ? "#ef4444" : "#10b981",
+              borderRadius: 14, padding: "14px 20px",
+              display: "flex", alignItems: "center", gap: 12,
+              boxShadow: "0 8px 32px #00000066",
+            }}>
+              {uploading && <Spinner size={20} />}
+              {!uploading && <div style={{ fontSize: 20 }}>{uploadMsg.startsWith("❌") ? "❌" : "✅"}</div>}
+              <div style={{ color: "#fff", fontWeight: 700, fontSize: 14, flex: 1 }}>{uploadMsg || "처리 중..."}</div>
             </div>
           )}
         </div>
@@ -2521,6 +2546,7 @@ function IndexWidget() {
 
   const fetchIndices = async () => {
     setLoading(true);
+    const apiKey = getApiKey(); // ← 스코프 안에서 직접 호출
     try {
       // BTC: CoinGecko 7주 주봉 (49일)
       const btcRes = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=49&interval=daily");
