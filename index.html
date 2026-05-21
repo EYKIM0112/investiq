@@ -369,8 +369,8 @@ const MARKET_PROMPTS = {
   summary: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 최신 데이터를 웹 검색으로 수집하라. 오늘자 또는 어제자 데이터만 사용할 것.
 반드시 아래 JSON 형식으로만 응답. {로 시작 }로 끝. JSON 외 텍스트/마크다운/인용 절대 금지. 모든 값 한국어.
 지수는 정확히 이 6개만: 닛케이225/상해종합/홍콩항셍/인도Nifty50/유로스탁스50/대만가권 (코스피/코스닥/S&P500/나스닥/다우/독일DAX 제외 - 별도 표시됨)
-각 지수의 value와 change_pct는 오늘 실제 시장 데이터로 채울 것.
-{"index_alerts":[{"name":"닛케이225","value":"현재값","change_pct":"등락%","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"전쟁/금융위기/금리/지정학 등 거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
+[중요] 각 지수의 value와 change_pct는 반드시 숫자 데이터로 채울 것. 개장 전이거나 데이터 없으면 가장 최근 종가와 전일대비 등락률 사용. "데이터 없음" 같은 텍스트 절대 금지.
+{"index_alerts":[{"name":"닛케이225","value":"현재값(숫자)","change_pct":"+0.34% 형식","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
 [ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 예: 방산섹터→방산ETF, 반도체섹터→반도체ETF. 다른 섹터 ETF 절대 금지.
 [중복 규칙] leading(모멘텀)과 turnaround(턴어라운드)의 섹터명은 반드시 서로 달라야 함.
 [black_swan 규칙] 현재 실제로 진행 중인 거시 리스크만 포함. 전쟁/지정학/금리/금융위기/환율/에너지 위기 등. 해당 없으면 빈 배열 [].`,
@@ -2661,8 +2661,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v5";
-  const BTC_CACHE_KEY = "investiq_btc_widget_v5";
+  const CACHE_KEY = "investiq_index_widget_v6";
+  const BTC_CACHE_KEY = "investiq_btc_widget_v6";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -2685,31 +2685,6 @@ function IndexWidget() {
   const [btc, setBtc] = useState(loadBtcCache);
   const [loading, setLoading] = useState(false);
 
-  // SVG 미니차트
-  const MiniChart = ({ points, color, width = 80, height = 32 }) => {
-    if (!points || points.length < 2) return <div style={{ width, height }} />;
-    const min = Math.min(...points);
-    const max = Math.max(...points);
-    const range = max - min || 1;
-    const w = width, h = height, pad = 2;
-    const xs = points.map((_, i) => pad + (i / (points.length - 1)) * (w - pad * 2));
-    const ys = points.map(v => pad + (1 - (v - min) / range) * (h - pad * 2));
-    const d = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
-    const fillD = d + ` L${xs[xs.length-1].toFixed(1)},${h} L${xs[0].toFixed(1)},${h} Z`;
-    return (
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-        <defs>
-          <linearGradient id={`grad-${color.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={fillD} fill={`url(#grad-${color.replace("#","")})`} />
-        <path d={d} stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  };
-
   const fetchIndices = async () => {
     setLoading(true);
     const apiKey = getApiKey();
@@ -2720,14 +2695,17 @@ function IndexWidget() {
         const btcData = await btcRes.json();
         const prices = btcData.prices?.map(p => p[1]) || [];
         const current = prices[prices.length - 1] || 0;
-        const prev = prices[prices.length - 2] || current;
-        const change = prev ? ((current - prev) / prev * 100) : 0;
+        const prev    = prices[prices.length - 2] || current;
+        const weekAgo = prices.length >= 8 ? prices[prices.length - 8] : null;
+        const change      = prev    ? ((current - prev)    / prev    * 100) : 0;
+        const weekChange  = weekAgo ? ((current - weekAgo) / weekAgo * 100) : null;
         const btcResult = {
           name: "BTC",
           price: `$${Math.round(current).toLocaleString()}`,
           change: String(Math.abs(change).toFixed(2)),
           up: change >= 0,
-          points: prices,
+          weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+          weekUp: weekChange !== null ? weekChange >= 0 : null,
         };
         setBtc(btcResult);
         localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
@@ -2759,9 +2737,14 @@ function IndexWidget() {
         const points = recent.map(l => parseFloat(l.split(",")[colIdx])).filter(v => !isNaN(v) && v > 0);
         if (points.length < 10) throw new Error(`유효 데이터 부족 (${points.length}개)`);
         const current = points[points.length - 1];
-        const prev = points[points.length - 2];
+        const prev    = points[points.length - 2];
         const changeVal = prev ? ((current - prev) / prev * 100) : 0;
         if (Math.abs(changeVal) > 50) throw new Error(`비정상 등락률 ${changeVal.toFixed(1)}%`);
+        // 주간(5거래일) / 월간(22거래일) 등락률
+        const weekAgo   = points.length >= 6  ? points[points.length - 6]  : null;
+        const monthAgo  = points.length >= 23 ? points[points.length - 23] : null;
+        const weekChange  = weekAgo  ? ((current - weekAgo)  / weekAgo  * 100) : null;
+        const monthChange = monthAgo ? ((current - monthAgo) / monthAgo * 100) : null;
         return {
           name: null,
           value: current >= 1000
@@ -2769,7 +2752,10 @@ function IndexWidget() {
             : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
           change: String(Math.abs(changeVal).toFixed(2)),
           up: changeVal >= 0,
-          points,
+          weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+          weekUp: weekChange !== null ? weekChange >= 0 : null,
+          monthChange: monthChange !== null ? monthChange.toFixed(2) : null,
+          monthUp: monthChange !== null ? monthChange >= 0 : null,
         };
       };
 
@@ -2861,31 +2847,6 @@ function IndexWidget() {
         const ordered = STOOQ_SYMBOLS.map(s => finalResults.find(r => r.name === s.name)).filter(Boolean);
         setIndices(ordered);
         localStorage.setItem(CACHE_KEY, JSON.stringify(ordered));
-
-        // points 없는 항목 백그라운드 Stooq 재시도 (차트 채우기)
-        const noPoints = STOOQ_SYMBOLS.filter(s => {
-          const found = ordered.find(r => r.name === s.name);
-          return found && (!found.points || found.points.length < 2);
-        });
-        if (noPoints.length > 0) {
-          setTimeout(async () => {
-            let updated = false;
-            const newOrdered = [...ordered];
-            await Promise.allSettled(noPoints.map(async ({ name, symbol }) => {
-              try {
-                const data = await fetchStooq(symbol);
-                if (data.points?.length > 1) {
-                  const idx = newOrdered.findIndex(r => r.name === name);
-                  if (idx >= 0) { newOrdered[idx] = { ...newOrdered[idx], points: data.points }; updated = true; }
-                }
-              } catch(e) {}
-            }));
-            if (updated) {
-              setIndices([...newOrdered]);
-              localStorage.setItem(CACHE_KEY, JSON.stringify(newOrdered));
-            }
-          }, 2000);
-        }
       }
     } catch (e) { console.error("위젯 오류:", e); }
     setLoading(false);
@@ -2914,27 +2875,35 @@ function IndexWidget() {
         {allItems.map((idx, i) => {
           const rawChange = String(idx.change || "0").replace(/[+\-%]/g, "").trim();
           const changeNum = parseFloat(rawChange) || 0;
+          // "데이터 없음" 등 파싱 불가 방어
+          const isValidChange = !isNaN(changeNum) && rawChange !== "" && rawChange !== "데이터";
           const isUp = idx.up ?? changeNum >= 0;
-          const color = isUp ? "#10b981" : "#ef4444";
-          const bgColor = isUp ? "#10b98108" : "#ef444408";
-          const borderColor = isUp ? "#10b98122" : "#ef444422";
+          const color = isValidChange ? (isUp ? "#10b981" : "#ef4444") : "#475569";
+          const bgColor = isValidChange ? (isUp ? "#10b98108" : "#ef444408") : "#1e293b08";
+          const borderColor = isValidChange ? (isUp ? "#10b98122" : "#ef444422") : "#1e293b";
           const arrow = isUp ? "▲" : "▼";
-          const changeStr = `${arrow} ${Math.abs(changeNum).toFixed(2)}%`;
+          const changeStr = isValidChange ? `${arrow} ${Math.abs(changeNum).toFixed(2)}%` : "-";
+          // 주간 등락률
+          const weekNum = idx.weekChange !== null && idx.weekChange !== undefined ? parseFloat(idx.weekChange) : null;
+          const weekStr = weekNum !== null && !isNaN(weekNum)
+            ? `${weekNum >= 0 ? "▲" : "▼"} ${Math.abs(weekNum).toFixed(2)}%`
+            : null;
+          const weekColor = weekNum !== null ? (weekNum >= 0 ? "#10b981" : "#ef4444") : "#475569";
           return (
             <div key={i} style={{
               background: bgColor,
               border: `1px solid ${borderColor}`,
               borderRadius: 12,
               padding: "10px 12px 8px",
-              minWidth: 96, flexShrink: 0,
+              minWidth: 100, flexShrink: 0,
               borderTop: `2px solid ${color}44`,
             }}>
               <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, marginBottom: 3, letterSpacing: 0.5 }}>{idx.name}</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 2, letterSpacing: -0.3 }}>{idx.value || idx.price}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#e2e8f0", marginBottom: 3, letterSpacing: -0.3 }}>{idx.value || idx.price}</div>
               <div style={{ fontSize: 11, fontWeight: 700, color }}>{changeStr}</div>
-              {idx.points?.length > 1 && (
-                <div style={{ marginTop: 5 }}>
-                  <MiniChart points={idx.points} color={color} width={72} height={26} />
+              {weekStr && (
+                <div style={{ fontSize: 10, color: weekColor, marginTop: 2, opacity: 0.8 }}>
+                  주간 {weekStr}
                 </div>
               )}
             </div>
