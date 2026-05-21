@@ -790,36 +790,43 @@ function MarketInsight({ onRefreshAll }) {
     </>
   );
 
-  const renderAsia = (d) => (
+  const renderAsia = (d) => {
+    if (!d || typeof d !== "object") return <div style={{ color:"#475569", padding:20 }}>데이터를 불러올 수 없습니다.</div>;
+    return (
     <>
       <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>ASIA SUMMARY</div>
-      
+        <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>ASIA SUMMARY</div>
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      
-    </div>
-      {d.markets?.map((mkt,i) => (
+      </div>
+      {(d.markets||[]).map((mkt,i) => (
         <div key={i} style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
           <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>{mkt.country} {mkt.index_change||""}</div>
-          {mkt.strong?.length > 0 && (
+          {(mkt.strong||[]).length > 0 && (
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>^ 강한 섹터</div>
+              <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>▲ 강한 섹터</div>
               {mkt.strong.map((s,j) => <SectorRow key={j} item={s} showScore={false} />)}
             </div>
           )}
-          {mkt.weak?.length > 0 && (
+          {(mkt.weak||[]).length > 0 && (
             <div>
-              <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>v 약한 섹터</div>
+              <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>▼ 약한 섹터</div>
               {mkt.weak.map((s,j) => (
-                <div key={j} style={{ fontSize:16, color:"#64748b", marginBottom:6 }}>- {s.name}: {s.reason}</div>
+                <div key={j} style={{ fontSize:16, color:"#64748b", marginBottom:6 }}>- {s.name||""}: {s.reason||""}</div>
               ))}
             </div>
           )}
-          <div style={{ fontSize:15, color:"#475569", marginTop:10 }}>전망: {mkt.outlook}</div>
+          {mkt.outlook && <div style={{ fontSize:15, color:"#475569", marginTop:10 }}>전망: {mkt.outlook}</div>}
         </div>
       ))}
+      {(d.events||[]).length > 0 && (
+        <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
+          <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 이벤트</div>
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:15, color:"#94a3b8", marginBottom:6 }}>- {e}</div>)}
+        </div>
+      )}
     </>
-  );
+    );
+  };
 
   const renderCrypto = (d) => (
     <>
@@ -1053,6 +1060,8 @@ function guessRegion(name) {
 
 function getSectorLabel(sector, name) {
   const n = (name||"").toUpperCase();
+  if (n.includes("삼성전자")) return "반도체";
+  if (n.includes("TDF")||n.includes("타겟데이트")||n.includes("로자산배분")||n.includes("자산배분")) return "배당·채권";
   if (n.includes("AI")||n.includes("인공지능")||n.includes("로보")) return "AI·로보틱스";
   if (n.includes("반도체")) return "반도체";
   if (n.includes("빅테크")||n.includes("테크TOP")) return "미국빅테크";
@@ -1182,14 +1191,20 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
 
 function addHistoryPoint(portfolio) {
   try {
+    // current_price가 있는 종목만 계산 (미조회 종목은 avg_price로 대체하지 않음)
+    const pricedHoldings = portfolio.holdings.filter(h => h.current_price && h.current_price > 0);
+    if (pricedHoldings.length === 0) return; // 현재가 없으면 기록 안 함
+    const tc = pricedHoldings.reduce((s,h) => s+(h.shares||0)*(h.avg_price||0), 0);
+    const tv = pricedHoldings.reduce((s,h) => s+(h.shares||0)*h.current_price, 0);
+    if (tc <= 0 || tv <= 0) return;
+    const ret = ((tv-tc)/tc*100);
+    // 비정상 수익률 방어 (±1000% 초과면 기록 안 함)
+    if (Math.abs(ret) > 1000) { console.warn("비정상 수익률, 히스토리 미기록:", ret.toFixed(1)+"%"); return; }
+    const now = new Date();
+    const point = { date:now.toISOString().slice(0,10), timestamp:now.getTime(), total_value:Math.round(tv), total_cost:Math.round(tc), return_pct:parseFloat(ret.toFixed(2)) };
     const history = JSON.parse(localStorage.getItem("portfolio_history_v1")||"[]");
-    const tc=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
-    const tv=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
-    const ret=tc>0?((tv-tc)/tc*100):0;
-    const now=new Date();
-    const point={date:now.toISOString().slice(0,10),timestamp:now.getTime(),total_value:Math.round(tv),total_cost:Math.round(tc),return_pct:parseFloat(ret.toFixed(2))};
-    const filtered=history.filter(h=>h.date!==point.date);
-    localStorage.setItem("portfolio_history_v1",JSON.stringify([...filtered,point].sort((a,b)=>a.timestamp-b.timestamp).slice(-365)));
+    const filtered = history.filter(h => h.date !== point.date);
+    localStorage.setItem("portfolio_history_v1", JSON.stringify([...filtered, point].sort((a,b)=>a.timestamp-b.timestamp).slice(-365)));
   } catch(e) { console.error(e); }
 }
 
@@ -1645,7 +1660,9 @@ function Portfolio() {
 
 [중요 규칙]
 - 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함 (예: "TIGER 미국우주테크")
-- shares(수량)와 avg_price(평균단가)를 반드시 숫자로 추출
+- shares(보유수량): 화면에 표시된 실제 보유 주수/좌수
+- avg_price(평균단가/매입단가): 1주/1좌당 단가. 반드시 avg_price = 매입금액 ÷ shares 로 계산. 매입금액 전체를 단가로 쓰지 말 것
+- 검증: shares × avg_price ≈ 매입금액 이어야 함. TDF 등 펀드는 1좌당 단가가 1,000~2,000원 수준이고 수량이 수만~수십만 좌일 수 있음
 - yahoo_ticker: 한국 코스피는 숫자코드.KS, 코스닥은 숫자코드.KQ (모르면 null)
 - account: 아래 규칙을 반드시 따를 것
   * 계좌명이 있으면 → 계좌명만 사용 (계좌번호, 계좌주 이름 모두 제외)
