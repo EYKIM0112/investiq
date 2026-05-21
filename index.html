@@ -563,12 +563,11 @@ function MarketInsight({ onRefreshAll }) {
 
 
   const alertColor = (status) => status==="danger"?"#ef4444":status==="warning"?"#f59e0b":"#10b981";
-  // change_pct 문자열에서 부호 파싱 → 상승=초록, 하락=빨강
   const changePctColor = (changePct) => {
     const s = String(changePct || "").trim();
     if (s.startsWith("-")) return "#ef4444";
     if (s.startsWith("+") || parseFloat(s) > 0) return "#10b981";
-    return "#94a3b8"; // 0 또는 파싱불가
+    return "#94a3b8";
   };
 
   const renderSummary = (d) => (
@@ -583,7 +582,7 @@ function MarketInsight({ onRefreshAll }) {
                 <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{a.name}</span>
                 <span style={{ fontSize:14, color:"#64748b", marginLeft:8 }}>{a.comment}</span>
               </div>
-              <span style={{ fontWeight:800, color:alertColor(a.status), fontSize:16 }}>{a.change_pct}</span>
+              <span style={{ fontWeight:800, color:changePctColor(a.change_pct), fontSize:16 }}>{a.change_pct}</span>
             </div>
           ))}
           {d.vix && d.vix.status !== "normal" && (
@@ -596,8 +595,7 @@ function MarketInsight({ onRefreshAll }) {
 
       {/* 전체 지수 현황 */}
       <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#94a3b8", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 지수 현황</div>
-      
+        <div style={{ fontSize:13, color:"#94a3b8", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 지수 현황</div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
           {d.index_alerts?.map((a,i) => (
             <div key={i} style={{ background:"#1e293b", borderRadius:8, padding:"10px 12px" }}>
@@ -607,8 +605,7 @@ function MarketInsight({ onRefreshAll }) {
             </div>
           ))}
         </div>
-      
-    </div>
+      </div>
 
       <div style={{ background:"#0f172a", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
         <div style={{ fontSize:13, color:"#e2e8f0", fontWeight:700, marginBottom:12, letterSpacing:2 }}>GLOBAL SUMMARY</div>
@@ -1070,13 +1067,15 @@ function SvgPieChart({ data, colors, totalValue }) {
   let angle = -Math.PI/2;
   const slices = data.map((d,i)=>{
     const pct = d.value/total;
-    const a0=angle, a1=angle+pct*2*Math.PI;
+    // 100% 단일 슬라이스면 거의 완전한 원으로 처리 (SVG 호 제한 우회)
+    const safePct = pct >= 1 ? 0.9999 : pct;
+    const a0=angle, a1=angle+safePct*2*Math.PI;
     angle=a1;
     const x1=cx+r*Math.cos(a0),y1=cy+r*Math.sin(a0);
     const x2=cx+r*Math.cos(a1),y2=cy+r*Math.sin(a1);
     const ix1=cx+ri*Math.cos(a0),iy1=cy+ri*Math.sin(a0);
     const ix2=cx+ri*Math.cos(a1),iy2=cy+ri*Math.sin(a1);
-    const lg=pct>0.5?1:0;
+    const lg=safePct>0.5?1:0;
     const path=`M${ix1},${iy1} L${x1},${y1} A${r},${r} 0 ${lg} 1 ${x2},${y2} L${ix2},${iy2} A${ri},${ri} 0 ${lg} 0 ${ix1},${iy1}Z`;
     return {...d,path,color:colors[i%colors.length],pct:(pct*100).toFixed(1)};
   });
@@ -1122,12 +1121,28 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
   const holdings = filterAccount && filterAccount !== "all"
     ? portfolio.holdings.filter(h => h.account === filterAccount)
     : portfolio.holdings;
-  const totalValue = holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+
+  // 동일 계좌+동일 종목명 합산 (RSA 등 구분 없이)
+  const mergedMap = new Map();
+  holdings.forEach(h => {
+    const key = `${h.account||""}::${h.name||h.ticker||""}`;
+    if (mergedMap.has(key)) {
+      const ex = mergedMap.get(key);
+      const totalShares = (ex.shares||0) + (h.shares||0);
+      const totalCost = (ex.shares||0)*(ex.avg_price||0) + (h.shares||0)*(h.avg_price||0);
+      mergedMap.set(key, { ...ex, shares: totalShares, avg_price: totalShares>0?totalCost/totalShares:ex.avg_price, current_price: h.current_price||ex.current_price });
+    } else {
+      mergedMap.set(key, {...h});
+    }
+  });
+  const merged = Array.from(mergedMap.values());
+
   const cash = portfolio.cash || 0;
-  const grand = totalValue+cash;
+  const totalValue = merged.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const grand = totalValue + cash;
 
   const sectorMap={}, regionMap={};
-  holdings.forEach(h=>{
+  merged.forEach(h=>{
     const sv=(h.shares||0)*(h.current_price||h.avg_price||0);
     const sk=getSectorLabel(h.sector,h.name);
     sectorMap[sk]=(sectorMap[sk]||0)+sv;
@@ -1138,18 +1153,17 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
 
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
-  const tv = totalValue + cash;
 
   return (
     <>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
-        <SvgPieChart data={sectorData} colors={PIE_COLORS} totalValue={tv}/>
+        <SvgPieChart data={sectorData} colors={PIE_COLORS} totalValue={grand}/>
         <PieLegend data={sectorData} colors={PIE_COLORS} grand={grand}/>
       </div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
-        <SvgPieChart data={regionData} colors={PIE_COLORS} totalValue={tv}/>
+        <SvgPieChart data={regionData} colors={PIE_COLORS} totalValue={grand}/>
         <PieLegend data={regionData} colors={PIE_COLORS} grand={grand}/>
       </div>
     </>
@@ -1488,7 +1502,7 @@ function Portfolio() {
   const [showManual, setShowManual] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
-  const [autoUpdated, setAutoUpdated] = useState(false); // 탭 진입 자동갱신 여부
+  const [autoUpdated, setAutoUpdated] = useState(false);
 
   const imgInputRef      = useRef(null);
   const xlsInputRef      = useRef(null);
@@ -1614,21 +1628,20 @@ function Portfolio() {
           system: `주식 계좌 스크린샷에서 종목 정보를 추출하여 순수 JSON만 반환. 마크다운 없이.
 
 [레이아웃 패턴별 처리]
-1. 삼성증권: 종목명/평가금액+매수금액+보유수량 → avg_price = 매수금액÷수량
-2. 미래에셋: 종목명(위)\n수량(아래) / 평가손익\n손익률% / 평가금액\n매입금액 → avg_price = 매입금액÷수량
-3. 신한/키움 등: 종목명 / 보유수량+매입단가 / 평가금액+매수금액 → avg_price = 매입단가 직접 사용
+1. 종목명/평가금액+매수금액+보유수량 → avg_price = 매수금액÷수량
+2. 종목명(위)\n수량(아래) / 평가손익\n손익률% / 평가금액\n매입금액 → avg_price = 매입금액÷수량
+3. 종목명 / 보유수량+매입단가 / 평가금액+매수금액 → avg_price = 매입단가 직접 사용
 4. 기타: 어떤 형태든 종목명/수량/평균단가(또는 역산 가능한 값) 추출
 
 [중요 규칙]
-- 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함할 것 (예: "TIGER 미국우주테크")
+- 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함 (예: "TIGER 미국우주테크")
 - shares(수량)와 avg_price(평균단가)를 반드시 숫자로 추출
-- 매입단가/매입금액이 있으면 우선 사용, 없으면 매수금액÷수량으로 역산
-- 인식 불가능한 종목은 "error" 필드에 종목명 기록
-- broker: 증권사명 (삼성증권/미래에셋/키움/한국투자/NH/신한/하나 등)
-- account: 계좌 유형 (개인연금/IRP/DC/일반/ISA 등)
-- cash: 예수금/현금 (없으면 0)
+- yahoo_ticker: 한국 코스피는 숫자코드.KS, 코스닥은 숫자코드.KQ (모르면 null)
+- account: 화면에 실제로 보이는 계좌명 또는 계좌번호를 그대로 사용. 절대 증권사명을 붙이거나 추론하지 말 것. 계좌명과 번호 둘 다 있으면 계좌명만, 번호만 보이면 번호 그대로(잘려도 OK).
+- cash: 예수금/현금 잔고 (없으면 0)
+- 인식 불가능한 종목은 partial_fail 배열에 기록
 
-{"holdings":[{"ticker":"종목코드","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":"섹터","account":"계좌명"}],"account_type":"국내/해외/혼합","broker":"증권사명","account":"증권사+계좌유형","cash":예수금,"partial_fail":["인식실패종목명1","인식실패종목명2"]}`,
+{"holdings":[{"ticker":"종목코드","yahoo_ticker":"133690.KQ","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":"섹터","account":"화면에보이는계좌명또는번호"}],"account_type":"국내/해외/혼합","account":"화면에보이는계좌명또는번호","cash":예수금,"partial_fail":[]}`,
           imageBase64: base64,
           mediaType,
           user: "이 계좌 스크린샷에서 모든 보유 종목과 계좌 정보를 추출해줘. JSON만.",
@@ -1653,21 +1666,26 @@ function Portfolio() {
 
       if (!parsed?.holdings?.length) throw new Error("종목을 찾을 수 없어요. 다른 이미지를 시도해보세요.");
 
-      // 계좌명 결정
-      const detectedAccount = parsed.account || `${parsed.broker || ""}${parsed.account_type ? " " + parsed.account_type : ""}`.trim() || "신규계좌";
+      // 계좌명 결정 - 보이는 텍스트 그대로, 중복 시 구분자 추가
+      const rawAccount = (parsed.account || "신규계좌").trim();
+      const existingAccounts = portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : [];
+      let detectedAccount = rawAccount;
+      if (existingAccounts.includes(rawAccount)) {
+        const dupCount = existingAccounts.filter(n => n === rawAccount || n.startsWith(rawAccount + " ")).length;
+        detectedAccount = rawAccount + ` -${dupCount + 1}`;
+      }
+
       const newHoldings = parsed.holdings.map(h => ({
         ...h,
+        yahoo_ticker: h.yahoo_ticker || null,
         current_price: null,
         account: h.account || detectedAccount,
       }));
 
       // 기존 같은 계좌가 있는지 확인
-      const existingAccounts = portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : [];
       const sameAccount = existingAccounts.find(a => a === detectedAccount);
-
       let latestPortfolio;
       if (sameAccount && portfolio) {
-        // 기존 계좌 덮어쓰기 확인
         const confirm = window.confirm(`"${sameAccount}" 계좌가 이미 있습니다.\n기존 포트폴리오를 새 데이터로 교체하시겠습니까?\n\n취소 시 기존 데이터 유지.`);
         if (!confirm) { setUploading(false); setUploadMsg(""); return; }
         const otherHoldings = portfolio.holdings.filter(h => h.account !== sameAccount);
@@ -1675,14 +1693,13 @@ function Portfolio() {
       } else if (portfolio) {
         latestPortfolio = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...portfolio.holdings, ...newHoldings] };
       } else {
-        latestPortfolio = { holdings: newHoldings, account_type: parsed.account_type || "혼합", broker: parsed.broker || "", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        latestPortfolio = { holdings: newHoldings, account_type: parsed.account_type || "혼합", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       }
-      savePortfolio(latestPortfolio);
-      setPortfolio(latestPortfolio);
+      if (parsed.cash > 0) latestPortfolio.cash = (latestPortfolio.cash || 0) + parsed.cash;
+      savePortfolio(latestPortfolio); setPortfolio(latestPortfolio);
 
       setShowAddPanel(false);
       setUploadMsg(`✅ ${newHoldings.length}개 종목 등록! 현재가 조회 중...`);
-      // 업로드 완료 후 현재가 자동 갱신 (최신 포트폴리오 직접 전달)
       setTimeout(() => updatePrices(latestPortfolio), 300);
     } catch (e) {
       setUploadMsg(`❌ ${e.message}`);
@@ -1727,102 +1744,155 @@ function Portfolio() {
     setPortfolio(p);
   };
 
-  // 현재가 업데이트 (targetPortfolio: 업로드 직후 호출 시 최신 포트폴리오 직접 전달)
-  const updatePrices = async (targetPortfolio) => {
-    const pf = targetPortfolio || portfolio;
-    if (!pf) return;
-    setUpdating(true);
+  // Yahoo Finance로 단일 종목 현재가 조회
+  const fetchYahooPrice = async (ticker) => {
+    if (!ticker) return null;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
     try {
-      // 종목을 20개씩 나눠서 요청 (너무 많으면 응답 잘림)
-      const holdings = pf.holdings;
-      const chunkSize = 20;
-      const chunks = [];
-      for (let i = 0; i < holdings.length; i += chunkSize) {
-        chunks.push(holdings.slice(i, i + chunkSize));
-      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const meta = data.chart?.result?.[0]?.meta;
+      if (!meta) return null;
+      const price = meta.regularMarketPrice || meta.previousClose;
+      const prev  = meta.chartPreviousClose || meta.previousClose;
+      const changePct = prev ? ((price - prev) / prev * 100) : 0;
+      return { current_price: price, change_pct: changePct };
+    } catch(e) { return null; }
+  };
 
+  // 티커 없는 종목 Gemini로 1회 매핑
+  const resolveTickerCodes = async (holdings, apiKey) => {
+    const needTicker = holdings.filter(h => !h.yahoo_ticker);
+    if (needTicker.length === 0 || !apiKey) return holdings;
+    try {
+      const names = needTicker.map(h => h.name).join(", ");
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+      const body = {
+        contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식 종목들의 Yahoo Finance 티커 코드를 JSON으로만 반환. 마크다운 없이.
+한국 코스피 종목은 숫자코드.KS, 코스닥은 숫자코드.KQ 형식.
+예시: {"tickers":[{"name":"TIGER 미국나스닥100","yahoo_ticker":"133690.KQ"},{"name":"삼성전자","yahoo_ticker":"005930.KS"}]}
+대상: ${names}` }] }],
+        generationConfig: { maxOutputTokens: 1000, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+      };
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.map(p => p.text||"").join("") || "";
+      const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("JSON 없음");
+      const parsed = JSON.parse(match[0]);
+      const tickerMap = {};
+      parsed.tickers?.forEach(t => { if (t.name && t.yahoo_ticker) tickerMap[t.name] = t.yahoo_ticker; });
+      return holdings.map(h => ({ ...h, yahoo_ticker: h.yahoo_ticker || tickerMap[h.name] || null }));
+    } catch(e) { console.warn("티커 매핑 실패:", e.message); return holdings; }
+  };
+
+  // Gemini fallback (Yahoo 전체 실패 시)
+  const updatePricesGeminiFallback = async (pf, apiKey) => {
+    try {
+      const chunks = [];
+      for (let i = 0; i < pf.holdings.length; i += 10) chunks.push(pf.holdings.slice(i, i+10));
       let allPrices = [];
       for (const chunk of chunks) {
-        const tickers = chunk.map(h => `${h.name}(${h.ticker||h.name})`).join(", ");
-        const text = await callClaudeWithSearch({
-          maxTokens: 2000,
-          system: `한국 ETF/주식 현재가를 검색하라. 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 절대 금지.
-형식: {"prices":[{"ticker":"종목코드","name":"종목명","current_price":숫자,"change_pct":숫자}]}
-current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
-          user: `다음 종목들의 오늘 현재가를 검색해서 JSON으로만 반환: ${tickers}`,
-        });
-
+        const names = chunk.map(h => h.name).join(", ");
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+        const body = {
+          contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식의 오늘 현재가를 검색해서 JSON으로만 반환. 마크다운 없이.
+{"prices":[{"name":"종목명","current_price":숫자,"change_pct":숫자}]}
+대상: ${names}` }] }],
+          tools: [{ googleSearch: {} }],
+          generationConfig: { maxOutputTokens: 800, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+        };
         try {
-          // 제어문자 제거 + JSON 추출
-          const clean = text
-            .replace(/[\x00-\x1f\x7f]/g, " ")
-            .replace(/```json\s*/gi, "")
-            .replace(/```\s*/g, "")
-            .replace(/\[cite[^\]]*\]/g, "")
-            .replace(/\[\d+\]/g, "")
-            .trim();
-          const firstBrace = clean.indexOf("{");
-          const lastBrace = clean.lastIndexOf("}");
-          if (firstBrace !== -1 && lastBrace !== -1) {
-            const jsonStr = clean.slice(firstBrace, lastBrace + 1);
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.prices) allPrices = [...allPrices, ...parsed.prices];
-          }
-        } catch(e) { console.warn("청크 파싱 실패:", e.message); }
+          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (!res.ok) continue;
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+          const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+          if (match) { const p = JSON.parse(match[0]); if (p.prices) allPrices = [...allPrices, ...p.prices]; }
+        } catch(e) { continue; }
       }
-
-      if (allPrices.length === 0) throw new Error("현재가 데이터를 가져오지 못했습니다.");
-
-      const updated = {
-        ...pf, updatedAt: new Date().toISOString(),
+      if (allPrices.length === 0) throw new Error("Gemini fallback 실패");
+      const updated = { ...pf, updatedAt: new Date().toISOString(),
         holdings: pf.holdings.map(h => {
-          const p = allPrices.find(x =>
-            x.ticker === h.ticker ||
-            x.ticker === h.name ||
-            x.name === h.name
-          );
+          const p = allPrices.find(x => x.name === h.name);
           return p ? { ...h, current_price: Number(p.current_price)||h.current_price, change_pct: Number(p.change_pct)||0 } : h;
         }),
       };
-      savePortfolio(updated); setPortfolio(updated);
-      addHistoryPoint(updated);
-      setUploadMsg(`✅ ${allPrices.length}개 종목 가격 업데이트 완료`);
+      savePortfolio(updated); setPortfolio(updated); addHistoryPoint(updated);
+      setUploadMsg(`✅ ${allPrices.length}개 종목 현재가 업데이트 완료 (AI)`);
       setTimeout(() => setUploadMsg(""), 4000);
-    } catch (e) {
-      setUploadMsg(`❌ 가격 업데이트 실패: ${e.message}`);
+    } catch(e) {
+      setUploadMsg("❌ 현재가 조회 실패 - 잠시 후 다시 시도하세요");
       setTimeout(() => setUploadMsg(""), 5000);
     }
     setUpdating(false);
   };
 
+  // 현재가 업데이트 - Yahoo Finance 우선, 실패 시 Gemini fallback
+  const updatePrices = async (targetPortfolio) => {
+    const pf = targetPortfolio || portfolio;
+    if (!pf) return;
+    setUpdating(true);
+    setUploadMsg("📡 현재가 조회 중...");
+    try {
+      const apiKey = getApiKey();
+      // 1단계: 티커 코드 매핑
+      const holdingsWithTickers = await resolveTickerCodes(pf.holdings, apiKey);
+      // 2단계: Yahoo Finance 병렬 조회
+      const results = await Promise.allSettled(
+        holdingsWithTickers.map(async h => {
+          const price = await fetchYahooPrice(h.yahoo_ticker);
+          return price ? { ...h, current_price: price.current_price, change_pct: price.change_pct } : { ...h };
+        })
+      );
+      const updatedHoldings = results.map((r, i) => r.status === "fulfilled" ? r.value : holdingsWithTickers[i]);
+      const successCount = updatedHoldings.filter((h, i) => h.current_price && h.current_price !== holdingsWithTickers[i]?.current_price).length;
+      const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: updatedHoldings };
+      savePortfolio(updated); setPortfolio(updated); addHistoryPoint(updated);
+      if (successCount > 0) {
+        setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
+        setTimeout(() => setUploadMsg(""), 4000);
+        setUpdating(false);
+      } else {
+        if (apiKey) { setUploadMsg("📡 AI로 현재가 조회 중..."); await updatePricesGeminiFallback(updated, apiKey); }
+        else { setUploadMsg("❌ 현재가 조회 실패"); setTimeout(() => setUploadMsg(""), 4000); setUpdating(false); }
+      }
+    } catch(e) {
+      setUploadMsg(`❌ 가격 업데이트 실패: ${e.message}`);
+      setTimeout(() => setUploadMsg(""), 5000);
+      setUpdating(false);
+    }
+  };
+
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [viewMode, setViewMode] = useState("all");
-  const [sortBy, setSortBy] = useState("name"); // name | value | profit
-  const [sortDir, setSortDir] = useState("desc"); // asc | desc
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState("desc");
 
-  // 포트폴리오 탭 첫 진입 시 현재가 자동갱신 (현재가 미조회 종목이 있는 경우만)
+  // 포트폴리오 탭 첫 진입 시 미조회 종목 자동 갱신
   useEffect(() => {
     if (!autoUpdated && portfolio && getApiKey()) {
       const hasUnpriced = portfolio.holdings.some(h => !h.current_price);
-      if (hasUnpriced) {
-        setAutoUpdated(true);
-        setTimeout(() => updatePrices(), 500);
-      }
+      if (hasUnpriced) { setAutoUpdated(true); setTimeout(() => updatePrices(), 500); }
     }
   }, []);
 
   // 계좌 목록
   const accounts = portfolio ? [...new Set(portfolio.holdings.map(h => h.account).filter(Boolean))] : [];
 
-  // 현재 뷰에 따른 종목 필터 + 전체 탭에서 중복 합산
+  // 현재 뷰에 따른 종목 필터 + 동일 종목 합산 (전체/계좌별 모두)
   const rawHoldings = (() => {
     if (!portfolio) return [];
     const holdings = viewMode === "all" ? portfolio.holdings : portfolio.holdings.filter(h => h.account === viewMode);
-    if (viewMode !== "all") return holdings;
-    // 전체 탭: ticker 기준 합산
+    // 동일 종목명 합산 (RSA 등 구분 없이)
     const map = new Map();
     holdings.forEach(h => {
-      const key = h.ticker || h.name;
+      const key = (viewMode === "all" ? "" : h.account + "::") + (h.name || h.ticker || "");
       if (map.has(key)) {
         const ex = map.get(key);
         const totalShares = (ex.shares||0) + (h.shares||0);
@@ -1955,14 +2025,28 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
 
   return (
     <div style={{ padding: "0 4px" }}>
+      {/* 업로드/갱신 진행 토스트 */}
+      {(uploading || updating || uploadMsg) && (
+        <div style={{
+          position: "fixed", bottom: 70, left: "50%", transform: "translateX(-50%)",
+          zIndex: 999, maxWidth: 380, width: "90%",
+          background: (uploading || updating) ? "#0ea5e9" : uploadMsg.startsWith("❌") ? "#ef4444" : "#10b981",
+          borderRadius: 14, padding: "14px 20px",
+          display: "flex", alignItems: "center", gap: 12,
+          boxShadow: "0 8px 32px #00000066",
+        }}>
+          {(uploading || updating) && <Spinner size={18} />}
+          <div style={{ color: "#fff", fontWeight: 700, fontSize: 14, flex: 1 }}>
+            {uploadMsg || (uploading ? "분석 중..." : "현재가 조회 중...")}
+          </div>
+        </div>
+      )}
+
       {editTarget && (
         <EditHoldingModal
           holding={editTarget.holding}
           onClose={() => setEditTarget(null)}
-          onSave={(updated) => {
-            updateHolding(editTarget.index, updated);
-            setEditTarget(null);
-          }}
+          onSave={(updated) => { updateHolding(editTarget.index, updated); setEditTarget(null); }}
         />
       )}
       {showManual && (
@@ -1977,7 +2061,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
       {!portfolio ? (
         <div>
           <div style={{ textAlign: "center", marginBottom: 20 }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}></div>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>📊</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>포트폴리오 등록</div>
             <div style={{ fontSize: 14, color: "#64748b" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
           </div>
@@ -1985,7 +2069,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
         </div>
       ) : (
         <div>
-          {/* 계좌 탭 */}
+          {/* 계좌 탭 + 편집 버튼 */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 4 }}>
             <button onClick={() => setViewMode("all")} style={{
               padding: "6px 12px", borderRadius: 20, border: `1px solid ${viewMode === "all" ? "#7c3aed" : "#334155"}`,
@@ -1994,12 +2078,22 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               fontSize: 13, fontWeight: viewMode === "all" ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
             }}>전체</button>
             {accounts.map(acc => (
-              <button key={acc} onClick={() => setViewMode(acc)} style={{
-                padding: "6px 12px", borderRadius: 20, border: `1px solid ${viewMode === acc ? "#0ea5e9" : "#334155"}`,
-                background: viewMode === acc ? "#0ea5e922" : "transparent",
-                color: viewMode === acc ? "#0ea5e9" : "#64748b",
-                fontSize: 13, fontWeight: viewMode === acc ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-              }}>{acc}</button>
+              <div key={acc} style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                <button onClick={() => setViewMode(acc)} style={{
+                  padding: "6px 10px", borderRadius: 20, border: `1px solid ${viewMode === acc ? "#0ea5e9" : "#334155"}`,
+                  background: viewMode === acc ? "#0ea5e922" : "transparent",
+                  color: viewMode === acc ? "#0ea5e9" : "#64748b",
+                  fontSize: 13, fontWeight: viewMode === acc ? 700 : 400, cursor: "pointer", whiteSpace: "nowrap",
+                }}>{acc}</button>
+                <button onClick={() => {
+                  const newName = prompt("계좌 탭 이름 변경:", acc);
+                  if (!newName || newName.trim() === acc) return;
+                  const trimmed = newName.trim();
+                  const updated = { ...portfolio, holdings: portfolio.holdings.map(h => h.account === acc ? { ...h, account: trimmed } : h) };
+                  savePortfolio(updated); setPortfolio(updated);
+                  if (viewMode === acc) setViewMode(trimmed);
+                }} style={{ background: "none", border: "none", color: "#334155", fontSize: 11, cursor: "pointer", padding: "2px 2px" }}>✎</button>
+              </div>
             ))}
           </div>
 
@@ -2133,7 +2227,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                 background:sortBy===s.id?"#0ea5e922":"transparent",
                 color:sortBy===s.id?"#0ea5e9":"#64748b", fontWeight:sortBy===s.id?700:400,
               }}>
-                {s.label}{sortBy===s.id?(sortDir==="desc"?" v":" ^"):""}
+                {s.label}{sortBy===s.id?(sortDir==="desc"?" ▼":" ▲"):""}
               </button>
             ))}
           </div>
@@ -2144,45 +2238,33 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               <span style={{ fontSize: 12, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2 }}>보유 종목 ({visibleHoldings.length}{cash > 0 ? " + 현금" : ""})</span>
             </div>
 
-            {/* 현금 행 - 최상단 */}
+            {/* 현금 행 */}
             {cash > 0 && (
-              <div style={{ padding: "12px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#0f172a" }}>
+              <div style={{ padding: "11px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, color: "#94a3b8", fontSize: 15, marginBottom: 2 }}>
-                    💵 현금 (예수금)
-                  </div>
-                  <div style={{ fontSize: 12, color: "#475569" }}>예수금 · 배당금 포함</div>
+                  <div style={{ fontWeight: 700, color: "#94a3b8", fontSize: 14, marginBottom: 2 }}>💵 현금 (예수금)</div>
+                  <div style={{ fontSize: 11, color: "#475569" }}>예수금 · 배당금 포함</div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
-                      {cash >= 100000000 ? `₩${(cash/100000000).toFixed(1)}억` : `₩${Math.round(cash/10000).toLocaleString()}만`}
+                      {cash >= 100000000 ? `₩${(cash/100000000).toFixed(2)}억` : `₩${Math.round(cash/10000).toLocaleString()}만`}
                     </div>
-                    <div style={{ fontSize: 12, color: "#64748b" }}>
-                      {totalValue > 0 ? `${((cash/totalValue)*100).toFixed(1)}%` : ""}
-                    </div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>{totalValue > 0 ? `${((cash/totalValue)*100).toFixed(1)}%` : ""}</div>
                   </div>
                   <button onClick={() => {
                     const input = prompt("현금 잔고 입력 (원):", portfolio.cash || 0);
-                    if (input !== null) {
-                      const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() };
-                      savePortfolio(p); setPortfolio(p);
-                    }
-                  }} style={{ background: "none", border: "1px solid #334155", borderRadius: 6, color: "#64748b", fontSize: 14, cursor: "pointer", padding: "4px 6px" }}>✎</button>
+                    if (input !== null) { const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
+                  }} style={{ background: "none", border: "1px solid #1e293b", borderRadius: 6, color: "#475569", fontSize: 12, cursor: "pointer", padding: "3px 5px" }}>✎</button>
                 </div>
               </div>
             )}
-            {cash === 0 && (
+            {!cash && (
               <div style={{ padding: "8px 16px", borderBottom: "1px solid #0f1929" }}>
                 <button onClick={() => {
                   const input = prompt("현금 잔고 입력 (원):", 0);
-                  if (input !== null) {
-                    const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() };
-                    savePortfolio(p); setPortfolio(p);
-                  }
-                }} style={{ background: "none", border: "none", color: "#334155", fontSize: 12, cursor: "pointer", padding: 0 }}>
-                  + 현금 잔고 추가
-                </button>
+                  if (input !== null) { const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
+                }} style={{ background: "none", border: "none", color: "#334155", fontSize: 12, cursor: "pointer", padding: 0 }}>+ 현금 잔고 추가</button>
               </div>
             )}
 
@@ -2192,12 +2274,11 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               const ret   = cost > 0 ? ((value-cost)/cost)*100 : 0;
               const gain  = value - cost;
               const hasPrice = !!h.current_price;
-              const displayName = h.name || "";
               return (
                 <div key={i} style={{ padding: "11px 16px", borderBottom: "1px solid #0f1929", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
                     <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 14, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {displayName}
+                      {h.name || ""}
                     </div>
                     <div style={{ fontSize: 11, color: "#475569" }}>
                       {h.shares}주 · 평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}
@@ -2212,7 +2293,7 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
                           </div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: ret >= 0 ? "#10b981" : "#ef4444" }}>
                             {ret >= 0 ? "+" : ""}{ret.toFixed(1)}%
-                            <span style={{ fontWeight: 400, marginLeft: 4, color: ret >= 0 ? "#10b98199" : "#ef444499" }}>
+                            <span style={{ fontWeight: 400, marginLeft: 3, color: ret >= 0 ? "#10b98199" : "#ef444499" }}>
                               ({gain >= 0 ? "+" : ""}{Math.round(gain/10000).toLocaleString()}만)
                             </span>
                           </div>
@@ -2228,21 +2309,6 @@ current_price와 change_pct는 반드시 숫자(number)로. 문자열 금지.`,
               );
             })}
           </div>
-
-          {(uploading || uploadMsg) && (
-            <div style={{
-              position: "fixed", bottom: 60, left: "50%", transform: "translateX(-50%)",
-              zIndex: 999, maxWidth: 380, width: "90%",
-              background: uploading ? "#0ea5e9" : uploadMsg.startsWith("❌") ? "#ef4444" : "#10b981",
-              borderRadius: 14, padding: "14px 20px",
-              display: "flex", alignItems: "center", gap: 12,
-              boxShadow: "0 8px 32px #00000066",
-            }}>
-              {uploading && <Spinner size={20} />}
-              {!uploading && <div style={{ fontSize: 20 }}>{uploadMsg.startsWith("❌") ? "❌" : "✅"}</div>}
-              <div style={{ color: "#fff", fontWeight: 700, fontSize: 14, flex: 1 }}>{uploadMsg || "처리 중..."}</div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -2502,8 +2568,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v4";  // v4: 프록시 폴백 + 등락률 방어
-  const BTC_CACHE_KEY = "investiq_btc_widget_v4";
+  const CACHE_KEY = "investiq_index_widget_v5";
+  const BTC_CACHE_KEY = "investiq_btc_widget_v5";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -2553,7 +2619,7 @@ function IndexWidget() {
 
   const fetchIndices = async () => {
     setLoading(true);
-    const apiKey = getApiKey(); // ← 스코프 안에서 직접 호출
+    const apiKey = getApiKey();
     try {
       // BTC: CoinGecko 7주 주봉 (49일)
       const btcRes = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=49&interval=daily");
@@ -2584,21 +2650,14 @@ function IndexWidget() {
         { name: "금(Gold)", symbol: "gc.f"   },
       ];
 
-      // CSV 파싱 공통 함수
       const parseStooqCSV = (text) => {
         const trimmed = text.trim();
-        // HTML 응답 완전 차단 (프록시가 에러 페이지 반환하는 경우)
-        if (
-          trimmed.startsWith("<") ||
-          trimmed.toLowerCase().includes("<!doctype") ||
-          trimmed.toLowerCase().includes("<html") ||
-          !trimmed.includes(",")
-        ) throw new Error("HTML/비CSV 응답");
+        if (trimmed.startsWith("<") || trimmed.toLowerCase().includes("<!doctype") || trimmed.toLowerCase().includes("<html") || !trimmed.includes(","))
+          throw new Error("HTML/비CSV 응답");
         const allLines = trimmed.split("\n");
         if (allLines.length < 3) throw new Error("데이터 부족");
         const header = allLines[0]?.toLowerCase() || "";
         const headers = header.split(",").map(h => h.trim());
-        // 헤더에 date가 없으면 CSV가 아님
         if (!headers.some(h => h === "date" || h === "data")) throw new Error("유효하지 않은 헤더");
         const closeIdx = headers.indexOf("close");
         const colIdx = closeIdx >= 0 ? closeIdx : 4;
@@ -2609,7 +2668,6 @@ function IndexWidget() {
         const current = points[points.length - 1];
         const prev = points[points.length - 2];
         const changeVal = prev ? ((current - prev) / prev * 100) : 0;
-        // ±50% 초과는 잘못된 데이터 (단위 오류 등) → Gemini fallback으로
         if (Math.abs(changeVal) > 50) throw new Error(`비정상 등락률 ${changeVal.toFixed(1)}%`);
         return {
           name: null,
@@ -2657,12 +2715,10 @@ function IndexWidget() {
         })
       );
       const validStooq = stooqResults.filter(r => r.status === "fulfilled").map(r => r.value);
-      const failedSymbols = STOOQ_SYMBOLS.filter((_, i) => stooqResults[i].status === "rejected");
-      const failedNames = failedSymbols.map(s => s.name);
-
+      const failedNames = STOOQ_SYMBOLS.filter((_, i) => stooqResults[i].status === "rejected").map(s => s.name);
       let finalResults = [...validStooq];
 
-      // 실패 종목 Gemini fallback (재시도 포함)
+      // Gemini fallback (실패 종목 + 503 재시도)
       const geminiIndexFallback = async (names, retry = 0) => {
         if (!apiKey || names.length === 0) return;
         try {
@@ -2682,7 +2738,6 @@ function IndexWidget() {
           }
           if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
           const data = await res.json();
-          if (data.error) throw new Error(data.error.message);
           const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
           const match = text.replace(/```json|```/g, "").trim().match(/\{[\s\S]*\}/);
           if (match) {
@@ -2702,10 +2757,8 @@ function IndexWidget() {
         } catch(e) { console.warn("Gemini 지수 fallback 실패:", e.message); }
       };
 
-      if (failedNames.length > 0) {
-        await geminiIndexFallback(failedNames);
-      }
-      // Stooq 전체 실패 시 전 종목 Gemini로 재시도
+      if (failedNames.length > 0) await geminiIndexFallback(failedNames);
+      // Stooq 전체 실패 시 전 종목 Gemini로
       if (validStooq.length === 0 && apiKey) {
         finalResults = [];
         await geminiIndexFallback(STOOQ_SYMBOLS.map(s => s.name));
@@ -2831,10 +2884,10 @@ function App() {
 
       <IndexWidget />
       <div style={{ padding: "18px 16px 48px" }}>
-        {tab === "market"    && <MarketInsight />}
-        {tab === "portfolio" && <Portfolio />}
-        {tab === "advisor"   && <Advisor />}
-        {tab === "settings"  && <Settings />}
+        <div style={{ display: tab === "market"    ? "block" : "none" }}><MarketInsight /></div>
+        <div style={{ display: tab === "portfolio" ? "block" : "none" }}><Portfolio /></div>
+        <div style={{ display: tab === "advisor"   ? "block" : "none" }}><Advisor /></div>
+        <div style={{ display: tab === "settings"  ? "block" : "none" }}><Settings /></div>
       </div>
     </div>
   );
