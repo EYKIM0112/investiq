@@ -1450,26 +1450,31 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
   const doSearch = async (q, ctry) => {
     if (!q || q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
-    const regionMap = { KR:"KR", US:"US", JP:"JP", CN:"CN", ALL:"" };
-    const region = regionMap[ctry] || "";
-    try {
-      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0${region?"&region="+region:""}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      let results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
-      // 국가 필터
-      if (ctry === "KR") results = results.filter(q => q.symbol?.endsWith(".KS") || q.symbol?.endsWith(".KQ"));
-      else if (ctry === "US") results = results.filter(q => !q.symbol?.includes(".") || q.exchange === "NMS" || q.exchange === "NYQ" || q.exchange === "NGM");
-      else if (ctry === "JP") results = results.filter(q => q.symbol?.endsWith(".T"));
-      else if (ctry === "CN") results = results.filter(q => q.symbol?.endsWith(".SS") || q.symbol?.endsWith(".SZ"));
-      setSearchResults(results.slice(0,6));
-    } catch {
+    const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
+    const proxyUrls = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
+      base,
+    ];
+    let results = [];
+    for (const url of proxyUrls) {
       try {
-        const res2 = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
-        const data2 = await res2.json();
-        setSearchResults((data2.quotes||[]).filter(q=>["ETF","EQUITY"].includes(q.quoteType)).slice(0,6));
-      } catch { setSearchResults([]); }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        const data = typeof text === "string" ? JSON.parse(text) : text;
+        results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
+        break;
+      } catch(e) { console.warn("검색 실패:", e.message); }
     }
+    if (ctry==="KR") results = results.filter(q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
+    else if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
+    else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
+    else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
+    setSearchResults(results.slice(0,6));
     setSearching(false);
   };
 
@@ -1672,22 +1677,32 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
   const doSearch = async (q, ctry) => {
     if (!q || q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
-    try {
-      const res = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
-      const data = await res.json();
-      let results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
-      if (ctry==="KR") results = results.filter(q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
-      else if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
-      else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
-      else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
-      setSearchResults(results.slice(0,6));
-    } catch {
+    const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
+    const urls = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
+      base,
+    ];
+    let results = [];
+    for (const url of urls) {
       try {
-        const res2 = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
-        const data2 = await res2.json();
-        setSearchResults((data2.quotes||[]).filter(q=>["ETF","EQUITY"].includes(q.quoteType)).slice(0,6));
-      } catch { setSearchResults([]); }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        const data = typeof text === "string" ? JSON.parse(text) : text;
+        results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
+        break;
+      } catch(e) { console.warn("검색 실패:", e.message); }
     }
+    // 국가 필터
+    if (ctry==="KR") results = results.filter(q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
+    else if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
+    else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
+    else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
+    setSearchResults(results.slice(0,6));
     setSearching(false);
   };
 
@@ -3050,8 +3065,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v8";
-  const BTC_CACHE_KEY = "investiq_btc_widget_v8";
+  const CACHE_KEY = "investiq_index_widget_v9";
+  const BTC_CACHE_KEY = "investiq_btc_widget_v9";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -3110,9 +3125,10 @@ function IndexWidget() {
       const fetchYahooIndex = async ({ name, ticker }) => {
         const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`;
         const urls = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
           base,
           `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`,
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
         ];
         let lastErr = null;
         for (const url of urls) {
@@ -3122,7 +3138,9 @@ function IndexWidget() {
             const res = await fetch(url, { signal: controller.signal });
             clearTimeout(timer);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
+            const text = await res.text();
+            // allorigins는 문자열로 올 수도 있음
+            const data = typeof text === "string" ? JSON.parse(text) : text;
             const result = data.chart?.result?.[0];
             if (!result) throw new Error("데이터 없음");
             const meta = result.meta;
@@ -3146,7 +3164,7 @@ function IndexWidget() {
             };
           } catch(e) {
             lastErr = e;
-            console.warn(`Yahoo [${ticker}] 실패:`, e.message);
+            console.warn(`Yahoo [${ticker}] 실패 (${url.slice(0,40)}):`, e.message);
           }
         }
         throw lastErr || new Error("모든 URL 실패");
