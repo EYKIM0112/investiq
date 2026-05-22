@@ -1583,9 +1583,9 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
               )}
               {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
               {searchResults.length > 0 && !name && (
-                <div style={{ background:"#16162a", borderRadius:8, overflow:"hidden", border:"1px solid #1e1e35" }}>
+                <div style={{ background:"#22223a", borderRadius:8, overflow:"hidden", border:"1px solid #3a3a6a" }}>
                   {searchResults.map((q,i) => (
-                    <button key={i} onClick={()=>{
+                    <button key={i} onMouseDown={e=>{e.preventDefault();
                       setName(q.longname||q.shortname||q.symbol);
                       setYahooTicker(q.symbol);
                       setSearchQ(q.longname||q.shortname||q.symbol);
@@ -1598,9 +1598,9 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
                     }}>
                       <div>
                         <div style={{ fontWeight:600 }}>{q.longname||q.shortname||q.symbol}</div>
-                        <div style={{ fontSize:11, color:"#2a2a48" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
+                        <div style={{ fontSize:11, color:"#6a6a9a" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
                       </div>
-                      <div style={{ fontSize:10, color:"#2a2a48", background:"#0f0f18", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
+                      <div style={{ fontSize:10, color:"#8a8ab8", background:"#16162a", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
                     </button>
                   ))}
                 </div>
@@ -1782,7 +1782,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
           {selected && <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:4 }}>✓ {selected.name} ({selected.ticker}) · {selected.exchange}</div>}
           {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
           {searchResults.length>0 && !selected && (
-            <div style={{ background:"#16162a", borderRadius:8, overflow:"hidden", border:"1px solid #1e1e35" }}>
+            <div style={{ background:"#22223a", borderRadius:8, overflow:"hidden", border:"1px solid #3a3a6a" }}>
               {searchResults.map((q,i) => (
                 <button key={i} onClick={()=>{
                   setSelected({name:q.longname||q.shortname||q.symbol, ticker:q.symbol, exchange:q.exchDisp||q.exchange||""});
@@ -1790,15 +1790,15 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
                   setSearchResults([]);
                 }} style={{
                   width:"100%", padding:"10px 12px", background:"transparent",
-                  border:"none", borderBottom:i<searchResults.length-1?"1px solid #12121f":"none",
-                  color:"#e8eaf0", fontSize:13, cursor:"pointer", textAlign:"left",
+                  border:"none", borderBottom:i<searchResults.length-1?"1px solid #2a2a4a":"none",
+                  color:"#f0f0ff", fontSize:13, cursor:"pointer", textAlign:"left",
                   display:"flex", justifyContent:"space-between", alignItems:"center",
                 }}>
                   <div>
                     <div style={{ fontWeight:600 }}>{q.longname||q.shortname||q.symbol}</div>
-                    <div style={{ fontSize:11, color:"#2a2a48" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
+                    <div style={{ fontSize:11, color:"#6a6a9a" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
                   </div>
-                  <div style={{ fontSize:10, color:"#2a2a48", background:"#0f0f18", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
+                  <div style={{ fontSize:10, color:"#8a8ab8", background:"#16162a", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
                 </button>
               ))}
             </div>
@@ -3065,8 +3065,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v9";
-  const BTC_CACHE_KEY = "investiq_btc_widget_v9";
+  const CACHE_KEY = "investiq_index_widget_v10";
+  const BTC_CACHE_KEY = "investiq_btc_widget_v10";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -3112,72 +3112,50 @@ function IndexWidget() {
         localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
       }
 
-      // 주요 지수: Yahoo Finance (프록시 불필요, CORS 허용)
-      const YAHOO_SYMBOLS = [
-        { name: "코스피",   ticker: "^KS11"  },
-        { name: "코스닥",   ticker: "^KQ11"  },
-        { name: "다우",     ticker: "^DJI"   },
-        { name: "나스닥",   ticker: "^IXIC"  },
-        { name: "S&P500",  ticker: "^GSPC"  },
-        { name: "금(Gold)", ticker: "GC=F"   },
-      ];
-
-      const fetchYahooIndex = async ({ name, ticker }) => {
-        const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`;
-        const urls = [
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
-          base,
-          `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`,
-        ];
-        let lastErr = null;
-        for (const url of urls) {
-          try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 10000);
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const text = await res.text();
-            // allorigins는 문자열로 올 수도 있음
-            const data = typeof text === "string" ? JSON.parse(text) : text;
-            const result = data.chart?.result?.[0];
-            if (!result) throw new Error("데이터 없음");
-            const meta = result.meta;
-            const closes = result.indicators?.quote?.[0]?.close || [];
-            const validCloses = closes.filter(v => v !== null && v !== undefined && !isNaN(v));
-            const current = meta.regularMarketPrice || validCloses[validCloses.length - 1];
-            const prev    = meta.chartPreviousClose || validCloses[validCloses.length - 2];
-            const weekAgo = validCloses.length >= 6 ? validCloses[validCloses.length - 6] : null;
-            if (!current) throw new Error("현재가 없음");
-            const changeVal  = prev    ? ((current - prev)    / prev    * 100) : 0;
-            const weekChange = weekAgo ? ((current - weekAgo) / weekAgo * 100) : null;
-            return {
-              name,
-              value: current >= 1000
-                ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-                : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-              change: String(Math.abs(changeVal).toFixed(2)),
-              up: changeVal >= 0,
-              weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
-              weekUp: weekChange !== null ? weekChange >= 0 : null,
-            };
-          } catch(e) {
-            lastErr = e;
-            console.warn(`Yahoo [${ticker}] 실패 (${url.slice(0,40)}):`, e.message);
+      // 주요 지수: Gemini API로 조회 (CORS 문제 없음)
+      const apiKey = getApiKey();
+      if (apiKey) {
+        try {
+          const today = new Date().toLocaleDateString("ko-KR");
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+          const body = {
+            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준 다음 6개 지수/자산의 현재값과 전일대비 등락률, 1주일 전 대비 등락률을 JSON으로만 반환. 마크다운 없이. 숫자만.
+{"indices":[
+  {"name":"코스피","value":"7265.30","change":"-0.34","weekChange":"+1.23"},
+  {"name":"코스닥","value":"654.20","change":"+0.12","weekChange":"-0.45"}
+]}
+대상: 코스피, 코스닥, 다우, 나스닥, S&P500, 금(Gold)
+- change: 전일대비 등락률 (부호 포함, % 제외)
+- weekChange: 1주일 전 대비 등락률 (부호 포함, % 제외)` }] }],
+            tools: [{ googleSearch: {} }],
+            generationConfig: { maxOutputTokens: 500, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+          };
+          const res = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
+            const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+            if (match) {
+              const parsed = JSON.parse(match[0]);
+              const finalResults = (parsed.indices || []).map(idx => {
+                const changeNum = parseFloat(idx.change) || 0;
+                const weekNum = parseFloat(idx.weekChange);
+                return {
+                  name: idx.name,
+                  value: String(idx.value || ""),
+                  change: String(Math.abs(changeNum).toFixed(2)),
+                  up: changeNum >= 0,
+                  weekChange: !isNaN(weekNum) ? weekNum.toFixed(2) : null,
+                  weekUp: !isNaN(weekNum) ? weekNum >= 0 : null,
+                };
+              });
+              if (finalResults.length > 0) {
+                setIndices(finalResults);
+                localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
+              }
+            }
           }
-        }
-        throw lastErr || new Error("모든 URL 실패");
-      };
-
-      const results = await Promise.allSettled(YAHOO_SYMBOLS.map(fetchYahooIndex));
-      const finalResults = results
-        .map((r, i) => r.status === "fulfilled" ? r.value : null)
-        .filter(Boolean);
-
-      if (finalResults.length > 0) {
-        setIndices(finalResults);
-        localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
+        } catch(e) { console.warn("Gemini 지수 조회 실패:", e.message); }
       }
     } catch (e) { console.error("위젯 오류:", e); }
     setLoading(false);
