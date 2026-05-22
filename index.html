@@ -389,7 +389,8 @@ const MARKET_PROMPTS = {
 
   commodities: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 글로벌 원자재 시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어. 시장규모 순 상위 10개.
-{"summary":"2문장","items":[{"rank":1,"name":"원자재명","price":"현재가","change_pct":"등락%","trend":"up","reason":"1문장","outlook":"1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1"],"risks":["리스크1"]}`,
+[단위 규칙] price와 outlook의 단위를 반드시 동일하게 통일. 원유=배럴당달러, 금/은=온스당달러, 구리=파운드당달러. 전망 수치도 같은 단위로만 표기. 단위 혼용 절대 금지.
+{"summary":"2문장","items":[{"rank":1,"name":"원자재명","price":"현재가(단위포함)","change_pct":"등락%","trend":"up","reason":"1문장","outlook":"같은단위로전망1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1"],"risks":["리스크1"]}`,
 
   asia: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 아시아 주식시장 최신 데이터를 웹 검색으로 수집하라. 한국 증시는 제외.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
@@ -1416,32 +1417,101 @@ function InputField({ label, value, onChange, inputMode = "text" }) {
   );
 }
 
-function TradeModal({ mode, holdings, accounts, onClose, onConfirm }) {
-  const isBuy = mode === "buy";
-  const [account, setAccount] = useState(accounts[0] || "");
-  const [name, setName]       = useState("");
-  const [price, setPrice]     = useState("");
-  const [shares, setShares]   = useState("");
+function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash = 0 }) {
+  const isBuy  = mode === "buy";
+  const isSell = mode === "sell";
+  const isCash = mode === "cash";
+  const [account, setAccount]         = useState(accounts[0] || "");
+  const [buyTab, setBuyTab]           = useState("existing");
+  const [country, setCountry]         = useState("KR");
+  const [name, setName]               = useState("");
+  const [yahooTicker, setYahooTicker] = useState(null);
+  const [searchQ, setSearchQ]         = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching]     = useState(false);
+  const [price, setPrice]             = useState("");
+  const [shares, setShares]           = useState("");
+  const [cashAmt, setCashAmt]         = useState(String(currentCash || ""));
+  const searchTimer = React.useRef(null);
 
-  // 매도 시 선택된 종목 보유수량
+  const COUNTRIES = [
+    { id:"KR", label:"🇰🇷 한국", suffix:".KS .KQ" },
+    { id:"US", label:"🇺🇸 미국", suffix:"" },
+    { id:"JP", label:"🇯🇵 일본", suffix:".T" },
+    { id:"CN", label:"🇨🇳 중국", suffix:".SS .SZ" },
+    { id:"ALL", label:"🌐 전체", suffix:"" },
+  ];
+
+  const existingOptions = holdings.filter(h => !account || h.account === account);
   const selectedHolding = holdings.find(h => h.name === name && h.account === account);
   const maxShares = selectedHolding?.shares || 0;
-
-  // 매도 종목 목록 (해당 계좌 보유 종목)
-  const sellOptions = holdings.filter(h => !account || h.account === account);
-
   const totalCost = (parseFloat(price)||0) * (parseFloat(shares)||0);
-  const isValid = isBuy
-    ? name.trim() && parseFloat(price) > 0 && parseFloat(shares) > 0
-    : name && parseFloat(price) > 0 && parseFloat(shares) > 0 && parseFloat(shares) <= maxShares;
 
-  return (
+  const doSearch = async (q, ctry) => {
+    if (!q || q.length < 2) { setSearchResults([]); return; }
+    setSearching(true);
+    const regionMap = { KR:"KR", US:"US", JP:"JP", CN:"CN", ALL:"" };
+    const region = regionMap[ctry] || "";
+    try {
+      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0${region?"&region="+region:""}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      let results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
+      // 국가 필터
+      if (ctry === "KR") results = results.filter(q => q.symbol?.endsWith(".KS") || q.symbol?.endsWith(".KQ"));
+      else if (ctry === "US") results = results.filter(q => !q.symbol?.includes(".") || q.exchange === "NMS" || q.exchange === "NYQ" || q.exchange === "NGM");
+      else if (ctry === "JP") results = results.filter(q => q.symbol?.endsWith(".T"));
+      else if (ctry === "CN") results = results.filter(q => q.symbol?.endsWith(".SS") || q.symbol?.endsWith(".SZ"));
+      setSearchResults(results.slice(0,6));
+    } catch {
+      try {
+        const res2 = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
+        const data2 = await res2.json();
+        setSearchResults((data2.quotes||[]).filter(q=>["ETF","EQUITY"].includes(q.quoteType)).slice(0,6));
+      } catch { setSearchResults([]); }
+    }
+    setSearching(false);
+  };
+
+  const handleSearchChange = (v) => {
+    setSearchQ(v); setYahooTicker(null); setName("");
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => doSearch(v, country), 500);
+  };
+
+  const handleCountryChange = (c) => {
+    setCountry(c);
+    if (searchQ) doSearch(searchQ, c);
+  };
+
+  const isValid = isCash
+    ? parseFloat(String(cashAmt).replace(/,/g,"")) >= 0
+    : isBuy
+      ? name.trim() && parseFloat(price) > 0 && parseFloat(shares) > 0
+      : name && parseFloat(price) > 0 && parseFloat(shares) > 0 && parseFloat(shares) <= maxShares;
+
+  if (isCash) return (
     <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
       <div style={{ background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"20px 18px 36px", width:"100%", maxWidth:480, margin:"0 auto" }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-          <div style={{ fontSize:16, fontWeight:800, color: isBuy?"#22d3a0":"#f87171" }}>
-            {isBuy ? "▲ 매수 입력" : "▼ 매도 입력"}
-          </div>
+          <div style={{ fontSize:16, fontWeight:800, color:"#6b7280" }}>💰 현금 잔고 조정</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#2a2a48", fontSize:22, cursor:"pointer" }}>×</button>
+        </div>
+        <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>현금 잔고 (₩)</div>
+        <input value={cashAmt} onChange={e=>setCashAmt(e.target.value)} inputMode="decimal" placeholder="0"
+          style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"14px 12px", color:"#e8eaf0", fontSize:18, outline:"none", marginBottom:8, fontWeight:700 }} />
+        <div style={{ fontSize:12, color:"#2a2a48", marginBottom:16 }}>현재 잔고: ₩{Math.round(currentCash).toLocaleString()}</div>
+        <button onClick={()=>onConfirm({type:"cash",amount:parseFloat(String(cashAmt).replace(/,/g,""))||0})}
+          style={{ width:"100%", padding:"14px", borderRadius:12, border:"none", background:"#22293a", color:"#e8eaf0", fontWeight:800, fontSize:15, cursor:"pointer" }}>저장</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
+      <div style={{ background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"20px 18px 36px", width:"100%", maxWidth:480, margin:"0 auto", maxHeight:"90vh", overflowY:"auto" }} onClick={e=>e.stopPropagation()}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div style={{ fontSize:16, fontWeight:800, color:isBuy?"#22d3a0":"#f87171" }}>{isBuy?"▲ 매수 입력":"▼ 매도 입력"}</div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#2a2a48", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
 
@@ -1449,31 +1519,94 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm }) {
         {accounts.length > 1 && (
           <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>계좌</div>
-            <select value={account} onChange={e=>{setAccount(e.target.value);setName("");}}
+            <select value={account} onChange={e=>{setAccount(e.target.value);setName("");setSearchQ("");setSearchResults([]);}}
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }}>
               {accounts.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
         )}
 
-        {/* 종목 선택/입력 */}
+        {/* 매수: 기존/신규 탭 */}
+        {isBuy && (
+          <div style={{ display:"flex", gap:0, marginBottom:14, background:"#16162a", borderRadius:10, padding:3 }}>
+            {[{id:"existing",label:"기존 종목 추가매수"},{id:"new",label:"신규 종목"}].map(t => (
+              <button key={t.id} onClick={()=>{setBuyTab(t.id);setName("");setSearchQ("");setSearchResults([]);setYahooTicker(null);}} style={{
+                flex:1, padding:"8px 4px", border:"none", borderRadius:8,
+                background:buyTab===t.id?"#0f0f18":"transparent",
+                color:buyTab===t.id?"#22d3a0":"#2a2a48",
+                fontSize:12, fontWeight:700, cursor:"pointer",
+              }}>{t.label}</button>
+            ))}
+          </div>
+        )}
+
+        {/* 종목 선택 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>종목명</div>
-          {isBuy ? (
-            <input value={name} onChange={e=>setName(e.target.value)} placeholder="TIGER 미국나스닥100"
-              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
-          ) : (
+          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>종목</div>
+
+          {/* 기존 종목 드롭다운 (매도 or 기존 추가매수) */}
+          {(isSell || (isBuy && buyTab==="existing")) && (
             <select value={name} onChange={e=>setName(e.target.value)}
-              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color: name?"#e8eaf0":"#2a2a48", fontSize:14, outline:"none" }}>
+              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:name?"#e8eaf0":"#2a2a48", fontSize:14, outline:"none" }}>
               <option value="">종목 선택...</option>
-              {sellOptions.map((h,i) => <option key={i} value={h.name}>{h.name} ({h.shares}주)</option>)}
+              {existingOptions.map((h,i) => (
+                <option key={i} value={h.name}>{h.name} ({isSell?h.shares+"주":"평단 "+Math.round(h.avg_price||0).toLocaleString()+"원"})</option>
+              ))}
             </select>
+          )}
+
+          {/* 신규 종목 - 국가 선택 + Yahoo 검색 */}
+          {isBuy && buyTab==="new" && (
+            <div>
+              {/* 국가 선택 */}
+              <div style={{ display:"flex", gap:4, marginBottom:8, overflowX:"auto" }}>
+                {COUNTRIES.map(c => (
+                  <button key={c.id} onClick={()=>handleCountryChange(c.id)} style={{
+                    padding:"5px 10px", borderRadius:8, border:"none", cursor:"pointer", whiteSpace:"nowrap", flexShrink:0,
+                    background:country===c.id?"#22d3a022":"#16162a",
+                    color:country===c.id?"#22d3a0":"#2a2a48",
+                    fontSize:11, fontWeight:700,
+                  }}>{c.label}</button>
+                ))}
+              </div>
+              {/* 검색창 */}
+              <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
+                placeholder="종목명 또는 티커 검색..."
+                style={{ width:"100%", background:"#16162a", border:`1px solid ${name?"#22d3a0":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none", marginBottom:4 }} />
+              {name && yahooTicker && (
+                <div style={{ fontSize:11, color:"#22d3a0", marginBottom:4 }}>✓ {name} ({yahooTicker})</div>
+              )}
+              {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
+              {searchResults.length > 0 && !name && (
+                <div style={{ background:"#16162a", borderRadius:8, overflow:"hidden", border:"1px solid #1e1e35" }}>
+                  {searchResults.map((q,i) => (
+                    <button key={i} onClick={()=>{
+                      setName(q.longname||q.shortname||q.symbol);
+                      setYahooTicker(q.symbol);
+                      setSearchQ(q.longname||q.shortname||q.symbol);
+                      setSearchResults([]);
+                    }} style={{
+                      width:"100%", padding:"10px 12px", background:"transparent",
+                      border:"none", borderBottom:i<searchResults.length-1?"1px solid #12121f":"none",
+                      color:"#e8eaf0", fontSize:13, cursor:"pointer", textAlign:"left",
+                      display:"flex", justifyContent:"space-between", alignItems:"center",
+                    }}>
+                      <div>
+                        <div style={{ fontWeight:600 }}>{q.longname||q.shortname||q.symbol}</div>
+                        <div style={{ fontSize:11, color:"#2a2a48" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
+                      </div>
+                      <div style={{ fontSize:10, color:"#2a2a48", background:"#0f0f18", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
         {/* 단가 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>{isBuy?"매수":"매도"} 단가 (₩)</div>
+          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>{isBuy?"매수":"매도"} 단가</div>
           <input value={price} onChange={e=>setPrice(e.target.value)} inputMode="decimal" placeholder="0"
             style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
         </div>
@@ -1481,145 +1614,226 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm }) {
         {/* 수량 */}
         <div style={{ marginBottom:16 }}>
           <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>
-            수량 {!isBuy && maxShares > 0 && <span style={{ color:"#2a2a48" }}>(보유 {maxShares}주)</span>}
+            수량 {isSell && maxShares>0 && <span>(보유 {maxShares}주)</span>}
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal" placeholder="0"
-              style={{ flex:1, background:"#16162a", border:`1px solid ${!isBuy && parseFloat(shares)>maxShares?"#f87171":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
-            {!isBuy && maxShares > 0 && (
+              style={{ flex:1, background:"#16162a", border:`1px solid ${isSell&&parseFloat(shares)>maxShares?"#f87171":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+            {isSell && maxShares>0 && (
               <button onClick={()=>setShares(String(maxShares))} style={{ padding:"0 14px", borderRadius:8, background:"#1a0a0a", border:"1px solid #3a1a1a", color:"#f87171", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>전량</button>
             )}
           </div>
-          {!isBuy && parseFloat(shares) > maxShares && (
-            <div style={{ fontSize:11, color:"#f87171", marginTop:4 }}>보유 수량 초과</div>
-          )}
+          {isSell && parseFloat(shares)>maxShares && <div style={{ fontSize:11, color:"#f87171", marginTop:4 }}>보유 수량 초과</div>}
         </div>
 
-        {/* 합계 */}
         {totalCost > 0 && (
           <div style={{ background:"#16162a", borderRadius:10, padding:"12px 14px", marginBottom:16, display:"flex", justifyContent:"space-between" }}>
             <span style={{ fontSize:13, color:"#2a2a48" }}>총 {isBuy?"매수":"매도"}금액</span>
-            <span style={{ fontSize:14, fontWeight:700, color: isBuy?"#22d3a0":"#f87171" }}>₩{Math.round(totalCost).toLocaleString()}</span>
+            <span style={{ fontSize:14, fontWeight:700, color:isBuy?"#22d3a0":"#f87171" }}>₩{Math.round(totalCost).toLocaleString()}</span>
           </div>
         )}
 
-        <button onClick={() => {
-          if (!isValid) return;
-          onConfirm({ type:mode, account, name:name.trim(), price:parseFloat(price), shares:parseFloat(shares) });
-        }} disabled={!isValid} style={{
+        <button onClick={()=>{ if(!isValid)return; onConfirm({type:mode,account,name:name.trim(),yahooTicker,price:parseFloat(price),shares:parseFloat(shares)}); }}
+          disabled={!isValid} style={{
           width:"100%", padding:"14px", borderRadius:12, border:"none",
-          background: !isValid ? "#16162a" : isBuy ? "linear-gradient(135deg,#22d3a0,#0891b2)" : "linear-gradient(135deg,#f87171,#dc2626)",
-          color: !isValid ? "#2a2a48" : "#fff",
-          fontWeight:800, fontSize:15, cursor: isValid?"pointer":"not-allowed",
-        }}>
-          {isBuy ? "매수 반영" : "매도 반영"}
-        </button>
+          background:!isValid?"#16162a":isBuy?"linear-gradient(135deg,#22d3a0,#0891b2)":"linear-gradient(135deg,#f87171,#dc2626)",
+          color:!isValid?"#2a2a48":"#fff", fontWeight:800, fontSize:15, cursor:isValid?"pointer":"not-allowed",
+        }}>{isBuy?"매수 반영":"매도 반영"}</button>
       </div>
     </div>
   );
 }
 
 function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
-  const [account, setAccount]           = useState(existingAccounts[0] || "");
+  const [account, setAccount]         = useState(existingAccounts[0] || "");
   const [newAccountName, setNewAccountName] = useState("");
   const [showNewAccount, setShowNewAccount] = useState(existingAccounts.length === 0);
-  const [name, setName]                 = useState("");
-  const [ticker, setTicker]             = useState("");
-  const [avgPrice, setAvgPrice]         = useState("");
-  const [shares, setShares]             = useState("");
-  const [currency, setCurrency]         = useState("KRW");
-  const [sector, setSector]             = useState("기타");
+  const [country, setCountry]         = useState("KR");
+  const [searchQ, setSearchQ]         = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching]     = useState(false);
+  const [selected, setSelected]       = useState(null);
+  const [avgPrice, setAvgPrice]       = useState("");
+  const [shares, setShares]           = useState("");
+  const [currency, setCurrency]       = useState("KRW");
+  const [sector, setSector]           = useState("기타");
+  const searchTimer = React.useRef(null);
+
+  const COUNTRIES = [
+    { id:"KR", label:"🇰🇷 한국" },
+    { id:"US", label:"🇺🇸 미국" },
+    { id:"JP", label:"🇯🇵 일본" },
+    { id:"CN", label:"🇨🇳 중국" },
+    { id:"ALL", label:"🌐 전체" },
+  ];
 
   const finalAccount = showNewAccount ? newAccountName : account;
 
+  const doSearch = async (q, ctry) => {
+    if (!q || q.length < 2) { setSearchResults([]); return; }
+    setSearching(true);
+    try {
+      const res = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
+      const data = await res.json();
+      let results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
+      if (ctry==="KR") results = results.filter(q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
+      else if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
+      else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
+      else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
+      setSearchResults(results.slice(0,6));
+    } catch {
+      try {
+        const res2 = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`);
+        const data2 = await res2.json();
+        setSearchResults((data2.quotes||[]).filter(q=>["ETF","EQUITY"].includes(q.quoteType)).slice(0,6));
+      } catch { setSearchResults([]); }
+    }
+    setSearching(false);
+  };
+
+  const handleSearchChange = (v) => {
+    setSearchQ(v); setSelected(null);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => doSearch(v, country), 500);
+  };
+
   const handleAdd = () => {
-    if (!name || !avgPrice || !shares) { alert("종목명, 평균단가, 수량은 필수입니다."); return; }
+    if (!selected && !searchQ.trim()) { alert("종목을 검색해서 선택해주세요."); return; }
+    if (!avgPrice || !shares) { alert("평균단가와 수량을 입력해주세요."); return; }
     if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
     onAdd({
-      ticker: ticker || name,
-      name,
-      shares: parseFloat(shares),
-      avg_price: parseFloat(String(avgPrice).replace(/,/g, "")),
-      currency,
-      sector,
+      ticker: selected?.ticker || searchQ.trim(),
+      yahoo_ticker: selected?.ticker || null,
+      name: selected?.name || searchQ.trim(),
+      avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
+      shares: parseFloat(shares) || 0,
+      currency, sector,
       account: finalAccount,
       current_price: null,
     });
-    setName(""); setTicker(""); setAvgPrice(""); setShares("");
   };
 
+  const SECTORS = ["기타","국내지수","미국지수","반도체","AI·로보틱스","미국빅테크","전력인프라","원자력","방산·조선","2차전지","금·원자재","배당·채권","신흥국"];
+
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 300, display: "flex", alignItems: "flex-end" }}
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
-      <div style={{ width: "100%", maxWidth: 480, margin: "0 auto", background: "#0f0f18", borderRadius: "20px 20px 0 0", padding: "24px 20px 48px", maxHeight: "88vh", overflowY: "auto", border: "1px solid #1e293b" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0" }}>종목 직접 입력</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#364875", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>x</button>
+    <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
+      <div style={{ background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"20px 18px 36px", width:"100%", maxWidth:480, margin:"0 auto", maxHeight:"90vh", overflowY:"auto" }} onClick={e=>e.stopPropagation()}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+          <div style={{ fontSize:16, fontWeight:800, color:"#a8b4f8" }}>✏️ 종목 추가</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#2a2a48", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
 
-        <div style={{ fontSize: 13, color: "#364875", marginBottom: 6 }}>계좌 선택</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-          {existingAccounts.map(a => (
-            <button key={a} onClick={() => { setAccount(a); setShowNewAccount(false); }} style={{
-              padding: "6px 12px", borderRadius: 20,
-              border: `1px solid ${!showNewAccount && account === a ? "#0ea5e9" : "#2a2a48"}`,
-              background: !showNewAccount && account === a ? "#0ea5e922" : "transparent",
-              color: !showNewAccount && account === a ? "#0ea5e9" : "#94a3b8",
-              fontSize: 14, cursor: "pointer", fontWeight: !showNewAccount && account === a ? 700 : 400,
-            }}>{a}</button>
-          ))}
-          <button onClick={() => setShowNewAccount(true)} style={{
-            padding: "6px 12px", borderRadius: 20,
-            border: `1px solid ${showNewAccount ? "#10b981" : "#2a2a48"}`,
-            background: showNewAccount ? "#10b98122" : "transparent",
-            color: showNewAccount ? "#10b981" : "#94a3b8",
-            fontSize: 14, cursor: "pointer", fontWeight: showNewAccount ? 700 : 400,
-          }}>+ 신규 계좌</button>
-        </div>
-        {showNewAccount && (
-          <input placeholder="새 계좌명 입력 (예: 삼성 개인연금)" value={newAccountName} onChange={e => setNewAccountName(e.target.value)}
-            style={{ width: "100%", background: "#020617", border: "1px solid #10b981", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontSize: 16, outline: "none", marginBottom: 10, boxSizing: "border-box" }} />
-        )}
-
-        <div style={{ fontSize: 13, color: "#364875", marginBottom: 6 }}>통화</div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {["KRW","USD","JPY","EUR"].map(c => (
-            <button key={c} onClick={() => setCurrency(c)} style={{
-              flex: 1, padding: "8px 0", borderRadius: 8,
-              border: `1px solid ${currency === c ? "#10b981" : "#2a2a48"}`,
-              background: currency === c ? "#10b98122" : "transparent",
-              color: currency === c ? "#10b981" : "#94a3b8", fontSize: 14, cursor: "pointer", fontWeight: currency === c ? 700 : 400,
-            }}>{c}</button>
-          ))}
+        {/* 계좌 선택 */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>계좌</div>
+          {!showNewAccount && existingAccounts.length > 0 ? (
+            <div style={{ display:"flex", gap:8 }}>
+              <select value={account} onChange={e=>setAccount(e.target.value)}
+                style={{ flex:1, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }}>
+                {existingAccounts.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <button onClick={()=>setShowNewAccount(true)} style={{ padding:"0 12px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#2a2a48", fontSize:12, cursor:"pointer", whiteSpace:"nowrap" }}>+ 신규</button>
+            </div>
+          ) : (
+            <div style={{ display:"flex", gap:8 }}>
+              <input value={newAccountName} onChange={e=>setNewAccountName(e.target.value)} placeholder="새 계좌명 입력"
+                style={{ flex:1, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+              {existingAccounts.length>0 && <button onClick={()=>setShowNewAccount(false)} style={{ padding:"0 12px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#2a2a48", fontSize:12, cursor:"pointer" }}>기존</button>}
+            </div>
+          )}
         </div>
 
-        <InputField label="종목명 *" value={name} onChange={setName} />
-        <InputField label="종목코드 (선택)" value={ticker} onChange={setTicker} />
-        <InputField label="매수 평균단가 *" value={avgPrice} onChange={setAvgPrice} inputMode="decimal" />
-        <InputField label="보유 수량 *" value={shares} onChange={setShares} inputMode="decimal" />
+        {/* 국가 선택 */}
+        <div style={{ marginBottom:10 }}>
+          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>국가</div>
+          <div style={{ display:"flex", gap:4, overflowX:"auto" }}>
+            {COUNTRIES.map(c => (
+              <button key={c.id} onClick={()=>{setCountry(c.id);if(searchQ)doSearch(searchQ,c.id);}} style={{
+                padding:"6px 10px", borderRadius:8, border:"none", cursor:"pointer", whiteSpace:"nowrap", flexShrink:0,
+                background:country===c.id?"#a8b4f822":"#16162a",
+                color:country===c.id?"#a8b4f8":"#2a2a48",
+                fontSize:11, fontWeight:700,
+              }}>{c.label}</button>
+            ))}
+          </div>
+        </div>
 
-        <div style={{ fontSize: 13, color: "#364875", marginBottom: 6, marginTop: 4 }}>섹터</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 22 }}>
-          {SECTORS.map(s => (
-            <button key={s} onClick={() => setSector(s)} style={{
-              padding: "5px 11px", borderRadius: 16,
-              border: `1px solid ${sector === s ? getSectorColor(s) : "#2a2a48"}`,
-              background: sector === s ? getSectorColor(s) + "22" : "transparent",
-              color: sector === s ? getSectorColor(s) : "#94a3b8", fontSize: 13, cursor: "pointer",
-            }}>{s}</button>
-          ))}
+        {/* 종목 검색 */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>종목 검색</div>
+          <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
+            placeholder="종목명 또는 티커 검색..."
+            style={{ width:"100%", background:"#16162a", border:`1px solid ${selected?"#a8b4f8":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none", marginBottom:4 }} />
+          {selected && <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:4 }}>✓ {selected.name} ({selected.ticker}) · {selected.exchange}</div>}
+          {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
+          {searchResults.length>0 && !selected && (
+            <div style={{ background:"#16162a", borderRadius:8, overflow:"hidden", border:"1px solid #1e1e35" }}>
+              {searchResults.map((q,i) => (
+                <button key={i} onClick={()=>{
+                  setSelected({name:q.longname||q.shortname||q.symbol, ticker:q.symbol, exchange:q.exchDisp||q.exchange||""});
+                  setSearchQ(q.longname||q.shortname||q.symbol);
+                  setSearchResults([]);
+                }} style={{
+                  width:"100%", padding:"10px 12px", background:"transparent",
+                  border:"none", borderBottom:i<searchResults.length-1?"1px solid #12121f":"none",
+                  color:"#e8eaf0", fontSize:13, cursor:"pointer", textAlign:"left",
+                  display:"flex", justifyContent:"space-between", alignItems:"center",
+                }}>
+                  <div>
+                    <div style={{ fontWeight:600 }}>{q.longname||q.shortname||q.symbol}</div>
+                    <div style={{ fontSize:11, color:"#2a2a48" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
+                  </div>
+                  <div style={{ fontSize:10, color:"#2a2a48", background:"#0f0f18", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 평균단가 + 수량 */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+          <div>
+            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>평균단가</div>
+            <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal" placeholder="0"
+              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+          </div>
+          <div>
+            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>수량 (주/좌)</div>
+            <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal" placeholder="0"
+              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+          </div>
+        </div>
+
+        {/* 통화 + 섹터 */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:10, marginBottom:18 }}>
+          <div>
+            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>통화</div>
+            <select value={currency} onChange={e=>setCurrency(e.target.value)}
+              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 8px", color:"#e8eaf0", fontSize:13, outline:"none" }}>
+              <option value="KRW">₩ KRW</option>
+              <option value="USD">$ USD</option>
+              <option value="JPY">¥ JPY</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>섹터</div>
+            <select value={sector} onChange={e=>setSector(e.target.value)}
+              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:13, outline:"none" }}>
+              {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
 
         <button onClick={handleAdd} style={{
-          width: "100%", padding: "14px", borderRadius: 10,
-          background: "linear-gradient(135deg,#0ea5e9,#7c3aed)",
-          color: "#fff", border: "none", fontWeight: 700, fontSize: 17, cursor: "pointer",
-        }}>+ 종목 추가</button>
+          width:"100%", padding:"14px", borderRadius:12, border:"none",
+          background:"linear-gradient(135deg,#4f6ef7,#7c3aed)",
+          color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer",
+        }}>종목 추가</button>
       </div>
     </div>
   );
 }
+
 
 // ---------- 포트폴리오 탭 ----------
 function Portfolio() {
@@ -2894,34 +3108,48 @@ function IndexWidget() {
       ];
 
       const fetchYahooIndex = async ({ name, ticker }) => {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const result = data.chart?.result?.[0];
-        if (!result) throw new Error("데이터 없음");
-        const meta = result.meta;
-        const closes = result.indicators?.quote?.[0]?.close || [];
-        const validCloses = closes.filter(v => v !== null && v !== undefined && !isNaN(v));
-        const current = meta.regularMarketPrice || validCloses[validCloses.length - 1];
-        const prev    = meta.chartPreviousClose || validCloses[validCloses.length - 2];
-        const weekAgo = validCloses.length >= 6 ? validCloses[validCloses.length - 6] : null;
-        if (!current) throw new Error("현재가 없음");
-        const changeVal  = prev    ? ((current - prev)    / prev    * 100) : 0;
-        const weekChange = weekAgo ? ((current - weekAgo) / weekAgo * 100) : null;
-        return {
-          name,
-          value: current >= 1000
-            ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-            : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-          change: String(Math.abs(changeVal).toFixed(2)),
-          up: changeVal >= 0,
-          weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
-          weekUp: weekChange !== null ? weekChange >= 0 : null,
-        };
+        const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`;
+        const urls = [
+          base,
+          `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+        ];
+        let lastErr = null;
+        for (const url of urls) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 10000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const result = data.chart?.result?.[0];
+            if (!result) throw new Error("데이터 없음");
+            const meta = result.meta;
+            const closes = result.indicators?.quote?.[0]?.close || [];
+            const validCloses = closes.filter(v => v !== null && v !== undefined && !isNaN(v));
+            const current = meta.regularMarketPrice || validCloses[validCloses.length - 1];
+            const prev    = meta.chartPreviousClose || validCloses[validCloses.length - 2];
+            const weekAgo = validCloses.length >= 6 ? validCloses[validCloses.length - 6] : null;
+            if (!current) throw new Error("현재가 없음");
+            const changeVal  = prev    ? ((current - prev)    / prev    * 100) : 0;
+            const weekChange = weekAgo ? ((current - weekAgo) / weekAgo * 100) : null;
+            return {
+              name,
+              value: current >= 1000
+                ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              change: String(Math.abs(changeVal).toFixed(2)),
+              up: changeVal >= 0,
+              weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+              weekUp: weekChange !== null ? weekChange >= 0 : null,
+            };
+          } catch(e) {
+            lastErr = e;
+            console.warn(`Yahoo [${ticker}] 실패:`, e.message);
+          }
+        }
+        throw lastErr || new Error("모든 URL 실패");
       };
 
       const results = await Promise.allSettled(YAHOO_SYMBOLS.map(fetchYahooIndex));
