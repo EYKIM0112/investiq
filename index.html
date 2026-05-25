@@ -1480,9 +1480,9 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
 
   const handleSearchChange = (v) => {
     setSearchQ(v); setYahooTicker(null); setName("");
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => doSearch(v, country), 500);
+    setSearchResults([]);
   };
+  const handleSearchSubmit = () => { if (searchQ.trim()) doSearch(searchQ, country); };
 
   const handleCountryChange = (c) => {
     setCountry(c);
@@ -1575,9 +1575,15 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
                 ))}
               </div>
               {/* 검색창 */}
-              <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
-                placeholder="종목명 또는 티커 검색..."
-                style={{ width:"100%", background:"#16162a", border:`1px solid ${name?"#22d3a0":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none", marginBottom:4 }} />
+              <div style={{ display:"flex", gap:8, marginBottom:4 }}>
+                <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&handleSearchSubmit()}
+                  placeholder="종목명 또는 티커..."
+                  style={{ flex:1, background:"#16162a", border:`1px solid ${name?"#22d3a0":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+                <button onClick={handleSearchSubmit} disabled={searching} style={{ padding:"0 14px", borderRadius:8, background:"#22d3a022", border:"1px solid #22d3a044", color:"#22d3a0", fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap" }}>
+                  {searching ? "..." : "검색"}
+                </button>
+              </div>
               {name && yahooTicker && (
                 <div style={{ fontSize:11, color:"#22d3a0", marginBottom:4 }}>✓ {name} ({yahooTicker})</div>
               )}
@@ -1708,9 +1714,9 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
 
   const handleSearchChange = (v) => {
     setSearchQ(v); setSelected(null);
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => doSearch(v, country), 500);
+    setSearchResults([]);
   };
+  const handleSearchSubmit = () => { if (searchQ.trim()) doSearch(searchQ, country); };
 
   const handleAdd = () => {
     if (!selected && !searchQ.trim()) { alert("종목을 검색해서 선택해주세요."); return; }
@@ -1776,9 +1782,15 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
         {/* 종목 검색 */}
         <div style={{ marginBottom:14 }}>
           <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>종목 검색</div>
-          <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
-            placeholder="종목명 또는 티커 검색..."
-            style={{ width:"100%", background:"#16162a", border:`1px solid ${selected?"#a8b4f8":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none", marginBottom:4 }} />
+          <div style={{ display:"flex", gap:8, marginBottom:4 }}>
+            <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleSearchSubmit()}
+              placeholder="종목명 또는 티커..."
+              style={{ flex:1, background:"#16162a", border:`1px solid ${selected?"#a8b4f8":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+            <button onClick={handleSearchSubmit} disabled={searching} style={{ padding:"0 14px", borderRadius:8, background:"#a8b4f822", border:"1px solid #a8b4f844", color:"#a8b4f8", fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap" }}>
+              {searching ? "..." : "검색"}
+            </button>
+          </div>
           {selected && <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:4 }}>✓ {selected.name} ({selected.ticker}) · {selected.exchange}</div>}
           {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
           {searchResults.length>0 && !selected && (
@@ -2829,6 +2841,19 @@ function Advisor() {
 - ETF 시총 1000억v 추천 불가. 1000~3000억이면 "(소규모 주의)" 명시
 - 수치 기반 근거 제시
 - 답변 길이: 핵심만 간결하게
+
+[IRP/DC 계좌 규칙] 매우 중요:
+- IRP(개인형 퇴직연금)와 DC(확정기여형) 계좌는 법적으로 위험자산 70% 한도, 안전자산 30% 이상 의무 보유
+- 안전자산 해당 종목: 채권혼합형 ETF(주식 40% 미만), 채권형 ETF, CD금리액티브, KOFR금리액티브, 머니마켓액티브(MMF형), 단기채권 ETF, 국공채 ETF, 예금, CMA 등 금리연동형/원리금보장형 상품 전반
+- 위 안전자산 종목의 축소를 권고할 때는 반드시 해당 종목이 어느 계좌에 있는지 확인
+- 해당 종목이 IRP/DC 계좌에 있는 경우:
+  * 단순히 "비중이 높다", "중복이다" 등의 이유로는 축소 권고 금지
+  * 단, 아래 경우에는 축소 조언 가능 (단, 안전자산 30% 이상은 반드시 유지해야 함을 함께 안내):
+    - 해당 채권형/혼합형의 채권 수익률 전망이 부정적인 경우 (예: 금리 인상 전망으로 채권가격 하락 예상)
+    - 채권혼합형 내 편입된 주식/금 등의 전망이 부정적인 경우
+    - 동일 계좌 내 더 나은 안전자산 대안으로 교체를 권고하는 경우
+- 계좌 구분 없이 전체 포트폴리오 기준으로 조언하되, 위 안전자산 관련 조언 시에만 계좌 확인
+
 [!] 참고용. 투자 손실 책임은 투자자 본인.`,
         user: `[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
         onChunk: (text) => {
@@ -3065,8 +3090,8 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v10";
-  const BTC_CACHE_KEY = "investiq_btc_widget_v10";
+  const CACHE_KEY = "investiq_index_widget_v12";
+  const BTC_CACHE_KEY = "investiq_btc_widget_v12";
 
   const loadCache = () => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -3119,16 +3144,21 @@ function IndexWidget() {
           const today = new Date().toLocaleDateString("ko-KR");
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
           const body = {
-            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준 다음 6개 지수/자산의 현재값과 전일대비 등락률, 1주일 전 대비 등락률을 JSON으로만 반환. 마크다운 없이. 숫자만.
+            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준으로 다음 6개 지수/자산의 가격 데이터를 검색해서 JSON으로만 반환. 마크다운 없이. 숫자만.
+
+[요청 데이터]
+- current: 오늘 현재가 또는 종가. 오늘이 휴장이면 직전 거래일 종가
+- prev_close: 직전 거래일 종가 (어제가 휴장이면 그 이전 거래일)
+- week_ago: 7거래일 전 종가 (휴장일 제외, 실제 거래일 기준)
+
 {"indices":[
-  {"name":"코스피","value":"7265.30","change":"-0.34","weekChange":"+1.23"},
-  {"name":"코스닥","value":"654.20","change":"+0.12","weekChange":"-0.45"}
+  {"name":"코스피","current":7847.71,"prev_close":7806.23,"week_ago":7490.15},
+  {"name":"코스닥","current":1161.13,"prev_close":1157.44,"week_ago":1106.02}
 ]}
-대상: 코스피, 코스닥, 다우, 나스닥, S&P500, 금(Gold)
-- change: 전일대비 등락률 (부호 포함, % 제외)
-- weekChange: 1주일 전 대비 등락률 (부호 포함, % 제외)` }] }],
+
+대상: 코스피, 코스닥, 다우, 나스닥, S&P500, 금(Gold)` }] }],
             tools: [{ googleSearch: {} }],
-            generationConfig: { maxOutputTokens: 500, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+            generationConfig: { maxOutputTokens: 600, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
           };
           const res = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
           if (res.ok) {
@@ -3138,15 +3168,21 @@ function IndexWidget() {
             if (match) {
               const parsed = JSON.parse(match[0]);
               const finalResults = (parsed.indices || []).map(idx => {
-                const changeNum = parseFloat(idx.change) || 0;
-                const weekNum = parseFloat(idx.weekChange);
+                const current  = parseFloat(idx.current)    || 0;
+                const prevClose = parseFloat(idx.prev_close) || 0;
+                const weekAgo  = parseFloat(idx.week_ago)   || 0;
+                // 앱이 직접 등락률 계산
+                const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
+                const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
                 return {
                   name: idx.name,
-                  value: String(idx.value || ""),
-                  change: String(Math.abs(changeNum).toFixed(2)),
-                  up: changeNum >= 0,
-                  weekChange: !isNaN(weekNum) ? weekNum.toFixed(2) : null,
-                  weekUp: !isNaN(weekNum) ? weekNum >= 0 : null,
+                  value: current >= 1000
+                    ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                    : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                  change: String(Math.abs(changeVal).toFixed(2)),
+                  up: changeVal >= 0,
+                  weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+                  weekUp: weekChange !== null ? weekChange >= 0 : null,
                 };
               });
               if (finalResults.length > 0) {
