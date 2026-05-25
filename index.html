@@ -2006,6 +2006,9 @@ function Portfolio() {
 
 [중요 규칙]
 - 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함 (예: "TIGER 미국우주테크")
+- shares(보유수량): 화면에 표시된 실제 보유 주수/좌수
+- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/펀드는 1좌당 1,000~2,000원 수준이고 수량이 수십만 좌일 수 있음
+- 현금성자산 처리: "현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 매입금액이 0이거나 없어도 avg_price=1, current_price=1 로 처리 (1좌=1원)
 - current_price: 화면에 현재가/현재값이 보이면 숫자로 추출. 없으면 null
 - change_pct: 화면에 등락률(%)이 보이면 숫자로 추출 (예: +2.34 또는 -1.5). 없으면 null
 - TDF/MMF 등 현재가 조회가 어려운 종목도 화면에 표시된 값 그대로 추출
