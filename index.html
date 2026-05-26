@@ -2225,8 +2225,10 @@ function Portfolio() {
 
   // Gemini fallback (Yahoo 실패 종목 재시도)
   const updatePricesGeminiFallback = async (pf, onlyMissing = false) => {
+    if (!pf?.holdings) { setUpdating(false); return; }
     try {
       const targets = onlyMissing ? pf.holdings.filter(h => !h.current_price) : pf.holdings;
+      if (targets.length === 0) { setUpdating(false); return; }
       const chunks = [];
       for (let i = 0; i < targets.length; i += 10) chunks.push(targets.slice(i, i+10));
       let allPrices = [];
@@ -2239,14 +2241,23 @@ function Portfolio() {
           tools: [{ googleSearch: {} }],
           generationConfig: { maxOutputTokens: 800, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
         };
-        try {
-          const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
-          if (!res.ok) continue;
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
-          const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-          if (match) { const p = JSON.parse(match[0]); if (p.prices) allPrices = [...allPrices, ...p.prices]; }
-        } catch(e) { continue; }
+        let retries = 2;
+        while (retries >= 0) {
+          try {
+            const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
+            if (res.status === 503 || res.status === 429) {
+              retries--;
+              if (retries >= 0) { await new Promise(r => setTimeout(r, 3000)); continue; }
+              else break;
+            }
+            if (!res.ok) break;
+            const data = await res.json();
+            const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+            const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+            if (match) { const p = JSON.parse(match[0]); if (p.prices) allPrices = [...allPrices, ...p.prices]; }
+            break;
+          } catch(e) { break; }
+        }
       }
       if (allPrices.length === 0) throw new Error("Gemini fallback 실패");
       const updated = { ...pf, updatedAt: new Date().toISOString(),
@@ -2268,7 +2279,7 @@ function Portfolio() {
   // 현재가 업데이트 - Yahoo Finance 우선, 실패 시 Gemini fallback
   const updatePrices = async (targetPortfolio) => {
     const pf = targetPortfolio || portfolio;
-    if (!pf) return;
+    if (!pf || !pf.holdings) return;
     setUpdating(true);
     setUploadMsg("📡 현재가 조회 중...");
     try {
