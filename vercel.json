@@ -1,9 +1,7 @@
 {
-  "outputDirectory": ".",
-  "builds": [
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
+  "functions": {
+    "api/gemini.js": {
+      "maxDuration": 60
     }
-  ]
+  }
 }
