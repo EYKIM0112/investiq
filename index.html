@@ -2022,8 +2022,8 @@ function Portfolio() {
 [중요 규칙]
 - 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함 (예: "TIGER 미국우주테크")
 - shares(보유수량): 화면에 표시된 실제 보유 주수/좌수
-- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/펀드는 1좌당 1,000~2,000원 수준이고 수량이 수십만 좌일 수 있음
-- 현금성자산 처리: "현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 매입금액이 0이거나 없어도 avg_price=1, current_price=1 로 처리 (1좌=1원)
+- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/펀드는 1좌당 1,000~2,000원 수준이고 수량이 수십만~백만 좌일 수 있음. 매입금액이 수백만~수십억 단위인데 수량이 수십만 이상이면 avg_price는 반드시 매입금액÷수량으로 계산 (매입금액 자체를 avg_price로 쓰지 말 것)
+- 현금성자산 처리: "현금성자산", "미래에셋증권현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 shares=평가금액(원 단위 숫자), avg_price=1, current_price=1 로 처리. 절대 평가금액을 avg_price로 쓰지 말 것
 - current_price: 화면에 현재가/현재값이 보이면 숫자로 추출. 없으면 null
 - change_pct: 화면에 등락률(%)이 보이면 숫자로 추출 (예: +2.34 또는 -1.5). 없으면 null
 - TDF/MMF 등 현재가 조회가 어려운 종목도 화면에 표시된 값 그대로 추출
@@ -3194,9 +3194,14 @@ function IndexWidget() {
 - prev_close: 직전 거래일 종가 (어제가 휴장이면 그 이전 거래일)
 - week_ago: 7거래일 전 종가 (휴장일 제외, 실제 거래일 기준)
 
+반환 형식 (예시 숫자 아님, 반드시 실제 검색해서 채울 것):
 {"indices":[
-  {"name":"코스피","current":7847.71,"prev_close":7806.23,"week_ago":7490.15},
-  {"name":"코스닥","current":1161.13,"prev_close":1157.44,"week_ago":1106.02}
+  {"name":"코스피","current":실제값,"prev_close":실제값,"week_ago":실제값},
+  {"name":"코스닥","current":실제값,"prev_close":실제값,"week_ago":실제값},
+  {"name":"다우","current":실제값,"prev_close":실제값,"week_ago":실제값},
+  {"name":"나스닥","current":실제값,"prev_close":실제값,"week_ago":실제값},
+  {"name":"S&P500","current":실제값,"prev_close":실제값,"week_ago":실제값},
+  {"name":"금(Gold)","current":실제값,"prev_close":실제값,"week_ago":실제값}
 ]}
 
 대상: 코스피, 코스닥, 다우, 나스닥, S&P500, 금(Gold)` }] }],
