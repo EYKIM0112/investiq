@@ -46,10 +46,8 @@ function getSectorColor(sector) {
   return SECTOR_COLORS["기타"];
 }
 
-// ---------- API ----------
-function getApiKey() {
-  return localStorage.getItem("investiq_api_key") || "";
-}
+// ---------- API 프록시 ----------
+const GEMINI_PROXY = "/api/gemini";
 
 // ---------- 안전한 JSON 파싱 ----------
 function safeParseJSON(text) {
@@ -80,10 +78,6 @@ function safeParseJSON(text) {
 
 // ---------- Gemini API 스트리밍 호출 ----------
 async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, onChunk, _retry = 0 }) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
-
-  // 검색+JSON(시장인사이트): flash 필수 / 순수텍스트(AI조언): flash-lite
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
@@ -92,13 +86,12 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetch(GEMINI_PROXY, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ model, body, stream: true }),
     });
   } catch (netErr) {
     // network error (Failed to fetch) 재시도
@@ -157,9 +150,6 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
 
 // ---------- Gemini API 일반 호출 (이미지 등 스트리밍 불필요한 경우) ----------
 async function callGemini({ system, user, maxTokens = 2000, useSearch = false }) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
-
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
@@ -168,17 +158,13 @@ async function callGemini({ system, user, maxTokens = 2000, useSearch = false })
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, body, stream: false }) });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
 }
 
 async function callGeminiWithImage({ system, user, imageBase64, mediaType, maxTokens = 2000 }) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API 키가 설정되지 않았습니다. 설정 탭에서 Gemini API 키를 입력해주세요.");
-
   const parts = [];
   if (system) parts.push({ text: `[시스템 지시]\n${system}\n\n` });
   parts.push({ inlineData: { mimeType: mediaType, data: imageBase64 } });
@@ -189,8 +175,7 @@ async function callGeminiWithImage({ system, user, imageBase64, mediaType, maxTo
     generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: GEMINI_MODEL, body, stream: false }) });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
@@ -2189,7 +2174,7 @@ function Portfolio() {
   };
 
   // Yahoo Finance 검색 API로 티커 자동 조회 (하드코딩 불필요)
-  const resolveTickerCodes = async (holdings, apiKey) => {
+  const resolveTickerCodes = async (holdings) => {
     const needTicker = holdings.filter(h => !h.yahoo_ticker);
     if (needTicker.length === 0) return holdings;
 
@@ -2212,10 +2197,9 @@ function Portfolio() {
 
     // Yahoo 검색 실패한 종목만 Gemini로 보완
     const stillMissing = needTicker.filter(h => !tickerMap[h.name]);
-    if (stillMissing.length > 0 && apiKey) {
+    if (stillMissing.length > 0) {
       try {
         const names = stillMissing.map(h => h.name).join(", ");
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
         const body = {
           contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식 종목들의 Yahoo Finance 티커 코드를 JSON으로만 반환. 마크다운 없이.
 한국 코스피 종목은 숫자코드.KS, 코스닥은 숫자코드.KQ 형식.
@@ -2223,7 +2207,7 @@ function Portfolio() {
 대상: ${names}` }] }],
           generationConfig: { maxOutputTokens: 800, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
         };
-        const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
         if (res.ok) {
           const data = await res.json();
           const text = data.candidates?.[0]?.content?.parts?.map(p => p.text||"").join("") || "";
@@ -2240,7 +2224,7 @@ function Portfolio() {
   };
 
   // Gemini fallback (Yahoo 실패 종목 재시도)
-  const updatePricesGeminiFallback = async (pf, apiKey, onlyMissing = false) => {
+  const updatePricesGeminiFallback = async (pf, onlyMissing = false) => {
     try {
       const targets = onlyMissing ? pf.holdings.filter(h => !h.current_price) : pf.holdings;
       const chunks = [];
@@ -2248,7 +2232,6 @@ function Portfolio() {
       let allPrices = [];
       for (const chunk of chunks) {
         const names = chunk.map(h => h.name).join(", ");
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
         const body = {
           contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식의 오늘 현재가를 검색해서 JSON으로만 반환. 마크다운 없이.
 {"prices":[{"name":"종목명","current_price":숫자,"change_pct":숫자}]}
@@ -2257,7 +2240,7 @@ function Portfolio() {
           generationConfig: { maxOutputTokens: 800, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
         };
         try {
-          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
           if (!res.ok) continue;
           const data = await res.json();
           const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
@@ -2289,25 +2272,33 @@ function Portfolio() {
     setUpdating(true);
     setUploadMsg("📡 현재가 조회 중...");
     try {
-      const apiKey = getApiKey();
       // 1단계: 현금성자산 제외 후 티커 코드 매핑
       // 현재가 조회 불가 종목 판별 (현금성자산, TDF/펀드류)
+      // 현재가 조회 불가 종목 판별
       const isNoPriceAsset = (h) => {
         const lower = (h.name||"").toLowerCase();
-        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf") || lower.includes("머니마켓") || lower.includes("cma");
-        const isTDF = lower.includes("tdf") || lower.includes("타겟데이트") || lower.includes("로자산배분") || lower.includes("자산배분적극") || lower.includes("자산배분안정");
+        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf") 
+                    || lower.includes("머니마켓") || lower.includes("cma") || lower.includes("예수금")
+                    || lower.includes("수시입출금") || lower.includes("파킹");
+        const isTDF = lower.includes("tdf") || lower.includes("타겟데이트") || lower.includes("로자산배분")
+                   || lower.includes("자산배분적극") || lower.includes("자산배분안정") || lower.includes("자산배분중립")
+                   || lower.includes("배분형") || lower.includes("생애주기");
         return isCash || isTDF;
       };
+      const isCashName = (n) => {
+        const lower = (n||"").toLowerCase();
+        return lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf")
+            || lower.includes("머니마켓") || lower.includes("cma") || lower.includes("예수금")
+            || lower.includes("수시입출금") || lower.includes("파킹");
+      };
       const priceableHoldings = pf.holdings.filter(h => !isNoPriceAsset(h));
-      // 현재가 조회 제외 종목: 현금성=1원 고정, TDF=스샷에서 읽은 current_price 유지 또는 avg_price 사용
+      // 현재가 조회 제외 종목: 현금성=1원 고정, TDF=스샷 current_price 유지 또는 avg_price 사용
       const cashHoldings = pf.holdings.filter(h => isNoPriceAsset(h)).map(h => {
-        const lower = (h.name||"").toLowerCase();
-        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf") || lower.includes("머니마켓") || lower.includes("cma");
-        if (isCash) return { ...h, current_price: 1, change_pct: 0 };
-        // TDF: 스샷에서 읽은 current_price 있으면 유지, 없으면 avg_price 사용
+        if (isCashName(h.name)) return { ...h, current_price: 1, change_pct: 0 };
+        // TDF/펀드: 스샷에서 읽은 current_price 있으면 유지, 없으면 avg_price 사용
         return { ...h, current_price: h.current_price || h.avg_price, change_pct: h.change_pct ?? null };
       });
-      const holdingsWithTickers = await resolveTickerCodes(priceableHoldings, apiKey);
+      const holdingsWithTickers = await resolveTickerCodes(priceableHoldings);
       // 2단계: Yahoo Finance 병렬 조회
       const results = await Promise.allSettled(
         holdingsWithTickers.map(async h => {
@@ -2329,12 +2320,12 @@ function Portfolio() {
         setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
         setTimeout(() => setUploadMsg(""), 4000);
         setUpdating(false);
-      } else if (successCount > 0 && failCount > 0 && apiKey) {
+      } else if (successCount > 0 && failCount > 0) {
         // 부분 실패 - 실패 종목만 Gemini로
         setUploadMsg(`📡 ${failCount}개 미조회 종목 AI 재시도 중...`);
-        await updatePricesGeminiFallback(updated, apiKey, true);
+        await updatePricesGeminiFallback(updated, true);
       } else if (successCount === 0) {
-        if (apiKey) { setUploadMsg("📡 AI로 현재가 조회 중..."); await updatePricesGeminiFallback(updated, apiKey, false); }
+        setUploadMsg("📡 AI로 현재가 조회 중..."); await updatePricesGeminiFallback(updated, false);
         else { setUploadMsg("❌ 현재가 조회 실패"); setTimeout(() => setUploadMsg(""), 4000); setUpdating(false); }
       } else {
         setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
@@ -2355,7 +2346,7 @@ function Portfolio() {
 
   // 포트폴리오 탭 첫 진입 시 미조회 종목 자동 갱신
   useEffect(() => {
-    if (!autoUpdated && portfolio && getApiKey()) {
+    if (!autoUpdated && portfolio) {
       const hasUnpriced = portfolio.holdings.some(h => !h.current_price);
       if (hasUnpriced) { setAutoUpdated(true); setTimeout(() => updatePrices(), 500); }
     }
@@ -3026,88 +3017,8 @@ function Advisor() {
 
 // ---------- 설정 탭 ----------
 function Settings() {
-  const [apiKey, setApiKey] = useState(localStorage.getItem("investiq_api_key") || "");
-  const [saved, setSaved] = useState(false);
-  const [showKey, setShowKey] = useState(false);
-
-  const handleSave = () => {
-    localStorage.setItem("investiq_api_key", apiKey.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const handleClear = () => {
-    localStorage.removeItem("investiq_api_key");
-    setApiKey("");
-  };
-
-  const maskedKey = apiKey ? apiKey.slice(0, 8) + "-".repeat(Math.max(0, apiKey.length - 12)) + apiKey.slice(-4) : "";
-
   return (
     <div style={{ padding: "0 4px" }}>
-      {/* API 키 설정 */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: "#0ea5e9", fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>CLAUDE API KEY</div>
-        <div style={{ fontSize: 14, color: "#2a3a60", marginBottom: 16, lineHeight: 1.6 }}>
-          Google AI Studio(aistudio.google.com)에서 발급받은 Gemini API 키를 입력하세요.
-          키는 이 기기에만 저장되며 외부로 전송되지 않습니다.
-        </div>
-
-        {apiKey && !showKey ? (
-          <div style={{ background: "#16162a", borderRadius: 8, padding: "11px 14px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: "#94a3b8", fontSize: 15, fontFamily: "monospace" }}>{maskedKey}</span>
-            <button onClick={() => setShowKey(true)} style={{ background: "none", border: "none", color: "#364875", fontSize: 14, cursor: "pointer" }}>보기</button>
-          </div>
-        ) : (
-          <input
-            type="text"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder="AIzaSy..."
-            style={{
-              width: "100%", background: "#16162a", border: "1px solid #334155",
-              borderRadius: 8, padding: "11px 14px", color: "#e2e8f0",
-              fontSize: 15, outline: "none", marginBottom: 10, fontFamily: "monospace",
-            }}
-          />
-        )}
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={handleSave} style={{
-            flex: 1, padding: "12px", borderRadius: 10, border: "none", cursor: "pointer",
-            background: saved ? "#10b981" : "linear-gradient(135deg,#0ea5e9,#7c3aed)",
-            color: "#fff", fontWeight: 700, fontSize: 16,
-          }}>
-            {saved ? "v 저장됨" : "저장"}
-          </button>
-          {apiKey && (
-            <button onClick={handleClear} style={{
-              padding: "12px 16px", borderRadius: 10, border: "1px solid #ef444433",
-              background: "#16162a", color: "#f87171", fontWeight: 700, fontSize: 16, cursor: "pointer",
-            }}>삭제</button>
-          )}
-        </div>
-      </div>
-
-      {/* API 키 발급 안내 */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: "#f59e0b", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>API 키 발급 방법</div>
-        {[
-          { step: "1", text: "aistudio.google.com 접속" },
-          { step: "2", text: "회원가입 또는 로그인" },
-          { step: "3", text: "좌측 메뉴 'Get API key' 클릭" },
-          { step: "4", text: "'API 키 만들기' 버튼 클릭" },
-          { step: "5", text: "생성된 키(AIzaSy...)를 위에 입력" },
-        ].map(({ step, text }) => (
-          <div key={step} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
-            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#16162a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#f59e0b", fontWeight: 700, flexShrink: 0 }}>{step}</div>
-            <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.5, paddingTop: 2 }}>{text}</div>
-          </div>
-        ))}
-        <div style={{ marginTop: 8, padding: "10px 14px", background: "#16162a", borderRadius: 8, fontSize: 14, color: "#364875", lineHeight: 1.6 }}>
-           API 사용료는 Google에서 별도 청구됩니다. Gemini 2.5 Flash 기준 입력 $0.30/1M 토큰. 일반적인 사용량이면 월 $0.3~1 수준입니다.
-        </div>
-      </div>
 
       {/* 히스토리 주기 설정 */}
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
@@ -3197,12 +3108,10 @@ function IndexWidget() {
         localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
       }
 
-      // 주요 지수: Gemini API로 조회 (CORS 문제 없음)
-      const apiKey = getApiKey();
-      if (apiKey) {
-        try {
+      // 주요 지수: Gemini 프록시로 조회
+      try {
+        {
           const today = new Date().toLocaleDateString("ko-KR");
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
           const body = {
             contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준으로 다음 6개 지수/자산의 가격 데이터를 검색해서 JSON으로만 반환. 마크다운 없이. 숫자만.
 
@@ -3225,7 +3134,7 @@ function IndexWidget() {
             tools: [{ googleSearch: {} }],
             generationConfig: { maxOutputTokens: 600, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
           };
-          const res = await fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+          const res = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
           if (res.ok) {
             const data = await res.json();
             const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
@@ -3257,7 +3166,6 @@ function IndexWidget() {
             }
           }
         } catch(e) { console.warn("Gemini 지수 조회 실패:", e.message); }
-      }
     } catch (e) { console.error("위젯 오류:", e); }
     setLoading(false);
   };
