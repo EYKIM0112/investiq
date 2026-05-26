@@ -2290,8 +2290,24 @@ function Portfolio() {
     setUploadMsg("📡 현재가 조회 중...");
     try {
       const apiKey = getApiKey();
-      // 1단계: 티커 코드 매핑
-      const holdingsWithTickers = await resolveTickerCodes(pf.holdings, apiKey);
+      // 1단계: 현금성자산 제외 후 티커 코드 매핑
+      // 현재가 조회 불가 종목 판별 (현금성자산, TDF/펀드류)
+      const isNoPriceAsset = (h) => {
+        const lower = (h.name||"").toLowerCase();
+        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf") || lower.includes("머니마켓") || lower.includes("cma");
+        const isTDF = lower.includes("tdf") || lower.includes("타겟데이트") || lower.includes("로자산배분") || lower.includes("자산배분적극") || lower.includes("자산배분안정");
+        return isCash || isTDF;
+      };
+      const priceableHoldings = pf.holdings.filter(h => !isNoPriceAsset(h));
+      // 현재가 조회 제외 종목: 현금성=1원 고정, TDF=스샷에서 읽은 current_price 유지 또는 avg_price 사용
+      const cashHoldings = pf.holdings.filter(h => isNoPriceAsset(h)).map(h => {
+        const lower = (h.name||"").toLowerCase();
+        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf") || lower.includes("머니마켓") || lower.includes("cma");
+        if (isCash) return { ...h, current_price: 1, change_pct: 0 };
+        // TDF: 스샷에서 읽은 current_price 있으면 유지, 없으면 avg_price 사용
+        return { ...h, current_price: h.current_price || h.avg_price, change_pct: h.change_pct ?? null };
+      });
+      const holdingsWithTickers = await resolveTickerCodes(priceableHoldings, apiKey);
       // 2단계: Yahoo Finance 병렬 조회
       const results = await Promise.allSettled(
         holdingsWithTickers.map(async h => {
@@ -2303,9 +2319,10 @@ function Portfolio() {
           return { ...h };
         })
       );
-      const updatedHoldings = results.map((r, i) => r.status === "fulfilled" ? r.value : holdingsWithTickers[i]);
-      const successCount = updatedHoldings.filter((h, i) => h.current_price && h.current_price !== holdingsWithTickers[i]?.current_price).length;
-      const failCount = updatedHoldings.filter(h => !h.current_price).length;
+      const pricedHoldings = results.map((r, i) => r.status === "fulfilled" ? r.value : holdingsWithTickers[i]);
+      const updatedHoldings = [...pricedHoldings, ...cashHoldings]; // 현금성자산 다시 합치기
+      const successCount = pricedHoldings.filter((h, i) => h.current_price && h.current_price !== holdingsWithTickers[i]?.current_price).length;
+      const failCount = pricedHoldings.filter(h => !h.current_price).length;
       const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: updatedHoldings };
       savePortfolio(updated); setPortfolio(updated); saveAllHistoryPoints(updated);
       if (successCount > 0 && failCount === 0) {
