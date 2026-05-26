@@ -2078,20 +2078,20 @@ function Portfolio() {
         let avgPrice = parseFloat(h.avg_price) || 0;
         let currentPrice = (h.current_price && h.current_price > 0) ? parseFloat(h.current_price) : null;
 
-        // 현금성자산 처리 (1좌=1원)
+        // 현금성자산 처리 (1좌=1원) - avg_price 무조건 1로 강제
         const isCashAsset = name.includes("현금") || name.includes("mmf") || name.includes("머니마켓") || name.includes("cma") || name.includes("현금성");
         if (isCashAsset) {
-          avgPrice = avgPrice > 0 ? avgPrice : 1;
-          currentPrice = currentPrice || 1;
+          avgPrice = 1;
+          currentPrice = 1;
         }
 
-        // 비정상 avg_price 검증: shares × avg_price가 터무니없으면 재계산
-        // (평가금액이 있으면 역산 시도)
-        if (shares > 0 && avgPrice > 0) {
+        // 비정상 avg_price 검증: Gemini가 매입금액 전체를 avg_price로 잘못 읽는 경우 처리
+        // 예: TDF 1,109,908좌 × avg_price=1,411,160 → 1.5조 비정상
+        if (!isCashAsset && shares > 0 && avgPrice > 0) {
           const impliedTotal = shares * avgPrice;
-          // 수백억 이상이면 avg_price가 매입금액 전체로 잘못 들어온 것
-          if (impliedTotal > 500000000000) {
-            avgPrice = Math.round(impliedTotal / shares / shares); // 재역산 시도
+          // 100억 초과면 의심 - avg_price가 매입금액 자체일 가능성
+          if (impliedTotal > 10000000000 && avgPrice > shares && avgPrice > 100000) {
+            avgPrice = Math.round(avgPrice / shares); // 매입금액 ÷ 수량으로 재계산
           }
         }
 
