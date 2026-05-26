@@ -1054,7 +1054,7 @@ function guessRegion(name) {
   if (!name) return "기타";
   const n = name.toUpperCase();
   if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("우주테크")||n.includes("배당다우")||n.includes("테크TOP")||n.includes("서학개미")) return "미국";
-  if (n.includes("차이나")||n.includes("중국")) return "중국 중국";
+  if (n.includes("차이나")||n.includes("중국")) return "중국";
   if (n.includes("인도")||n.includes("빌리언")) return "인도 인도";
   if (n.includes("글로벌")||n.includes("TOP4")||n.includes("원자력")||n.includes("K방산")||n.includes("조선")) return "글로벌";
   return "한국";
@@ -1191,30 +1191,42 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
   );
 }
 
-function addHistoryPoint(portfolio) {
+function addHistoryPoint(portfolio, filterAccount = null) {
   try {
-    // current_price가 있는 종목만 계산 (미조회 종목은 avg_price로 대체하지 않음)
-    const pricedHoldings = portfolio.holdings.filter(h => h.current_price && h.current_price > 0);
-    if (pricedHoldings.length === 0) return; // 현재가 없으면 기록 안 함
+    const holdings = filterAccount
+      ? portfolio.holdings.filter(h => h.account === filterAccount)
+      : portfolio.holdings;
+    const pricedHoldings = holdings.filter(h => h.current_price && h.current_price > 0);
+    if (pricedHoldings.length === 0) return;
     const tc = pricedHoldings.reduce((s,h) => s+(h.shares||0)*(h.avg_price||0), 0);
     const tv = pricedHoldings.reduce((s,h) => s+(h.shares||0)*h.current_price, 0);
     if (tc <= 0 || tv <= 0) return;
     const ret = ((tv-tc)/tc*100);
-    // 비정상 수익률 방어 (±1000% 초과면 기록 안 함)
-    if (Math.abs(ret) > 1000) { console.warn("비정상 수익률, 히스토리 미기록:", ret.toFixed(1)+"%"); return; }
+    if (Math.abs(ret) > 1000) return;
     const now = new Date();
     const point = { date:now.toISOString().slice(0,10), timestamp:now.getTime(), total_value:Math.round(tv), total_cost:Math.round(tc), return_pct:parseFloat(ret.toFixed(2)) };
-    const history = JSON.parse(localStorage.getItem("portfolio_history_v1")||"[]");
+    const key = filterAccount ? `portfolio_history_${filterAccount}` : "portfolio_history_v1";
+    const history = JSON.parse(localStorage.getItem(key)||"[]");
     const filtered = history.filter(h => h.date !== point.date);
-    localStorage.setItem("portfolio_history_v1", JSON.stringify([...filtered, point].sort((a,b)=>a.timestamp-b.timestamp).slice(-365)));
+    localStorage.setItem(key, JSON.stringify([...filtered, point].sort((a,b)=>a.timestamp-b.timestamp).slice(-365)));
   } catch(e) { console.error(e); }
 }
 
-function ReturnHistoryChart({ portfolio }) {
+function saveAllHistoryPoints(portfolio) {
+  // 전체 히스토리
+  addHistoryPoint(portfolio, null);
+  // 계좌별 히스토리
+  const accounts = [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))];
+  accounts.forEach(acc => addHistoryPoint(portfolio, acc));
+}
+
+function ReturnHistoryChart({ portfolio, viewMode = "all" }) {
   const [period, setPeriod] = useState(localStorage.getItem("history_period")||"daily");
   if (!portfolio) return null;
 
-  const rawHistory = (() => { try { return JSON.parse(localStorage.getItem("portfolio_history_v1")||"[]"); } catch { return []; } })();
+  // 전체 or 계좌별 히스토리 키 선택
+  const historyKey = viewMode === "all" ? "portfolio_history_v1" : `portfolio_history_${viewMode}`;
+  const rawHistory = (() => { try { return JSON.parse(localStorage.getItem(historyKey)||"[]"); } catch { return []; } })();
   const grouped={};
   rawHistory.forEach(h=>{
     const d=new Date(h.timestamp);
@@ -1227,9 +1239,12 @@ function ReturnHistoryChart({ portfolio }) {
   });
   const history=Object.values(grouped).sort((a,b)=>a.timestamp-b.timestamp);
 
-  const tc=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
-  const tv=portfolio.holdings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
-  const curRet=tc>0?((tv-tc)/tc*100).toFixed(2):0;
+  const filteredHoldings = viewMode === "all"
+    ? portfolio.holdings
+    : portfolio.holdings.filter(h => h.account === viewMode);
+  const tc = filteredHoldings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
+  const tv = filteredHoldings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const curRet = tc>0 ? ((tv-tc)/tc*100).toFixed(2) : 0;
 
   const periods=[{id:"daily",label:"일별"},{id:"weekly",label:"주별"},{id:"monthly",label:"월별"},{id:"yearly",label:"연별"}];
 
@@ -2057,14 +2072,39 @@ function Portfolio() {
         detectedAccount = rawAccount + ` -${dupCount + 1}`;
       }
 
-      const newHoldings = parsed.holdings.map(h => ({
-        ...h,
-        yahoo_ticker: h.yahoo_ticker || null,
-        // 스샷에서 읽은 현재가/수익률 보존 (Yahoo 조회 성공 시 덮어씀)
-        current_price: (h.current_price && h.current_price > 0) ? h.current_price : null,
-        change_pct: h.change_pct ?? null,
-        account: h.account || detectedAccount,
-      }));
+      const newHoldings = parsed.holdings.map(h => {
+        const name = (h.name || "").toLowerCase();
+        const shares = parseFloat(h.shares) || 0;
+        let avgPrice = parseFloat(h.avg_price) || 0;
+        let currentPrice = (h.current_price && h.current_price > 0) ? parseFloat(h.current_price) : null;
+
+        // 현금성자산 처리 (1좌=1원)
+        const isCashAsset = name.includes("현금") || name.includes("mmf") || name.includes("머니마켓") || name.includes("cma") || name.includes("현금성");
+        if (isCashAsset) {
+          avgPrice = avgPrice > 0 ? avgPrice : 1;
+          currentPrice = currentPrice || 1;
+        }
+
+        // 비정상 avg_price 검증: shares × avg_price가 터무니없으면 재계산
+        // (평가금액이 있으면 역산 시도)
+        if (shares > 0 && avgPrice > 0) {
+          const impliedTotal = shares * avgPrice;
+          // 수백억 이상이면 avg_price가 매입금액 전체로 잘못 들어온 것
+          if (impliedTotal > 500000000000) {
+            avgPrice = Math.round(impliedTotal / shares / shares); // 재역산 시도
+          }
+        }
+
+        return {
+          ...h,
+          shares,
+          avg_price: avgPrice,
+          yahoo_ticker: h.yahoo_ticker || null,
+          current_price: currentPrice,
+          change_pct: h.change_pct ?? null,
+          account: h.account || detectedAccount,
+        };
+      }).filter(h => h.shares > 0 && h.avg_price >= 0); // 수량 0이면 제외
 
       // 기존 같은 계좌가 있는지 확인 → 교체 or 추가
       const sameAccount = existingAccounts.find(a => a === detectedAccount);
@@ -2232,7 +2272,7 @@ function Portfolio() {
           return p ? { ...h, current_price: Number(p.current_price)||h.current_price, change_pct: Number(p.change_pct)||0 } : h;
         }),
       };
-      savePortfolio(updated); setPortfolio(updated); addHistoryPoint(updated);
+      savePortfolio(updated); setPortfolio(updated); saveAllHistoryPoints(updated);
       setUploadMsg(`✅ ${allPrices.length}개 종목 현재가 업데이트 완료 (AI)`);
       setTimeout(() => setUploadMsg(""), 4000);
     } catch(e) {
@@ -2267,7 +2307,7 @@ function Portfolio() {
       const successCount = updatedHoldings.filter((h, i) => h.current_price && h.current_price !== holdingsWithTickers[i]?.current_price).length;
       const failCount = updatedHoldings.filter(h => !h.current_price).length;
       const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: updatedHoldings };
-      savePortfolio(updated); setPortfolio(updated); addHistoryPoint(updated);
+      savePortfolio(updated); setPortfolio(updated); saveAllHistoryPoints(updated);
       if (successCount > 0 && failCount === 0) {
         setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
         setTimeout(() => setUploadMsg(""), 4000);
@@ -2699,7 +2739,7 @@ function Portfolio() {
           <PortfolioPieCharts portfolio={portfolio} filterAccount={viewMode} />
 
           {/* 수익률 히스토리 */}
-          <ReturnHistoryChart portfolio={portfolio} />
+          <ReturnHistoryChart portfolio={portfolio} viewMode={viewMode} />
 
           {/* 정렬 버튼 */}
           <div style={{ display:"flex", gap:6, marginBottom:10, alignItems:"center" }}>
