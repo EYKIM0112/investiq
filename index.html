@@ -3109,10 +3109,9 @@ function IndexWidget() {
 
       // 주요 지수: Gemini 프록시로 조회
       try {
-        {
-          const today = new Date().toLocaleDateString("ko-KR");
-          const body = {
-            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준으로 다음 6개 지수/자산의 가격 데이터를 검색해서 JSON으로만 반환. 마크다운 없이. 숫자만.
+        const today = new Date().toLocaleDateString("ko-KR");
+        const body = {
+          contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준으로 다음 6개 지수/자산의 가격 데이터를 검색해서 JSON으로만 반환. 마크다운 없이. 숫자만.
 
 [요청 데이터]
 - current: 오늘 현재가 또는 종가. 오늘이 휴장이면 직전 거래일 종가
@@ -3130,42 +3129,41 @@ function IndexWidget() {
 ]}
 
 대상: 코스피, 코스닥, 다우, 나스닥, S&P500, 금(Gold)` }] }],
-            tools: [{ googleSearch: {} }],
-            generationConfig: { maxOutputTokens: 600, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-          };
-          const res = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
-          if (res.ok) {
-            const data = await res.json();
-            const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
-            const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-            if (match) {
-              const parsed = JSON.parse(match[0]);
-              const finalResults = (parsed.indices || []).map(idx => {
-                const current  = parseFloat(idx.current)    || 0;
-                const prevClose = parseFloat(idx.prev_close) || 0;
-                const weekAgo  = parseFloat(idx.week_ago)   || 0;
-                // 앱이 직접 등락률 계산
-                const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
-                const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
-                return {
-                  name: idx.name,
-                  value: current >= 1000
-                    ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-                    : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                  change: String(Math.abs(changeVal).toFixed(2)),
-                  up: changeVal >= 0,
-                  weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
-                  weekUp: weekChange !== null ? weekChange >= 0 : null,
-                };
-              });
-              if (finalResults.length > 0) {
-                setIndices(finalResults);
-                localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
-              }
+          tools: [{ googleSearch: {} }],
+          generationConfig: { maxOutputTokens: 600, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+        };
+        const res = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
+          const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            const finalResults = (parsed.indices || []).map(idx => {
+              const current   = parseFloat(idx.current)    || 0;
+              const prevClose = parseFloat(idx.prev_close) || 0;
+              const weekAgo   = parseFloat(idx.week_ago)   || 0;
+              const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
+              const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
+              return {
+                name: idx.name,
+                value: current >= 1000
+                  ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                  : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                change: String(Math.abs(changeVal).toFixed(2)),
+                up: changeVal >= 0,
+                weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+                weekUp: weekChange !== null ? weekChange >= 0 : null,
+              };
+            });
+            if (finalResults.length > 0) {
+              setIndices(finalResults);
+              localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
             }
           }
-        } catch(e) { console.warn("Gemini 지수 조회 실패:", e.message); }
-    } catch (e) { console.error("위젯 오류:", e); }
+        }
+      } catch(e) { console.warn("Gemini 지수 조회 실패:", e.message); }
+    } catch(e) { console.error("위젯 오류:", e); }
     setLoading(false);
   };
   // 전체새로고침 이벤트 수신
