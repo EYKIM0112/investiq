@@ -2120,10 +2120,13 @@ function Portfolio() {
   };
 
   // 파일 change 핸들러
-  const onFileChange = (e, addToExisting) => {
-    const f = e.target.files?.[0];
+  const onFileChange = async (e, addToExisting) => {
+    const files = Array.from(e.target.files || []);
     e.target.value = "";          // 같은 파일 재선택 허용
-    if (f) processFile(f, addToExisting);
+    if (!files.length) return;
+    for (const file of files) {
+      await processFile(file, addToExisting);
+    }
   };
 
   // 직접 입력 추가
@@ -2423,7 +2426,7 @@ function Portfolio() {
       <div>
         {/* 숨김 input - label과 id로 연결, 항상 DOM에 존재 */}
         <input
-          id={imgId} type="file" accept="image/*"
+          id={imgId} type="file" accept="image/*" multiple
           style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
           onChange={e => onFileChange(e, addToExisting)}
         />
@@ -2469,6 +2472,7 @@ function Portfolio() {
               >
                 <span style={{ fontSize: 24 }}></span>
                 <span>갤러리 / 스크린샷</span>
+                <span style={{ fontSize:11, opacity:0.7, fontWeight:400 }}>여러 장 동시 선택 가능</span>
               </label>
               <label
                 htmlFor={xlsId}
@@ -2736,7 +2740,7 @@ function Portfolio() {
           <div style={{ marginBottom: 12 }}>
             <input ref={imgInputRef} id="input-img-upload" type="file" accept="image/*" multiple
               style={{display:"none"}}
-              onChange={e=>{ const files = Array.from(e.target.files || []); e.target.value = ""; files.forEach((file, idx) => { setTimeout(() => processFile(file, true), idx * 800); }); }}/>
+              onChange={async e=>{ const files = Array.from(e.target.files || []); e.target.value = ""; for (const file of files) { await processFile(file, true); } }}/>
             <input ref={xlsInputRef} id="input-xls-upload" type="file" accept=".xlsx,.xls,.csv"
               style={{display:"none"}}
               onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) processFile(f, true); }}/>
