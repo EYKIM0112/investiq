@@ -3078,28 +3078,29 @@ function Settings() {
 // ---------- 메인 앱 ----------
 // ---------- 메인 지수 위젯 ----------
 function IndexWidget() {
-  const CACHE_KEY = "investiq_index_widget_v12";
-  const BTC_CACHE_KEY = "investiq_btc_widget_v12";
+  const CACHE_KEY     = "investiq_index_widget_v13"; // v13: timestamp 기반 30분 TTL
+  const BTC_CACHE_KEY = "investiq_btc_widget_v13";
+  const CACHE_TTL_MS  = 30 * 60 * 1000; // 30분
 
-  const loadCache = () => {
-    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
+  const loadCache = (key) => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(key) || "null");
+      if (!raw) return null;
+      if (Array.isArray(raw)) { localStorage.removeItem(key); return null; } // 구버전 배열 무효화
+      if (raw.ts && Date.now() - raw.ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
+      return raw.data || null;
+    } catch { return null; }
   };
-  const loadBtcCache = () => {
-    try { return JSON.parse(localStorage.getItem(BTC_CACHE_KEY) || "null"); } catch { return null; }
+  const saveCache = (key, data) => {
+    try { localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
   };
 
   const [indices, setIndices] = useState(() => {
-    try {
-      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
-      // 캐시 유효성 검사: change가 100 이상이면 이전 포인트값 캐시 → 무효화
-      if (cached && cached.some(idx => parseFloat(idx.change) > 50)) {
-        localStorage.removeItem(CACHE_KEY);
-        return null;
-      }
-      return cached;
-    } catch { return null; }
+    const cached = loadCache(CACHE_KEY);
+    if (cached && cached.some(idx => parseFloat(idx.change) > 50)) return null;
+    return cached;
   });
-  const [btc, setBtc] = useState(loadBtcCache);
+  const [btc, setBtc]     = useState(() => loadCache(BTC_CACHE_KEY));
   const [loading, setLoading] = useState(false);
 
   const fetchIndices = async () => {
@@ -3122,7 +3123,7 @@ function IndexWidget() {
           weekUp: weekChange !== null ? weekChange >= 0 : null,
         };
         setBtc(btcResult);
-        localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
+        saveCache(BTC_CACHE_KEY, btcResult);
       }
 
       // 주요 지수: Yahoo Finance 직접 조회 (코스피/코스닥/다우/나스닥/S&P500)
@@ -3207,12 +3208,16 @@ function IndexWidget() {
         const finalResults = [...yahooIndexResults, ...(goldResult ? [goldResult] : [])];
         if (finalResults.length > 0) {
           setIndices(finalResults);
-          localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
+          saveCache(CACHE_KEY, finalResults);
         }
       } catch(e) { console.warn("지수 조회 실패:", e.message); }
     } catch(e) { console.error("위젯 오류:", e); }
     setLoading(false);
   };
+  // 마운트 시 캐시 없거나 만료됐으면 자동 조회
+  React.useEffect(() => {
+    if (!indices || !btc) fetchIndices();
+  }, []);
   // 전체새로고침 이벤트 수신
   React.useEffect(() => {
     const handler = () => fetchIndices();
