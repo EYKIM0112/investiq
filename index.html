@@ -2308,19 +2308,18 @@ function Portfolio() {
     setUpdating(false);
   };
 
-  // 현재가 업데이트 - Yahoo Finance 우선, 실패 시 Gemini fallback
+  // 현재가 업데이트
+  // KRW 종목 → Gemini Search (Yahoo는 한국 ETF 데이터 신뢰 불가)
+  // USD 종목 → Yahoo Finance → Gemini fallback
   const updatePrices = async (targetPortfolio) => {
     const pf = targetPortfolio || portfolio;
     if (!pf || !pf.holdings) return;
     setUpdating(true);
     setUploadMsg("📡 현재가 조회 중...");
     try {
-      // 1단계: 현금성자산 제외 후 티커 코드 매핑
-      // 현재가 조회 불가 종목 판별 (현금성자산, TDF/펀드류)
-      // 현재가 조회 불가 종목 판별
       const isNoPriceAsset = (h) => {
         const lower = (h.name||"").toLowerCase();
-        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf") 
+        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf")
                     || lower.includes("머니마켓") || lower.includes("cma") || lower.includes("예수금")
                     || lower.includes("수시입출금") || lower.includes("파킹");
         const isTDF = lower.includes("tdf") || lower.includes("타겟데이트") || lower.includes("로자산배분")
@@ -2334,60 +2333,93 @@ function Portfolio() {
             || lower.includes("머니마켓") || lower.includes("cma") || lower.includes("예수금")
             || lower.includes("수시입출금") || lower.includes("파킹");
       };
+
       const priceableHoldings = pf.holdings.filter(h => !isNoPriceAsset(h));
-      // 현재가 조회 제외 종목: 현금성=1원 고정, TDF=스샷 current_price 유지 또는 avg_price 사용
       const cashHoldings = pf.holdings.filter(h => isNoPriceAsset(h)).map(h => {
         if (isCashName(h.name)) return { ...h, current_price: 1, change_pct: 0 };
-        // TDF/펀드: 스샷에서 읽은 current_price 있으면 유지, 없으면 avg_price 사용
         return { ...h, current_price: h.current_price || h.avg_price, change_pct: h.change_pct ?? null };
       });
-      const holdingsWithTickers = await resolveTickerCodes(priceableHoldings);
-      // 2단계: Yahoo Finance 병렬 조회 (.KS 실패 시 .KQ 재시도)
-      const results = await Promise.allSettled(
-        holdingsWithTickers.map(async h => {
-          if (h.yahoo_ticker) {
-            let price = await fetchYahooPrice(h.yahoo_ticker);
-            // .KS로 했는데 null 반환(currency 오류 포함) → .KQ로 재시도
-            if (!price && h.yahoo_ticker.endsWith(".KS")) {
-              const kqTicker = h.yahoo_ticker.replace(".KS", ".KQ");
-              price = await fetchYahooPrice(kqTicker);
-              if (price) {
-                // .KQ가 맞는 티커였음 → 저장 (다음 조회 시 바로 사용)
-                h = { ...h, yahoo_ticker: kqTicker };
-              }
-            }
-            if (price) return { ...h, current_price: price.current_price, change_pct: price.change_pct };
+
+      // KRW vs 외화 분리
+      const isKRW = (h) => !h.currency || h.currency === "KRW";
+      const krwHoldings     = priceableHoldings.filter(h => isKRW(h));
+      const foreignHoldings = priceableHoldings.filter(h => !isKRW(h));
+
+      // ── [KRW] Gemini Search로 현재가 조회 ──────────────────────
+      let pricedKRW = [...krwHoldings];
+      if (krwHoldings.length > 0) {
+        setUploadMsg(`📡 한국 ETF ${krwHoldings.length}개 현재가 조회 중...`);
+        const chunks = [];
+        for (let i = 0; i < krwHoldings.length; i += 10) chunks.push(krwHoldings.slice(i, i+10));
+        let allPrices = [];
+        for (const chunk of chunks) {
+          const names = chunk.map(h => h.name).join(", ");
+          const body = {
+            contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식의 오늘 현재가(원화)를 검색해서 JSON으로만 반환. 마크다운 없이.
+{"prices":[{"name":"종목명","current_price":숫자,"change_pct":숫자}]}
+대상: ${names}` }] }],
+            tools: [{ googleSearch: {} }],
+            generationConfig: { maxOutputTokens: 1000, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+          };
+          let retries = 2;
+          while (retries >= 0) {
+            try {
+              const res = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
+              if ((res.status===503||res.status===429) && retries>0) { retries--; await new Promise(r=>setTimeout(r,3000)); continue; }
+              if (!res.ok) break;
+              const data = await res.json();
+              const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+              const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+              if (match) { const p = JSON.parse(match[0]); if (p.prices) allPrices = [...allPrices, ...p.prices]; }
+              break;
+            } catch(e) { break; }
           }
-          // Yahoo 실패 or 티커 없음 → 스샷에서 읽은 값 유지
-          return { ...h };
-        })
-      );
-      const pricedHoldings = results.map((r, i) => r.status === "fulfilled" ? r.value : holdingsWithTickers[i]);
-      const updatedHoldings = [...pricedHoldings, ...cashHoldings]; // 현금성자산 다시 합치기
-      const successCount = pricedHoldings.filter((h, i) => h.current_price && h.current_price !== holdingsWithTickers[i]?.current_price).length;
-      const failCount = pricedHoldings.filter(h => !h.current_price).length;
-      const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: updatedHoldings };
-      savePortfolio(updated); setPortfolio(updated); saveAllHistoryPoints(updated);
-      if (successCount > 0 && failCount === 0) {
-        setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
-        setTimeout(() => setUploadMsg(""), 4000);
-        setUpdating(false);
-      } else if (successCount > 0 && failCount > 0) {
-        // 부분 실패 - 실패 종목만 Gemini로
-        setUploadMsg(`📡 ${failCount}개 미조회 종목 AI 재시도 중...`);
-        await updatePricesGeminiFallback(updated, true);
-      } else if (successCount === 0) {
-        setUploadMsg("📡 AI로 현재가 조회 중..."); await updatePricesGeminiFallback(updated, false);
-      } else {
-        setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
-        setTimeout(() => setUploadMsg(""), 4000);
-        setUpdating(false);
+        }
+        pricedKRW = krwHoldings.map(h => {
+          const p = allPrices.find(x => x.name === h.name);
+          const cp = p ? Number(p.current_price) : 0;
+          return (cp > 0) ? { ...h, current_price: cp, change_pct: Number(p.change_pct)||0 } : h;
+        });
       }
+
+      // ── [외화] Yahoo Finance → Gemini fallback ──────────────────
+      let pricedForeign = [...foreignHoldings];
+      if (foreignHoldings.length > 0) {
+        setUploadMsg(`📡 해외 종목 ${foreignHoldings.length}개 현재가 조회 중...`);
+        const withTickers = await resolveTickerCodes(foreignHoldings);
+        const results = await Promise.allSettled(
+          withTickers.map(async h => {
+            if (!h.yahoo_ticker) return { ...h };
+            let price = await fetchYahooPrice(h.yahoo_ticker);
+            if (!price && h.yahoo_ticker.endsWith(".KS")) {
+              const kq = h.yahoo_ticker.replace(".KS",".KQ");
+              price = await fetchYahooPrice(kq);
+              if (price) h = { ...h, yahoo_ticker: kq };
+            }
+            return price ? { ...h, current_price: price.current_price, change_pct: price.change_pct } : { ...h };
+          })
+        );
+        pricedForeign = results.map((r,i) => r.status==="fulfilled" ? r.value : withTickers[i]);
+        // 외화 Yahoo 실패 종목만 Gemini fallback
+        const foreignFailed = pricedForeign.filter(h => !h.current_price);
+        if (foreignFailed.length > 0) {
+          const tmpPf = { ...pf, holdings: [...pricedForeign, ...pricedKRW, ...cashHoldings] };
+          await updatePricesGeminiFallback(tmpPf, true);
+          return; // updatePricesGeminiFallback이 저장/setState 처리함
+        }
+      }
+
+      const allPricedHoldings = [...pricedKRW, ...pricedForeign, ...cashHoldings];
+      const successCount = allPricedHoldings.filter(h => h.current_price && h.current_price > 0).length;
+      const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: allPricedHoldings };
+      savePortfolio(updated); setPortfolio(updated); saveAllHistoryPoints(updated);
+      setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
+      setTimeout(() => setUploadMsg(""), 4000);
     } catch(e) {
       setUploadMsg(`❌ 가격 업데이트 실패: ${e.message}`);
       setTimeout(() => setUploadMsg(""), 5000);
-      setUpdating(false);
     }
+    setUpdating(false);
   };
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
