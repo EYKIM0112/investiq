@@ -1452,6 +1452,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
     setSearching(true);
     const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
     const proxyUrls = [
+      `/api/yahoo?type=search&q=${encodeURIComponent(q)}`,
       `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
       base,
@@ -1685,6 +1686,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
     setSearching(true);
     const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
     const urls = [
+      `/api/yahoo?type=search&q=${encodeURIComponent(q)}`,
       `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
       base,
@@ -2156,7 +2158,7 @@ function Portfolio() {
   // Yahoo Finance로 단일 종목 현재가 조회
   const fetchYahooPrice = async (ticker) => {
     if (!ticker) return null;
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+    const url = `/api/yahoo?type=chart&ticker=${encodeURIComponent(ticker)}`;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
@@ -2183,7 +2185,7 @@ function Portfolio() {
     await Promise.allSettled(needTicker.map(async h => {
       try {
         const q = encodeURIComponent(h.name);
-        const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${q}&lang=ko-KR&region=KR&quotesCount=1&newsCount=0`;
+        const url = `/api/yahoo?type=search&q=${q}&region=KR`;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 5000);
         const res = await fetch(url, { signal: controller.signal });
@@ -3137,8 +3139,8 @@ function IndexWidget() {
         // Yahoo Finance 병렬 조회
         const yahooResults = await Promise.allSettled(
           YAHOO_INDICES.map(async ({ name, ticker }) => {
-            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=10d`;
-            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          const url = `/api/yahoo?type=chart&ticker=${ticker}`;
+            const res = await fetch(url);
             if (!res.ok) throw new Error(`${name} 조회 실패`);
             const data = await res.json();
             const meta = data.chart?.result?.[0]?.meta;
