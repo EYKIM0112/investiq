@@ -3060,6 +3060,29 @@ function Settings() {
         </button>
       </div>
 
+      {/* 캐시 초기화 */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, color: "#f59e0b", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>캐시 초기화</div>
+        <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, lineHeight: 1.7 }}>
+          지수 데이터가 오래되거나 잘못 표시될 때 초기화하세요.<br/>
+          포트폴리오 데이터는 유지됩니다.
+        </div>
+        <button onClick={() => {
+          if (!window.confirm("지수·시장 캐시를 초기화할까요?\n포트폴리오 데이터는 유지됩니다.")) return;
+          // 지수 위젯 캐시 (모든 버전)
+          Object.keys(localStorage).filter(k =>
+            k.startsWith("investiq_index_widget") ||
+            k.startsWith("investiq_btc_widget") ||
+            k.startsWith("market_cache_")
+          ).forEach(k => localStorage.removeItem(k));
+          alert("캐시가 초기화되었습니다. 앱을 새로고침합니다.");
+          window.location.reload();
+        }} style={{
+          width: "100%", padding: "12px", borderRadius: 10, border: "1px solid #f59e0b44",
+          background: "#f59e0b11", color: "#f59e0b", fontSize: 14, fontWeight: 700, cursor: "pointer",
+        }}>🗑 지수 캐시 초기화</button>
+      </div>
+
       {/* 앱 정보 */}
       <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20 }}>
         <div style={{ fontSize: 13, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>앱 정보</div>
@@ -3126,91 +3149,140 @@ function IndexWidget() {
         saveCache(BTC_CACHE_KEY, btcResult);
       }
 
-      // 주요 지수: Yahoo Finance 직접 조회 (코스피/코스닥/다우/나스닥/S&P500)
-      // 금(Gold)만 Gemini로 조회
-      try {
-        const YAHOO_INDICES = [
-          { name: "코스피",  ticker: "%5EKS11" },
-          { name: "코스닥",  ticker: "%5EKQ11" },
-          { name: "다우",    ticker: "%5EDJI"  },
-          { name: "나스닥",  ticker: "%5EIXIC" },
-          { name: "S&P500", ticker: "%5EGSPC" },
-        ];
+      // 주요 지수: Yahoo Finance(/api/yahoo 프록시) 우선, 실패 시 Gemini fallback
+      const YAHOO_INDICES = [
+        { name: "코스피",  ticker: "%5EKS11" },
+        { name: "코스닥",  ticker: "%5EKQ11" },
+        { name: "다우",    ticker: "%5EDJI"  },
+        { name: "나스닥",  ticker: "%5EIXIC" },
+        { name: "S&P500", ticker: "%5EGSPC" },
+      ];
 
-        // Yahoo Finance 병렬 조회
-        const yahooResults = await Promise.allSettled(
-          YAHOO_INDICES.map(async ({ name, ticker }) => {
-          const url = `/api/yahoo?type=chart&ticker=${ticker}`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`${name} 조회 실패`);
-            const data = await res.json();
-            const meta = data.chart?.result?.[0]?.meta;
-            const timestamps = data.chart?.result?.[0]?.timestamp || [];
-            const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
-            // 유효한 종가만 필터
-            const validCloses = closes.map((c, i) => ({ t: timestamps[i], c })).filter(x => x.c != null);
-            const current   = validCloses[validCloses.length - 1]?.c || meta?.regularMarketPrice || 0;
-            const prevClose = validCloses[validCloses.length - 2]?.c || meta?.chartPreviousClose || 0;
-            const weekAgo   = validCloses.length >= 6 ? validCloses[validCloses.length - 6]?.c : null;
+      // ── Yahoo Finance 병렬 조회 ──────────────────────────────
+      const parseYahooChart = (data, name) => {
+        const meta   = data.chart?.result?.[0]?.meta;
+        const ts     = data.chart?.result?.[0]?.timestamp || [];
+        const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        const valid  = closes.map((c,i) => ({ t:ts[i], c })).filter(x => x.c != null);
+        // regularMarketPrice 우선 (더 최신), 없으면 마지막 종가
+        const current   = meta?.regularMarketPrice || valid[valid.length-1]?.c || 0;
+        const prevClose = meta?.chartPreviousClose  || valid[valid.length-2]?.c || 0;
+        const weekAgo   = valid.length >= 6 ? valid[valid.length-6]?.c : null;
+        const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
+        const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
+        return {
+          name,
+          value: current >= 1000
+            ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+            : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          change: String(Math.abs(changeVal).toFixed(2)),
+          up: changeVal >= 0,
+          weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+          weekUp: weekChange !== null ? weekChange >= 0 : null,
+        };
+      };
+
+      const yahooResults = await Promise.allSettled(
+        YAHOO_INDICES.map(async ({ name, ticker }) => {
+          const res = await fetch(`/api/yahoo?type=chart&ticker=${ticker}`);
+          if (!res.ok) throw new Error(`${name} HTTP ${res.status}`);
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          return parseYahooChart(data, name);
+        })
+      );
+
+      const yahooOK   = yahooResults.filter(r => r.status === "fulfilled").map(r => r.value);
+      const yahooFail = YAHOO_INDICES.filter((_, i) => yahooResults[i].status === "rejected").map(x => x.name);
+      console.log(`지수 Yahoo 성공: ${yahooOK.map(x=>x.name).join(",")} | 실패: ${yahooFail.join(",")}`);
+
+      // ── Yahoo 실패 종목 → Gemini fallback ───────────────────
+      let geminiResults = [];
+      if (yahooFail.length > 0) {
+        try {
+          const today = new Date().toLocaleDateString("ko-KR");
+          const geminiBody = {
+            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 다음 지수의 최신 현재가와 전일 종가를 검색해서 JSON으로만 반환. 마크다운 없이.
+대상: ${yahooFail.join(", ")}
+{"indices":[{"name":"코스피","current":숫자,"prev_close":숫자,"week_ago":숫자}]}` }] }],
+            tools: [{ googleSearch: {} }],
+            generationConfig: { maxOutputTokens: 400, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+          };
+          const gRes = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:geminiBody, stream:false }) });
+          if (gRes.ok) {
+            const gData = await gRes.json();
+            const gText = gData.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
+            const gMatch = gText.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+            if (gMatch) {
+              const parsed = JSON.parse(gMatch[0]);
+              (parsed.indices || []).forEach(g => {
+                const current   = parseFloat(g.current)    || 0;
+                const prevClose = parseFloat(g.prev_close) || 0;
+                const weekAgo   = parseFloat(g.week_ago)   || 0;
+                if (!current) return;
+                const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
+                const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
+                geminiResults.push({
+                  name: g.name,
+                  value: current >= 1000
+                    ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                    : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                  change: String(Math.abs(changeVal).toFixed(2)),
+                  up: changeVal >= 0,
+                  weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+                  weekUp: weekChange !== null ? weekChange >= 0 : null,
+                });
+              });
+            }
+          }
+        } catch(e) { console.warn("지수 Gemini fallback 실패:", e.message); }
+      }
+
+      // ── 금(Gold): Gemini ─────────────────────────────────────
+      let goldResult = null;
+      try {
+        const today = new Date().toLocaleDateString("ko-KR");
+        const goldBody = {
+          contents: [{ role: "user", parts: [{ text: `오늘(${today}) 금(Gold) 현재가, 직전 거래일 종가, 7거래일 전 종가를 검색해서 JSON으로만 반환. 마크다운 없이.
+{"current":숫자,"prev_close":숫자,"week_ago":숫자}` }] }],
+          tools: [{ googleSearch: {} }],
+          generationConfig: { maxOutputTokens: 200, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+        };
+        const goldRes = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:goldBody, stream:false }) });
+        if (goldRes.ok) {
+          const goldData = await goldRes.json();
+          const goldText = goldData.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
+          const goldMatch = goldText.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+          if (goldMatch) {
+            const g = JSON.parse(goldMatch[0]);
+            const current   = parseFloat(g.current)    || 0;
+            const prevClose = parseFloat(g.prev_close) || 0;
+            const weekAgo   = parseFloat(g.week_ago)   || 0;
             const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
             const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
-            return {
-              name,
-              value: current >= 1000
-                ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-                : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            goldResult = {
+              name: "금(Gold)",
+              value: current.toLocaleString("en-US", { maximumFractionDigits: 2 }),
               change: String(Math.abs(changeVal).toFixed(2)),
               up: changeVal >= 0,
               weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
               weekUp: weekChange !== null ? weekChange >= 0 : null,
             };
-          })
-        );
-
-        const yahooIndexResults = yahooResults
-          .filter(r => r.status === "fulfilled")
-          .map(r => r.value);
-
-        // 금(Gold): Gemini로 조회
-        let goldResult = null;
-        try {
-          const today = new Date().toLocaleDateString("ko-KR");
-          const goldBody = {
-            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 금(Gold) 현재가, 직전 거래일 종가, 7거래일 전 종가를 검색해서 JSON으로만 반환. 마크다운 없이.
-{"current":숫자,"prev_close":숫자,"week_ago":숫자}` }] }],
-            tools: [{ googleSearch: {} }],
-            generationConfig: { maxOutputTokens: 200, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-          };
-          const goldRes = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:goldBody, stream:false }) });
-          if (goldRes.ok) {
-            const goldData = await goldRes.json();
-            const goldText = goldData.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
-            const goldMatch = goldText.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-            if (goldMatch) {
-              const g = JSON.parse(goldMatch[0]);
-              const current   = parseFloat(g.current)    || 0;
-              const prevClose = parseFloat(g.prev_close) || 0;
-              const weekAgo   = parseFloat(g.week_ago)   || 0;
-              const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
-              const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
-              goldResult = {
-                name: "금(Gold)",
-                value: current.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-                change: String(Math.abs(changeVal).toFixed(2)),
-                up: changeVal >= 0,
-                weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
-                weekUp: weekChange !== null ? weekChange >= 0 : null,
-              };
-            }
           }
-        } catch(e) { console.warn("금 조회 실패:", e.message); }
-
-        const finalResults = [...yahooIndexResults, ...(goldResult ? [goldResult] : [])];
-        if (finalResults.length > 0) {
-          setIndices(finalResults);
-          saveCache(CACHE_KEY, finalResults);
         }
-      } catch(e) { console.warn("지수 조회 실패:", e.message); }
+      } catch(e) { console.warn("금 조회 실패:", e.message); }
+
+      // ── 결과 합치기 ──────────────────────────────────────────
+      // Yahoo 성공 종목 + Gemini fallback 종목 (YAHOO_INDICES 순서 유지)
+      const mergedIndices = YAHOO_INDICES
+        .map(({ name }) => yahooOK.find(r => r.name === name) || geminiResults.find(r => r.name === name))
+        .filter(Boolean);
+
+      const finalResults = [...mergedIndices, ...(goldResult ? [goldResult] : [])];
+      if (finalResults.length > 0) {
+        setIndices(finalResults);
+        saveCache(CACHE_KEY, finalResults);
+      }
     } catch(e) { console.error("위젯 오류:", e); }
     setLoading(false);
   };
