@@ -2169,10 +2169,26 @@ function Portfolio() {
       clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (data.error) return null;
       const meta = data.chart?.result?.[0]?.meta;
       if (!meta) return null;
+
+      // currency 검증: 한국 종목(.KS/.KQ)인데 KRW가 아니면 잘못된 데이터
+      const isKRTicker = ticker.endsWith(".KS") || ticker.endsWith(".KQ");
+      if (isKRTicker && meta.currency && meta.currency !== "KRW") {
+        console.warn(`[티커오류] ${ticker}: currency=${meta.currency} (KRW 아님) → 무효`);
+        return null;
+      }
+      // 거래소 검증: 한국 종목인데 KRX/KSC가 아니면 무효
+      const exchange = meta.exchangeName || meta.fullExchangeName || "";
+      if (isKRTicker && exchange && !["KSC","KOE","KRX","KOSPI","KOSDAQ","KSE"].some(e => exchange.toUpperCase().includes(e))) {
+        console.warn(`[티커오류] ${ticker}: exchange=${exchange} → 무효`);
+        return null;
+      }
+
       const price = meta.regularMarketPrice || meta.previousClose;
       const prev  = meta.chartPreviousClose || meta.previousClose;
+      if (!price || price <= 0) return null;
       const changePct = prev ? ((price - prev) / prev * 100) : 0;
       return { current_price: price, change_pct: changePct };
     } catch(e) { return null; }
@@ -2183,9 +2199,17 @@ function Portfolio() {
     const needTicker = holdings.filter(h => !h.yahoo_ticker);
     if (needTicker.length === 0) return holdings;
 
-    // Yahoo Finance 검색 API로 종목명 → 티커 자동 매핑
     const tickerMap = {};
-    await Promise.allSettled(needTicker.map(async h => {
+    const KR_CODE = /^\d{6}$/; // 6자리 숫자 = 한국 종목코드
+
+    // [1단계] ticker 코드가 6자리 숫자면 Yahoo 검색 없이 직접 .KS 사용
+    // (대부분의 한국 ETF는 KSC/코스피. .KS 실패 시 fetchYahooPrice에서 null 반환 → Gemini fallback)
+    const directMappable = needTicker.filter(h => KR_CODE.test(h.ticker));
+    directMappable.forEach(h => { tickerMap[h.name] = h.ticker + ".KS"; });
+
+    // [2단계] ticker 없거나 6자리 아닌 경우만 Yahoo 검색
+    const needSearch = needTicker.filter(h => !KR_CODE.test(h.ticker));
+    await Promise.allSettled(needSearch.map(async h => {
       try {
         const q = encodeURIComponent(h.name);
         const url = `/api/yahoo?type=search&q=${q}&region=KR`;
@@ -2195,8 +2219,11 @@ function Portfolio() {
         clearTimeout(timer);
         if (!res.ok) return;
         const data = await res.json();
-        const quote = data.quotes?.find(q => q.exchange === "KSC" || q.exchange === "KOE" || q.quoteType === "ETF" || q.quoteType === "EQUITY");
-        if (quote?.symbol) tickerMap[h.name] = quote.symbol;
+        // 반드시 KSC(코스피) 또는 KOE(코스닥) 거래소 종목만 허용
+        const quote = data.quotes?.find(q => q.exchange === "KSC" || q.exchange === "KOE");
+        if (quote?.symbol && (quote.symbol.endsWith(".KS") || quote.symbol.endsWith(".KQ"))) {
+          tickerMap[h.name] = quote.symbol;
+        }
       } catch(e) {}
     }));
 
@@ -2315,11 +2342,20 @@ function Portfolio() {
         return { ...h, current_price: h.current_price || h.avg_price, change_pct: h.change_pct ?? null };
       });
       const holdingsWithTickers = await resolveTickerCodes(priceableHoldings);
-      // 2단계: Yahoo Finance 병렬 조회
+      // 2단계: Yahoo Finance 병렬 조회 (.KS 실패 시 .KQ 재시도)
       const results = await Promise.allSettled(
         holdingsWithTickers.map(async h => {
           if (h.yahoo_ticker) {
-            const price = await fetchYahooPrice(h.yahoo_ticker);
+            let price = await fetchYahooPrice(h.yahoo_ticker);
+            // .KS로 했는데 null 반환(currency 오류 포함) → .KQ로 재시도
+            if (!price && h.yahoo_ticker.endsWith(".KS")) {
+              const kqTicker = h.yahoo_ticker.replace(".KS", ".KQ");
+              price = await fetchYahooPrice(kqTicker);
+              if (price) {
+                // .KQ가 맞는 티커였음 → 저장 (다음 조회 시 바로 사용)
+                h = { ...h, yahoo_ticker: kqTicker };
+              }
+            }
             if (price) return { ...h, current_price: price.current_price, change_pct: price.change_pct };
           }
           // Yahoo 실패 or 티커 없음 → 스샷에서 읽은 값 유지
