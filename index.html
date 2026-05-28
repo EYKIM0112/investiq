@@ -411,10 +411,10 @@ function SectorRow({ item, showScore }) {
       )}
       <div style={{ fontSize:15, color:"#94a3b8", marginBottom:4 }}>{item.reason}</div>
       {item.leaders?.length > 0 && (
-        <div style={{ fontSize:14, color:"#364875" }}>주도주: <span style={{ color:"#e2e8f0" }}>{item.leaders.join(" · ")}</span></div>
+        <div style={{ fontSize:14, color:"#94a3b8" }}>주도주: <span style={{ color:"#e2e8f0" }}>{item.leaders.join(" · ")}</span></div>
       )}
       {item.etf?.length > 0 && (
-        <div style={{ fontSize:14, color:"#364875" }}>관련ETF: <span style={{ color:"#0ea5e9" }}>{item.etf.join(" · ")}</span></div>
+        <div style={{ fontSize:14, color:"#94a3b8" }}>관련ETF: <span style={{ color:"#0ea5e9" }}>{item.etf.join(" · ")}</span></div>
       )}
     </div>
   );
@@ -577,7 +577,7 @@ function MarketInsight({ onRefreshAll }) {
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
               <div>
                 <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{a.name}</span>
-                <span style={{ fontSize:14, color:"#364875", marginLeft:8 }}>{a.comment}</span>
+                <span style={{ fontSize:14, color:"#94a3b8", marginLeft:8 }}>{a.comment}</span>
               </div>
               <span style={{ fontWeight:800, color:changePctColor(a.change_pct), fontSize:16 }}>{a.change_pct}</span>
             </div>
@@ -596,9 +596,9 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
           {d.index_alerts?.map((a,i) => (
             <div key={i} style={{ background:"#16162a", borderRadius:8, padding:"10px 12px" }}>
-              <div style={{ fontSize:14, color:"#364875", marginBottom:3 }}>{a.name}</div>
+              <div style={{ fontSize:14, color:"#94a3b8", marginBottom:3 }}>{a.name}</div>
               <div style={{ fontSize:17, fontWeight:700, color:changePctColor(a.change_pct) }}>{a.change_pct}</div>
-              <div style={{ fontSize:13, color:"#2a3a60" }}>{a.value}</div>
+              <div style={{ fontSize:13, color:"#64748b" }}>{a.value}</div>
             </div>
           ))}
         </div>
@@ -622,7 +622,7 @@ function MarketInsight({ onRefreshAll }) {
               <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
                 <div>
                   <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:15 }}>{b.risk}</div>
-                  <div style={{ fontSize:14, color:"#364875" }}>{b.comment}</div>
+                  <div style={{ fontSize:14, color:"#94a3b8" }}>{b.comment}</div>
                 </div>
                 <span style={{ fontSize:12, fontWeight:700, padding:"2px 7px", borderRadius:4, flexShrink:0, marginLeft:8,
                   background: b.level==="high"?"#ef444422":b.level==="medium"?"#f59e0b22":"#10b98122",
@@ -658,7 +658,7 @@ function MarketInsight({ onRefreshAll }) {
           {d.sector_cycle.declining.map((s,i) => (
             <div key={i} style={{ marginBottom:10, fontSize:16 }}>
               <span style={{ fontWeight:700, color:"#fca5a5" }}>{s.name}</span>
-              <span style={{ fontSize:15, color:"#364875", marginLeft:8 }}>{s.comment}</span>
+              <span style={{ fontSize:15, color:"#94a3b8", marginLeft:8 }}>{s.comment}</span>
             </div>
           ))}
         
@@ -698,7 +698,7 @@ function MarketInsight({ onRefreshAll }) {
           {d.weakening.map((s,i) => (
             <div key={i} style={{ marginBottom:10 }}>
               <div style={{ fontSize:17, fontWeight:700, color:"#fca5a5" }}>{s.name}</div>
-              <div style={{ fontSize:15, color:"#364875" }}>{s.reason}</div>
+              <div style={{ fontSize:15, color:"#94a3b8" }}>{s.reason}</div>
             </div>
           ))}
         
@@ -736,7 +736,7 @@ function MarketInsight({ onRefreshAll }) {
           <div key={i} style={{ padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <span style={{ fontSize:13, color:"#2a3a60", fontWeight:700, minWidth:22 }}>#{item.rank||i+1}</span>
+                <span style={{ fontSize:13, color:"#64748b", fontWeight:700, minWidth:22 }}>#{item.rank||i+1}</span>
                 <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
                 <span style={{ fontSize:14, fontWeight:700, color:item.trend==="up"?"#10b981":item.trend==="down"?"#ef4444":"#364875" }}>
                   {item.trend==="up"?"^":item.trend==="down"?"v":">"} {item.change_pct}
@@ -744,8 +744,8 @@ function MarketInsight({ onRefreshAll }) {
               </div>
               <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{item.price}</span>
             </div>
-            <div style={{ fontSize:15, color:"#364875", paddingLeft:30 }}>{item.reason}</div>
-            <div style={{ fontSize:14, color:"#2a3a60", paddingLeft:30, marginTop:2 }}>전망: {item.outlook}</div>
+            <div style={{ fontSize:15, color:"#94a3b8", paddingLeft:30 }}>{item.reason}</div>
+            <div style={{ fontSize:14, color:"#64748b", paddingLeft:30, marginTop:2 }}>전망: {item.outlook}</div>
           </div>
         ))}
       
@@ -758,7 +758,7 @@ function MarketInsight({ onRefreshAll }) {
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
               <div>
                 <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{h.name}</div>
-                <div style={{ fontSize:15, color:"#364875" }}>{h.reason}</div>
+                <div style={{ fontSize:15, color:"#94a3b8" }}>{h.reason}</div>
               </div>
               {h.change_pct && h.change_pct !== "정보없음" && h.change_pct !== "없음" && (<span style={{ fontWeight:700, color:parseFloat(h.change_pct)>=0?"#10b981":"#ef4444", fontSize:16 }}>{h.change_pct}</span>)}
             </div>
@@ -778,7 +778,7 @@ function MarketInsight({ onRefreshAll }) {
   );
 
   const renderAsia = (d) => {
-    if (!d || typeof d !== "object") return <div style={{ color:"#2a3a60", padding:20 }}>데이터를 불러올 수 없습니다.</div>;
+    if (!d || typeof d !== "object") return <div style={{ color:"#64748b", padding:20 }}>데이터를 불러올 수 없습니다.</div>;
     return (
     <>
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
@@ -798,11 +798,11 @@ function MarketInsight({ onRefreshAll }) {
             <div>
               <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>▼ 약한 섹터</div>
               {mkt.weak.map((s,j) => (
-                <div key={j} style={{ fontSize:16, color:"#364875", marginBottom:6 }}>- {s.name||""}: {s.reason||""}</div>
+                <div key={j} style={{ fontSize:16, color:"#94a3b8", marginBottom:6 }}>- {s.name||""}: {s.reason||""}</div>
               ))}
             </div>
           )}
-          {mkt.outlook && <div style={{ fontSize:15, color:"#2a3a60", marginTop:10 }}>전망: {mkt.outlook}</div>}
+          {mkt.outlook && <div style={{ fontSize:15, color:"#64748b", marginTop:10 }}>전망: {mkt.outlook}</div>}
         </div>
       ))}
       {(d.events||[]).length > 0 && (
@@ -821,7 +821,7 @@ function MarketInsight({ onRefreshAll }) {
         <div key={i} style={{ background:i===0?"linear-gradient(135deg,#1a1200,#2d2100)":"linear-gradient(135deg,#0d0d2a,#13134a)", border:`1px solid ${i===0?"#f59e0b55":"#7c3aed55"}`, borderRadius:12, padding:16, marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div>
             <div style={{ fontSize:17, fontWeight:800, color:i===0?"#f59e0b":"#8b78f5" }}>{c.name}</div>
-            <div style={{ fontSize:13, color:"#364875", marginTop:3 }}>{c.comment}</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>{c.comment}</div>
           </div>
           <div style={{ textAlign:"right" }}>
             <div style={{ fontSize:20, fontWeight:800, color:"#e2e8f0" }}>{c.price}</div>
@@ -843,7 +843,7 @@ function MarketInsight({ onRefreshAll }) {
           <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 0", borderBottom:"1px solid #1e293b" }}>
             <div>
               <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{c.name}</div>
-              <div style={{ fontSize:15, color:"#364875" }}>{c.comment}</div>
+              <div style={{ fontSize:15, color:"#94a3b8" }}>{c.comment}</div>
             </div>
             <div style={{ textAlign:"right" }}>
               <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{c.price}</div>
@@ -891,7 +891,7 @@ function MarketInsight({ onRefreshAll }) {
         <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:12, letterSpacing:2 }}>v 약한 섹터</div>
       
-          {d.weak.map((s,i) => <div key={i} style={{ fontSize:16, color:"#364875", marginBottom:8 }}>- {s.name}: {s.reason}</div>)}
+          {d.weak.map((s,i) => <div key={i} style={{ fontSize:16, color:"#94a3b8", marginBottom:8 }}>- {s.name}: {s.reason}</div>)}
         
     </div>
       )}
@@ -925,9 +925,9 @@ function MarketInsight({ onRefreshAll }) {
                   <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
                   <span style={{ fontSize:13, color:"#06b6d4", background:"#06b6d422", padding:"2px 6px", borderRadius:4, marginLeft:8 }}>{item.type}</span>
                 </div>
-                <span style={{ fontSize:14, color:"#364875" }}>{item.expected_date}</span>
+                <span style={{ fontSize:14, color:"#94a3b8" }}>{item.expected_date}</span>
               </div>
-              <div style={{ fontSize:15, color:"#364875", marginBottom:4 }}>{item.issuer}</div>
+              <div style={{ fontSize:15, color:"#94a3b8", marginBottom:4 }}>{item.issuer}</div>
               <div style={{ fontSize:15, color:"#94a3b8" }}>{item.description}</div>
               {item.highlight && <div style={{ fontSize:15, color:"#f59e0b", marginTop:4 }}>* {item.highlight}</div>}
             </div>
@@ -946,10 +946,10 @@ function MarketInsight({ onRefreshAll }) {
                   <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{item.name}</span>
                   <span style={{ fontSize:13, color:"#10b981", background:"#10b98122", padding:"2px 6px", borderRadius:4, marginLeft:8 }}>{item.type}</span>
                 </div>
-                <span style={{ fontSize:14, color:"#364875" }}>{item.listed_date}</span>
+                <span style={{ fontSize:14, color:"#94a3b8" }}>{item.listed_date}</span>
               </div>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                <span style={{ fontSize:15, color:"#364875" }}>{item.issuer}</span>
+                <span style={{ fontSize:15, color:"#94a3b8" }}>{item.issuer}</span>
                 <span style={{ fontSize:15, color: parseInt(item.market_cap)>=3000?"#10b981":parseInt(item.market_cap)>=1000?"#f59e0b":"#94a3b8", fontWeight:700 }}>
                   시총 {item.market_cap}억
                   {parseInt(item.market_cap)<3000 && parseInt(item.market_cap)>=1000 ? " (소규모 참고)" : ""}
@@ -988,7 +988,7 @@ function MarketInsight({ onRefreshAll }) {
             padding:"7px 12px", borderRadius:20, flexShrink:0,
             border:`1px solid ${activeTab===t.id ? t.color : "#2a2a48"}`,
             background: activeTab===t.id ? t.color+"22" : "transparent",
-            color: activeTab===t.id ? t.color : "#364875",
+            color: activeTab===t.id ? t.color : "#94a3b8",
             fontSize:14, fontWeight:activeTab===t.id ? 700 : 400, cursor:"pointer",
           }}>{t.label}</button>
         ))}
@@ -996,7 +996,7 @@ function MarketInsight({ onRefreshAll }) {
 
       {/* 헤더 */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-        <div style={{ fontSize:14, color:"#364875" }}>
+        <div style={{ fontSize:14, color:"#94a3b8" }}>
           {upAt ? `업데이트: ${upAt.toLocaleTimeString("ko-KR")}` : "버튼을 눌러 분석 시작"}
         </div>
         <button onClick={() => fetchTab(activeTab)} disabled={isLoad} style={{
@@ -1014,13 +1014,13 @@ function MarketInsight({ onRefreshAll }) {
       {!isLoad && !data && !err && (
         <div style={{ textAlign:"center", padding:"50px 20px" }}>
           <div style={{ fontSize:17, fontWeight:700, color:"#94a3b8", marginBottom:8 }}>{tab.label} 분석</div>
-          <div style={{ fontSize:15, color:"#2a3a60" }}>분석 시작 버튼을 눌러주세요</div>
+          <div style={{ fontSize:15, color:"#64748b" }}>분석 시작 버튼을 눌러주세요</div>
         </div>
       )}
       {isLoad && (
         <div style={{ textAlign:"center", padding:"50px 20px" }}>
           <Spinner size={34}/>
-          <div style={{ marginTop:14, fontSize:16, color:"#364875" }}>최신 데이터 수집 중...</div>
+          <div style={{ marginTop:14, fontSize:16, color:"#94a3b8" }}>최신 데이터 수집 중...</div>
         </div>
       )}
       {err && !isLoad && (
@@ -1252,7 +1252,7 @@ function ReturnHistoryChart({ portfolio, viewMode = "all" }) {
       </div>
 
       {history.length===0?(
-        <div style={{textAlign:"center",padding:"24px 0",color:"#2a3a60",fontSize:13}}>
+        <div style={{textAlign:"center",padding:"24px 0",color:"#64748b",fontSize:13}}>
           가격 새로고침 후 히스토리가 쌓입니다
         </div>
       ):(
@@ -1273,14 +1273,14 @@ function ReturnHistoryChart({ portfolio, viewMode = "all" }) {
                     opacity:isCur?1:0.6,
                     border:isCur?"2px solid #fff":"none",
                   }}/>
-                  <div style={{fontSize:9,color:"#2a3a60",marginTop:3,textAlign:"center",lineHeight:1.2}}>
+                  <div style={{fontSize:9,color:"#64748b",marginTop:3,textAlign:"center",lineHeight:1.2}}>
                     {period==="daily"?h.date.slice(5):period==="monthly"?h.date.slice(0,7):h.date.slice(0,period==="yearly"?4:7)}
                   </div>
                 </div>
               );
             })}
           </div>
-          <div style={{textAlign:"center",marginTop:8,fontSize:13,color:"#364875"}}>
+          <div style={{textAlign:"center",marginTop:8,fontSize:13,color:"#94a3b8"}}>
             현재 수익률: <span style={{color:parseFloat(curRet)>=0?"#10b981":"#ef4444",fontWeight:700}}>{parseFloat(curRet)>=0?"+":""}{curRet}%</span>
             <span style={{fontSize:11,color:"#2a2a48",marginLeft:8}}>(파란 막대 = 현재)</span>
           </div>
@@ -1340,9 +1340,9 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
           <div>
             <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{holding.name}</div>
-            <div style={{ fontSize:13, color:"#2a3a60", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
           </div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"#364875", fontSize:22, cursor:"pointer" }}>x</button>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:22, cursor:"pointer" }}>x</button>
         </div>
         <div style={{ display:"flex", gap:6, marginBottom:20, background:"#16162a", borderRadius:10, padding:4 }}>
           {tabBtn("edit","수정")}
@@ -1351,10 +1351,10 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         </div>
         {mode==="edit" && (
           <>
-            <div style={{ fontSize:13, color:"#364875", marginBottom:6 }}>보유 수량</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>보유 수량</div>
             <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
-            <div style={{ fontSize:13, color:"#364875", marginBottom:6 }}>평균단가</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>평균단가</div>
             <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
           </>
@@ -1362,10 +1362,10 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         {mode==="buy" && (
           <>
             <div style={{ background:"#0ea5e911", border:"1px solid #0ea5e933", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#7dd3fc" }}>추가매수 시 평단가가 자동으로 재계산됩니다</div>
-            <div style={{ fontSize:13, color:"#364875", marginBottom:6 }}>추가 매수 수량</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>추가 매수 수량</div>
             <input value={addShares} onChange={e=>setAddShares(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
-            <div style={{ fontSize:13, color:"#364875", marginBottom:6 }}>매수 단가</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>매수 단가</div>
             <input value={addPrice} onChange={e=>setAddPrice(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
             {addShares && addPrice && (
@@ -1385,7 +1385,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         {mode==="sell" && (
           <>
             <div style={{ background:"#ef444411", border:"1px solid #ef444433", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#fca5a5" }}>전량매도 시 종목이 삭제됩니다</div>
-            <div style={{ fontSize:13, color:"#364875", marginBottom:6 }}>매도 수량 (보유: {holding.shares}주)</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>매도 수량 (보유: {holding.shares}주)</div>
             <input value={sellShares} onChange={e=>setSellShares(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
             {sellShares && (
@@ -1410,7 +1410,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
 function InputField({ label, value, onChange, inputMode = "text" }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 13, color: "#364875", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>{label}</div>
       <input value={value} onChange={e => onChange(e.target.value)} inputMode={inputMode}
         style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
     </div>
@@ -2450,7 +2450,7 @@ function Portfolio() {
               }}
             >
               <div style={{ fontSize: 26, marginBottom: 5 }}></div>
-              <div style={{ fontSize: 14, color: "#2a3a60" }}>PC: 파일을 여기로 드래그</div>
+              <div style={{ fontSize: 14, color: "#64748b" }}>PC: 파일을 여기로 드래그</div>
               <div style={{ fontSize: 13, color: "#2a2a48", marginTop: 2 }}>이미지 · xlsx · csv</div>
             </div>
 
@@ -2493,7 +2493,7 @@ function Portfolio() {
               ✎ 직접 입력
             </button>
             {addToExisting && (
-              <button onClick={() => setShowAddPanel(false)} style={{ width: "100%", marginTop: 8, padding: "10px", background: "none", border: "none", color: "#364875", fontSize: 15, cursor: "pointer" }}>
+              <button onClick={() => setShowAddPanel(false)} style={{ width: "100%", marginTop: 8, padding: "10px", background: "none", border: "none", color: "#94a3b8", fontSize: 15, cursor: "pointer" }}>
                 취소
               </button>
             )}
@@ -2587,7 +2587,7 @@ function Portfolio() {
           <div style={{ textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>📊</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>포트폴리오 등록</div>
-            <div style={{ fontSize: 14, color: "#364875" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
+            <div style={{ fontSize: 14, color: "#94a3b8" }}>스크린샷, 엑셀, 직접입력 중 편한 방법으로 추가하세요</div>
           </div>
           {renderUploadPanel(false)}
         </div>
@@ -2597,8 +2597,8 @@ function Portfolio() {
           <div style={{ display: "flex", gap: 4, marginBottom: 12, overflowX: "auto", paddingBottom: 2, borderBottom: "1px solid #12121f" }}>
             <button onClick={() => setViewMode("all")} style={{
               padding: "7px 12px", border: "none", background: "transparent",
-              color: viewMode === "all" ? "#e8eaf0" : "#2a2a48",
-              fontSize: 13, fontWeight: viewMode === "all" ? 700 : 400, cursor: "pointer",
+              color: viewMode === "all" ? "#e8eaf0" : "#94a3b8",
+              fontSize: 13, fontWeight: viewMode === "all" ? 700 : 500, cursor: "pointer",
               whiteSpace: "nowrap", flexShrink: 0,
               borderBottom: viewMode === "all" ? "2px solid #4f6ef7" : "2px solid transparent",
               transition: "all 0.15s",
@@ -2607,8 +2607,8 @@ function Portfolio() {
               <div key={acc} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
                 <button onClick={() => setViewMode(acc)} style={{
                   padding: "7px 10px", border: "none", background: "transparent",
-                  color: viewMode === acc ? "#e8eaf0" : "#2a2a48",
-                  fontSize: 13, fontWeight: viewMode === acc ? 700 : 400, cursor: "pointer",
+                  color: viewMode === acc ? "#e8eaf0" : "#94a3b8",
+                  fontSize: 13, fontWeight: viewMode === acc ? 700 : 500, cursor: "pointer",
                   whiteSpace: "nowrap",
                   borderBottom: viewMode === acc ? "2px solid #22d3a0" : "2px solid transparent",
                   transition: "all 0.15s",
@@ -2620,7 +2620,7 @@ function Portfolio() {
                   const updated = { ...portfolio, holdings: portfolio.holdings.map(h => h.account === acc ? { ...h, account: trimmed } : h) };
                   savePortfolio(updated); setPortfolio(updated);
                   if (viewMode === acc) setViewMode(trimmed);
-                }} style={{ background: "none", border: "none", color: "#1a1a2e", fontSize: 10, cursor: "pointer", padding: "0 2px", marginBottom: 2 }}>✎</button>
+                }} style={{ background: "none", border: "none", color: "#475569", fontSize: 10, cursor: "pointer", padding: "0 2px", marginBottom: 2 }}>✎</button>
               </div>
             ))}
           </div>
@@ -2761,7 +2761,7 @@ function Portfolio() {
 
           {/* 정렬 버튼 */}
           <div style={{ display:"flex", gap:6, marginBottom:10, alignItems:"center" }}>
-            <span style={{ fontSize:12, color:"#2a3a60" }}>정렬:</span>
+            <span style={{ fontSize:12, color:"#64748b" }}>정렬:</span>
             {[{id:"name",label:"종목명"},{id:"value",label:"평가액"},{id:"profit",label:"수익률"}].map(s => (
               <button key={s.id} onClick={() => {
                 if (sortBy===s.id) setSortDir(d=>d==="asc"?"desc":"asc");
@@ -2832,8 +2832,13 @@ function Portfolio() {
                       <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {h.name || ""}
                       </div>
-                      <div style={{ fontSize: 10, color: "#2a2a48" }}>
-                        {h.shares}주 · 평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}
+                      <div style={{ fontSize: 10, color: "#94a3b8" }}>
+                        <span style={{ color: "#cbd5e1" }}>{h.shares}주</span>
+                        {" · "}
+                        <span>평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
+                        {h.current_price ? (
+                          <span style={{ color: "#94a3b8" }}>{" · "}현재 {(h.current_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -2852,7 +2857,7 @@ function Portfolio() {
                           </div>
                         </>
                       ) : (
-                        <div style={{ fontSize: 10, color: "#16162a", background:"#0f0f18", padding:"2px 6px", borderRadius:4 }}>미조회</div>
+                        <div style={{ fontSize: 10, color: "#64748b", background:"#1e293b", padding:"2px 6px", borderRadius:4 }}>미조회</div>
                       )}
                     </div>
                     <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "none", color: "#16162a", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
@@ -2959,7 +2964,7 @@ function Advisor() {
       )}
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: "#364875", marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>빠른 질문</div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>빠른 질문</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
           {quickActions.map((q, i) => (
             <button key={i} onClick={() => getAdvice(q)} disabled={loading} style={{ background: "#16162a", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 14 }}>
@@ -2983,7 +2988,7 @@ function Advisor() {
       </div>
 
       {chatHistory.length === 0 && !loading && (
-        <div style={{ textAlign: "center", padding: "50px 20px", color: "#2a3a60" }}>
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#64748b" }}>
           <div style={{ fontSize: 44, marginBottom: 12 }}></div>
           <div style={{ fontSize: 16 }}>AI 투자 어드바이저에게 질문해보세요</div>
           <div style={{ fontSize: 14, marginTop: 6 }}>실시간 웹 검색으로 최신 시장 정보를 반영합니다</div>
@@ -2991,7 +2996,7 @@ function Advisor() {
       )}
 
       {loading && (
-        <div style={{ textAlign: "center", padding: "20px", color: "#364875", fontSize: 15 }}>
+        <div style={{ textAlign: "center", padding: "20px", color: "#94a3b8", fontSize: 15 }}>
           <Spinner size={22} />
           <div style={{ marginTop: 10 }}>시장 정보 검색 중...</div>
         </div>
@@ -3033,7 +3038,7 @@ function Settings() {
       {/* 히스토리 주기 설정 */}
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
         <div style={{ fontSize:13, color:"#10b981", fontWeight:700, letterSpacing:2, marginBottom:4 }}>수익률 기록 주기</div>
-        <div style={{ fontSize:13, color:"#2a3a60", marginBottom:14 }}>가격 새로고침 시 히스토리 저장 주기</div>
+        <div style={{ fontSize:13, color:"#64748b", marginBottom:14 }}>가격 새로고침 시 히스토리 저장 주기</div>
         <div style={{ display:"flex", gap:8 }}>
           {[{id:"daily",label:"일별"},{id:"weekly",label:"주별"},{id:"monthly",label:"월별"},{id:"yearly",label:"연별"}].map(p => {
             const cur = localStorage.getItem("history_period")||"daily";
@@ -3048,7 +3053,7 @@ function Settings() {
             );
           })}
         </div>
-        <button onClick={() => { if(window.confirm("수익률 히스토리를 초기화할까요?")) { localStorage.removeItem("portfolio_history_v1"); window.location.reload(); } }} style={{ width:"100%", marginTop:12, padding:"10px", borderRadius:10, background:"none", border:"1px solid #334155", color:"#364875", fontSize:13, cursor:"pointer" }}>
+        <button onClick={() => { if(window.confirm("수익률 히스토리를 초기화할까요?")) { localStorage.removeItem("portfolio_history_v1"); window.location.reload(); } }} style={{ width:"100%", marginTop:12, padding:"10px", borderRadius:10, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
           히스토리 초기화
         </button>
       </div>
@@ -3056,7 +3061,7 @@ function Settings() {
       {/* 앱 정보 */}
       <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20 }}>
         <div style={{ fontSize: 13, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>앱 정보</div>
-        <div style={{ fontSize: 15, color: "#364875", lineHeight: 1.8 }}>
+        <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div>버전: 1.0.0</div>
           <div>InvestIQ - AI 투자 어드바이저</div>
           <div style={{ marginTop: 8, fontSize: 13, color: "#2a2a48" }}>
@@ -3118,62 +3123,91 @@ function IndexWidget() {
         localStorage.setItem(BTC_CACHE_KEY, JSON.stringify(btcResult));
       }
 
-      // 주요 지수: Gemini 프록시로 조회
+      // 주요 지수: Yahoo Finance 직접 조회 (코스피/코스닥/다우/나스닥/S&P500)
+      // 금(Gold)만 Gemini로 조회
       try {
-        const today = new Date().toLocaleDateString("ko-KR");
-        const body = {
-          contents: [{ role: "user", parts: [{ text: `오늘(${today}) 기준으로 다음 6개 지수/자산의 가격 데이터를 검색해서 JSON으로만 반환. 마크다운 없이. 숫자만.
+        const YAHOO_INDICES = [
+          { name: "코스피",  ticker: "%5EKS11" },
+          { name: "코스닥",  ticker: "%5EKQ11" },
+          { name: "다우",    ticker: "%5EDJI"  },
+          { name: "나스닥",  ticker: "%5EIXIC" },
+          { name: "S&P500", ticker: "%5EGSPC" },
+        ];
 
-[요청 데이터]
-- current: 오늘 현재가 또는 종가. 오늘이 휴장이면 직전 거래일 종가
-- prev_close: 직전 거래일 종가 (어제가 휴장이면 그 이전 거래일)
-- week_ago: 7거래일 전 종가 (휴장일 제외, 실제 거래일 기준)
+        // Yahoo Finance 병렬 조회
+        const yahooResults = await Promise.allSettled(
+          YAHOO_INDICES.map(async ({ name, ticker }) => {
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=10d`;
+            const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+            if (!res.ok) throw new Error(`${name} 조회 실패`);
+            const data = await res.json();
+            const meta = data.chart?.result?.[0]?.meta;
+            const timestamps = data.chart?.result?.[0]?.timestamp || [];
+            const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+            // 유효한 종가만 필터
+            const validCloses = closes.map((c, i) => ({ t: timestamps[i], c })).filter(x => x.c != null);
+            const current   = validCloses[validCloses.length - 1]?.c || meta?.regularMarketPrice || 0;
+            const prevClose = validCloses[validCloses.length - 2]?.c || meta?.chartPreviousClose || 0;
+            const weekAgo   = validCloses.length >= 6 ? validCloses[validCloses.length - 6]?.c : null;
+            const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
+            const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
+            return {
+              name,
+              value: current >= 1000
+                ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              change: String(Math.abs(changeVal).toFixed(2)),
+              up: changeVal >= 0,
+              weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
+              weekUp: weekChange !== null ? weekChange >= 0 : null,
+            };
+          })
+        );
 
-반환 형식 (예시 숫자 아님, 반드시 실제 검색해서 채울 것):
-{"indices":[
-  {"name":"코스피","current":실제값,"prev_close":실제값,"week_ago":실제값},
-  {"name":"코스닥","current":실제값,"prev_close":실제값,"week_ago":실제값},
-  {"name":"다우","current":실제값,"prev_close":실제값,"week_ago":실제값},
-  {"name":"나스닥","current":실제값,"prev_close":실제값,"week_ago":실제값},
-  {"name":"S&P500","current":실제값,"prev_close":실제값,"week_ago":실제값},
-  {"name":"금(Gold)","current":실제값,"prev_close":실제값,"week_ago":실제값}
-]}
+        const yahooIndexResults = yahooResults
+          .filter(r => r.status === "fulfilled")
+          .map(r => r.value);
 
-대상: 코스피, 코스닥, 다우, 나스닥, S&P500, 금(Gold)` }] }],
-          tools: [{ googleSearch: {} }],
-          generationConfig: { maxOutputTokens: 600, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-        };
-        const res = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
-          const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            const finalResults = (parsed.indices || []).map(idx => {
-              const current   = parseFloat(idx.current)    || 0;
-              const prevClose = parseFloat(idx.prev_close) || 0;
-              const weekAgo   = parseFloat(idx.week_ago)   || 0;
+        // 금(Gold): Gemini로 조회
+        let goldResult = null;
+        try {
+          const today = new Date().toLocaleDateString("ko-KR");
+          const goldBody = {
+            contents: [{ role: "user", parts: [{ text: `오늘(${today}) 금(Gold) 현재가, 직전 거래일 종가, 7거래일 전 종가를 검색해서 JSON으로만 반환. 마크다운 없이.
+{"current":숫자,"prev_close":숫자,"week_ago":숫자}` }] }],
+            tools: [{ googleSearch: {} }],
+            generationConfig: { maxOutputTokens: 200, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+          };
+          const goldRes = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:goldBody, stream:false }) });
+          if (goldRes.ok) {
+            const goldData = await goldRes.json();
+            const goldText = goldData.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
+            const goldMatch = goldText.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+            if (goldMatch) {
+              const g = JSON.parse(goldMatch[0]);
+              const current   = parseFloat(g.current)    || 0;
+              const prevClose = parseFloat(g.prev_close) || 0;
+              const weekAgo   = parseFloat(g.week_ago)   || 0;
               const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
               const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
-              return {
-                name: idx.name,
-                value: current >= 1000
-                  ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-                  : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              goldResult = {
+                name: "금(Gold)",
+                value: current.toLocaleString("en-US", { maximumFractionDigits: 2 }),
                 change: String(Math.abs(changeVal).toFixed(2)),
                 up: changeVal >= 0,
                 weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
                 weekUp: weekChange !== null ? weekChange >= 0 : null,
               };
-            });
-            if (finalResults.length > 0) {
-              setIndices(finalResults);
-              localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
             }
           }
+        } catch(e) { console.warn("금 조회 실패:", e.message); }
+
+        const finalResults = [...yahooIndexResults, ...(goldResult ? [goldResult] : [])];
+        if (finalResults.length > 0) {
+          setIndices(finalResults);
+          localStorage.setItem(CACHE_KEY, JSON.stringify(finalResults));
         }
-      } catch(e) { console.warn("Gemini 지수 조회 실패:", e.message); }
+      } catch(e) { console.warn("지수 조회 실패:", e.message); }
     } catch(e) { console.error("위젯 오류:", e); }
     setLoading(false);
   };
@@ -3195,7 +3229,7 @@ function IndexWidget() {
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginBottom: 0 }}>
       <div style={{ display: "flex", gap: 8, padding: "10px 14px 8px", minWidth: "max-content" }}>
         {loading && !allItems.length && (
-          <div style={{ color: "#2a2a48", fontSize: 12, padding: "10px 0", display:"flex", alignItems:"center", gap:6 }}><Spinner size={12}/> 지수 로딩 중...</div>
+          <div style={{ color: "#64748b", fontSize: 12, padding: "10px 0", display:"flex", alignItems:"center", gap:6 }}><Spinner size={12}/> 지수 로딩 중...</div>
         )}
         {allItems.map((idx, i) => {
           const rawChange = String(idx.change || "0").replace(/[+\-%]/g, "").trim();
@@ -3216,11 +3250,11 @@ function IndexWidget() {
               padding: "11px 13px",
               minWidth: 105, flexShrink: 0,
             }}>
-              <div style={{ fontSize: 10, color: "#2a2a48", fontWeight: 600, marginBottom: 5, letterSpacing: 0.8 }}>{idx.name}</div>
+              <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, marginBottom: 5, letterSpacing: 0.8 }}>{idx.name}</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#e2e8f0", marginBottom: 4, letterSpacing: -0.3 }}>{idx.value || idx.price}</div>
               <div style={{ fontSize: 11, fontWeight: 700, color }}>{changeStr}</div>
               {weekStr && (
-                <div style={{ fontSize: 10, color: weekColor, marginTop: 3, opacity: 0.75 }}>주간 {weekStr}</div>
+                <div style={{ fontSize: 10, color: weekColor, marginTop: 3 }}>주간 {weekStr}</div>
               )}
             </div>
           );
@@ -3248,7 +3282,7 @@ function App() {
         * { box-sizing:border-box; }
         ::-webkit-scrollbar { width:2px; height:2px; }
         ::-webkit-scrollbar-thumb { background:#1a1a2e; border-radius:2px; }
-        input::placeholder { color:#1e1e30; }
+        input::placeholder { color:#4a5568; }
         button:active { opacity:0.7; transform:scale(0.97); }
         .card { animation: fadeIn 0.15s ease; }
       `}</style>
@@ -3270,12 +3304,12 @@ function App() {
             }}>📈</div>
             <div>
               <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.5, color: "#f0f0ff" }}>InvestIQ</div>
-              <div style={{ fontSize: 9, color: "#2a2a45", letterSpacing: 2.5, fontWeight: 600 }}>AI INVESTMENT ADVISOR</div>
+              <div style={{ fontSize: 9, color: "#64748b", letterSpacing: 2.5, fontWeight: 600 }}>AI INVESTMENT ADVISOR</div>
             </div>
           </div>
           <button onClick={() => { setTab("market"); setTimeout(() => window.dispatchEvent(new CustomEvent("globalRefresh")), 100); }} style={{
             background: "transparent",
-            color: "#4a5568", border: "1px solid #1a1a2e",
+            color: "#94a3b8", border: "1px solid #2d3748",
             borderRadius: 8, padding: "7px 13px",
             cursor: "pointer", fontWeight: 500, fontSize: 12,
           }}>⟳ 새로고침</button>
@@ -3287,8 +3321,8 @@ function App() {
             <button key={t.id} onClick={() => setTab(t.id)} style={{
               flex: 1, padding: "8px 2px 10px", border: "none",
               background: "transparent",
-              color: tab === t.id ? "#e8eaf0" : "#2a2a45",
-              cursor: "pointer", fontSize: 10, fontWeight: tab === t.id ? 700 : 400,
+              color: tab === t.id ? "#f1f5f9" : "#94a3b8",
+              cursor: "pointer", fontSize: 10, fontWeight: tab === t.id ? 700 : 500,
               transition: "all 0.15s",
               borderBottom: tab === t.id ? "2px solid #4f6ef7" : "2px solid transparent",
             }}>
