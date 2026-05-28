@@ -2309,8 +2309,9 @@ function Portfolio() {
   };
 
   // 현재가 업데이트
-  // KRW 종목 → Gemini Search (Yahoo는 한국 ETF 데이터 신뢰 불가)
-  // USD 종목 → Yahoo Finance → Gemini fallback
+  // KRW + 6자리 ticker → 네이버 금융 (가장 정확)
+  // KRW + ticker 없음  → Gemini Search
+  // USD 등 외화        → Yahoo Finance → Gemini fallback
   const updatePrices = async (targetPortfolio) => {
     const pf = targetPortfolio || portfolio;
     if (!pf || !pf.holdings) return;
@@ -2319,19 +2320,18 @@ function Portfolio() {
     try {
       const isNoPriceAsset = (h) => {
         const lower = (h.name||"").toLowerCase();
-        const isCash = lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf")
-                    || lower.includes("머니마켓") || lower.includes("cma") || lower.includes("예수금")
-                    || lower.includes("수시입출금") || lower.includes("파킹");
-        const isTDF = lower.includes("tdf") || lower.includes("타겟데이트") || lower.includes("로자산배분")
-                   || lower.includes("자산배분적극") || lower.includes("자산배분안정") || lower.includes("자산배분중립")
-                   || lower.includes("배분형") || lower.includes("생애주기");
-        return isCash || isTDF;
+        return lower.includes("현금성자산")||lower.includes("현금성")||lower.includes("mmf")
+            || lower.includes("머니마켓")||lower.includes("cma")||lower.includes("예수금")
+            || lower.includes("수시입출금")||lower.includes("파킹")
+            || lower.includes("tdf")||lower.includes("타겟데이트")||lower.includes("로자산배분")
+            || lower.includes("자산배분적극")||lower.includes("자산배분안정")||lower.includes("자산배분중립")
+            || lower.includes("배분형")||lower.includes("생애주기");
       };
       const isCashName = (n) => {
         const lower = (n||"").toLowerCase();
-        return lower.includes("현금성자산") || lower.includes("현금성") || lower.includes("mmf")
-            || lower.includes("머니마켓") || lower.includes("cma") || lower.includes("예수금")
-            || lower.includes("수시입출금") || lower.includes("파킹");
+        return lower.includes("현금성자산")||lower.includes("현금성")||lower.includes("mmf")
+            || lower.includes("머니마켓")||lower.includes("cma")||lower.includes("예수금")
+            || lower.includes("수시입출금")||lower.includes("파킹");
       };
 
       const priceableHoldings = pf.holdings.filter(h => !isNoPriceAsset(h));
@@ -2340,52 +2340,88 @@ function Portfolio() {
         return { ...h, current_price: h.current_price || h.avg_price, change_pct: h.change_pct ?? null };
       });
 
-      // KRW vs 외화 분리
       const isKRW = (h) => !h.currency || h.currency === "KRW";
       const krwHoldings     = priceableHoldings.filter(h => isKRW(h));
       const foreignHoldings = priceableHoldings.filter(h => !isKRW(h));
 
-      // ── [KRW] Gemini Search로 현재가 조회 ──────────────────────
+      // ── [KRW / 네이버 우선] ──────────────────────────────────────────────
       let pricedKRW = [...krwHoldings];
       if (krwHoldings.length > 0) {
-        setUploadMsg(`📡 한국 ETF ${krwHoldings.length}개 현재가 조회 중...`);
-        const chunks = [];
-        for (let i = 0; i < krwHoldings.length; i += 10) chunks.push(krwHoldings.slice(i, i+10));
-        let allPrices = [];
-        for (const chunk of chunks) {
-          const names = chunk.map(h => h.name).join(", ");
-          const body = {
-            contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식의 오늘 현재가(원화)를 검색해서 JSON으로만 반환. 마크다운 없이.
+        // 6자리 ticker 있는 것 → 네이버
+        const KR_CODE = /^\d{6}$/;
+        const withCode    = krwHoldings.filter(h => KR_CODE.test(h.ticker));
+        const withoutCode = krwHoldings.filter(h => !KR_CODE.test(h.ticker));
+
+        let naverPrices = {};
+        if (withCode.length > 0) {
+          setUploadMsg(`📡 네이버 금융 조회 중 (${withCode.length}개)...`);
+          try {
+            const codes = withCode.map(h => h.ticker).join(",");
+            const nr = await fetch(`/api/naver?codes=${codes}`);
+            if (nr.ok) {
+              const nd = await nr.json();
+              naverPrices = nd.results || {};
+            }
+          } catch(e) { console.warn("Naver 조회 오류:", e.message); }
+        }
+
+        // 네이버 성공 종목 처리
+        const afterNaver = withCode.map(h => {
+          const np = naverPrices[h.ticker];
+          return (np && np.currentPrice > 0)
+            ? { ...h, current_price: np.currentPrice, change_pct: np.changeRate || 0 }
+            : { ...h };
+        });
+
+        // 네이버 실패 + ticker 없는 종목 → Gemini Search
+        const needGemini = [...afterNaver.filter(h => !h.current_price), ...withoutCode];
+        let geminiPrices = [];
+        if (needGemini.length > 0) {
+          setUploadMsg(`📡 AI 보조 조회 중 (${needGemini.length}개)...`);
+          const chunks = [];
+          for (let i = 0; i < needGemini.length; i += 10) chunks.push(needGemini.slice(i, i+10));
+          for (const chunk of chunks) {
+            const names = chunk.map(h => h.name).join(", ");
+            const body = {
+              contents: [{ role:"user", parts:[{ text:`다음 한국 ETF/주식의 오늘 현재가(원화)를 검색해서 JSON으로만 반환. 마크다운 없이.
 {"prices":[{"name":"종목명","current_price":숫자,"change_pct":숫자}]}
 대상: ${names}` }] }],
-            tools: [{ googleSearch: {} }],
-            generationConfig: { maxOutputTokens: 1000, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-          };
-          let retries = 2;
-          while (retries >= 0) {
-            try {
-              const res = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
-              if ((res.status===503||res.status===429) && retries>0) { retries--; await new Promise(r=>setTimeout(r,3000)); continue; }
-              if (!res.ok) break;
-              const data = await res.json();
-              const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
-              const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-              if (match) { const p = JSON.parse(match[0]); if (p.prices) allPrices = [...allPrices, ...p.prices]; }
-              break;
-            } catch(e) { break; }
+              tools: [{ googleSearch:{} }],
+              generationConfig: { maxOutputTokens:1000, temperature:0, thinkingConfig:{thinkingBudget:0} },
+            };
+            let retries = 2;
+            while (retries >= 0) {
+              try {
+                const gr = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
+                if ((gr.status===503||gr.status===429) && retries>0) { retries--; await new Promise(r=>setTimeout(r,3000)); continue; }
+                if (!gr.ok) break;
+                const gd = await gr.json();
+                const gt = gd.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+                const gm = gt.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
+                if (gm) { const gp = JSON.parse(gm[0]); if (gp.prices) geminiPrices=[...geminiPrices,...gp.prices]; }
+                break;
+              } catch(e) { break; }
+            }
           }
         }
+
         pricedKRW = krwHoldings.map(h => {
-          const p = allPrices.find(x => x.name === h.name);
-          const cp = p ? Number(p.current_price) : 0;
-          return (cp > 0) ? { ...h, current_price: cp, change_pct: Number(p.change_pct)||0 } : h;
+          // 네이버 결과 우선
+          const naverR = naverPrices[h.ticker];
+          if (naverR && naverR.currentPrice > 0)
+            return { ...h, current_price: naverR.currentPrice, change_pct: naverR.changeRate || 0 };
+          // Gemini 결과
+          const geminiR = geminiPrices.find(x => x.name === h.name);
+          if (geminiR && Number(geminiR.current_price) > 0)
+            return { ...h, current_price: Number(geminiR.current_price), change_pct: Number(geminiR.change_pct)||0 };
+          return { ...h };
         });
       }
 
-      // ── [외화] Yahoo Finance → Gemini fallback ──────────────────
+      // ── [외화 / Yahoo Finance] ──────────────────────────────────────────
       let pricedForeign = [...foreignHoldings];
       if (foreignHoldings.length > 0) {
-        setUploadMsg(`📡 해외 종목 ${foreignHoldings.length}개 현재가 조회 중...`);
+        setUploadMsg(`📡 해외 종목 ${foreignHoldings.length}개 조회 중...`);
         const withTickers = await resolveTickerCodes(foreignHoldings);
         const results = await Promise.allSettled(
           withTickers.map(async h => {
@@ -2400,12 +2436,11 @@ function Portfolio() {
           })
         );
         pricedForeign = results.map((r,i) => r.status==="fulfilled" ? r.value : withTickers[i]);
-        // 외화 Yahoo 실패 종목만 Gemini fallback
         const foreignFailed = pricedForeign.filter(h => !h.current_price);
         if (foreignFailed.length > 0) {
           const tmpPf = { ...pf, holdings: [...pricedForeign, ...pricedKRW, ...cashHoldings] };
           await updatePricesGeminiFallback(tmpPf, true);
-          return; // updatePricesGeminiFallback이 저장/setState 처리함
+          return;
         }
       }
 
@@ -2420,7 +2455,7 @@ function Portfolio() {
       setTimeout(() => setUploadMsg(""), 5000);
     }
     setUpdating(false);
-  };
+  };;
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [viewMode, setViewMode] = useState("all");
@@ -2905,6 +2940,7 @@ function Portfolio() {
                     <div style={{ minWidth:0, flex:1 }}>
                       <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {h.name || ""}
+                        {h.ticker && <span style={{ fontSize:9, color:"#475569", fontWeight:400, marginLeft:5 }}>{h.ticker}</span>}
                       </div>
                       <div style={{ fontSize: 10, color: "#94a3b8" }}>
                         <span style={{ color: "#cbd5e1" }}>{h.shares}주</span>
@@ -3155,6 +3191,32 @@ function Settings() {
         }}>🗑 지수 캐시 초기화</button>
       </div>
 
+      {/* 개선 예정 */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>개발 로드맵</div>
+        {[
+          { done: true,  text: "Vercel 서버리스 API (Gemini/Yahoo 프록시)" },
+          { done: true,  text: "계좌별 수익률 히스토리 분리" },
+          { done: true,  text: "네이버 금융 기반 한국 ETF 현재가 조회" },
+          { done: true,  text: "원/달러 환율 위젯" },
+          { done: false, text: "한국 종목 검색 시 한국어 이름 표시" },
+          { done: false, text: "배당 캘린더" },
+          { done: false, text: "리밸런싱 가이드" },
+          { done: false, text: "내 종목 뉴스 탭" },
+          { done: false, text: "해외 주식 현지통화 → KRW 자동 변환 표시" },
+          { done: false, text: "포폴 전체를 KRW / USD 선택 통일 기능" },
+        ].map((item, i) => (
+          <div key={i} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
+            <span style={{ fontSize:13, color: item.done ? "#22d3a0" : "#334155", flexShrink:0, marginTop:1 }}>
+              {item.done ? "✓" : "○"}
+            </span>
+            <span style={{ fontSize:13, color: item.done ? "#64748b" : "#94a3b8", textDecoration: item.done ? "line-through" : "none" }}>
+              {item.text}
+            </span>
+          </div>
+        ))}
+      </div>
+
       {/* 앱 정보 */}
       <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20 }}>
         <div style={{ fontSize: 13, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>앱 정보</div>
@@ -3223,11 +3285,12 @@ function IndexWidget() {
 
       // 주요 지수: Yahoo Finance(/api/yahoo 프록시) 우선, 실패 시 Gemini fallback
       const YAHOO_INDICES = [
-        { name: "코스피",  ticker: "%5EKS11" },
-        { name: "코스닥",  ticker: "%5EKQ11" },
-        { name: "다우",    ticker: "%5EDJI"  },
-        { name: "나스닥",  ticker: "%5EIXIC" },
-        { name: "S&P500", ticker: "%5EGSPC" },
+        { name: "코스피",   ticker: "%5EKS11" },
+        { name: "코스닥",   ticker: "%5EKQ11" },
+        { name: "원/달러",  ticker: "USDKRW%3DX", isFX: true },
+        { name: "다우",     ticker: "%5EDJI"  },
+        { name: "나스닥",   ticker: "%5EIXIC" },
+        { name: "S&P500",  ticker: "%5EGSPC" },
       ];
 
       // ── Yahoo Finance 병렬 조회 ──────────────────────────────
@@ -3242,15 +3305,21 @@ function IndexWidget() {
         const weekAgo   = valid.length >= 6 ? valid[valid.length-6]?.c : null;
         const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
         const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
+        const isFX = name === "원/달러";
         return {
           name,
-          value: current >= 1000
-            ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-            : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+          // 환율: 소수점 없이 원화 표시 (1,420원), 나머지는 기존
+          value: isFX
+            ? Math.round(current).toLocaleString("ko-KR") + "원"
+            : current >= 1000
+              ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+              : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
           change: String(Math.abs(changeVal).toFixed(2)),
-          up: changeVal >= 0,
+          // 환율: 달러 강세(숫자↑)는 한국 입장에서 불리 → 빨간색으로 표시
+          up: isFX ? changeVal <= 0 : changeVal >= 0,
           weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
-          weekUp: weekChange !== null ? weekChange >= 0 : null,
+          weekUp: weekChange !== null ? (isFX ? weekChange <= 0 : weekChange >= 0) : null,
+          isFX,
         };
       };
 
