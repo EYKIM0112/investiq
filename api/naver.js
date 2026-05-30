@@ -1,5 +1,4 @@
-// api/naver.js - 네이버 금융 현재가 프록시 (Vercel 서버리스)
-// 한국 ETF/주식 종목코드로 정확한 현재가 조회
+// api/naver.js - 네이버 금융 현재가 + 종목 검색 프록시 (Vercel 서버리스)
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -7,8 +6,50 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const { codes } = req.query; // comma-separated 6-digit codes
-  if (!codes) return res.status(400).json({ error: "codes required" });
+  const { codes, type, q } = req.query;
+
+  // ── 한국 종목 검색 ────────────────────────────────────────
+  if (type === "search") {
+    if (!q) return res.status(400).json({ error: "q required" });
+    const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
+    try {
+      const url = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(q)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Referer": "https://finance.naver.com/",
+          "Accept": "application/json, text/javascript, */*",
+        },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      // items: [[name, code, marketType, ...], ...]  marketType: "1"=KOSPI, "2"=KOSDAQ
+      const quotes = (data.items || []).slice(0, 8).map(item => {
+        const name   = item[0] || "";
+        const code   = item[1] || "";
+        const market = item[2] || "1";
+        const suffix = market === "2" ? ".KQ" : ".KS";
+        const symbol = code + suffix;
+        const upper  = name.toUpperCase();
+        const isETF  = ETF_BRANDS.some(b => upper.startsWith(b));
+        return {
+          symbol,
+          longname:  name,
+          shortname: name,
+          quoteType: isETF ? "ETF" : "EQUITY",
+          exchDisp:  market === "2" ? "KOSDAQ" : "KOSPI",
+          exchange:  market === "2" ? "KQ"     : "KS",
+        };
+      }).filter(item => item.symbol.length > 3);
+      res.setHeader("Cache-Control", "public, s-maxage=60");
+      return res.status(200).json({ quotes });
+    } catch (e) {
+      return res.status(500).json({ error: e.message, quotes: [] });
+    }
+  }
+
+  // ── 현재가 조회 ───────────────────────────────────────────
+  if (!codes) return res.status(400).json({ error: "codes or type=search required" });
 
   const codeList = codes.split(",")
     .map(c => c.trim())
@@ -46,13 +87,11 @@ export default async function handler(req, res) {
       });
       if (r.ok) {
         const data = await r.json();
-        // 직접 필드 (ETF/주식 공통)
         const price = Number(data.closePrice || data.localTradedAt);
         if (price > 0) {
           results[code] = { currentPrice: price, changeRate: Number(data.fluctuationsRatio) || 0 };
           return;
         }
-        // stockItemTotalInfos 구조
         const infos = data.stockItemTotalInfos || [];
         const pi = infos.find(x => ["현재가","시세"].includes(x.key));
         if (pi) {
@@ -72,7 +111,6 @@ export default async function handler(req, res) {
       const r = await fetch(url, { headers: HEADERS });
       if (r.ok) {
         const text = await r.text();
-        // 응답 형식: |날짜|시가|고가|저가|종가|거래량|
         const matches = [...text.matchAll(/\|(\d{8})\|[\d]+\|[\d]+\|[\d]+\|([\d]+)\|/g)];
         if (matches.length >= 1) {
           const latest = matches[matches.length - 1];
@@ -87,7 +125,6 @@ export default async function handler(req, res) {
         }
       }
     } catch (e) {}
-    // 모든 시도 실패 → results에 포함 안 됨
   }));
 
   res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
