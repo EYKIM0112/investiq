@@ -1562,31 +1562,49 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
   const doSearch = async (q, ctry) => {
     if (!q || q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
-    const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
-    const proxyUrls = [
-      `/api/yahoo?type=search&q=${encodeURIComponent(q)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
-      base,
-    ];
+    const qTrimmed = q.trim();
     let results = [];
-    for (const url of proxyUrls) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        const data = typeof text === "string" ? JSON.parse(text) : text;
-        results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
-        break;
-      } catch(e) { console.warn("검색 실패:", e.message); }
-    }
-    if (ctry==="KR") results = results.filter(q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
-    else if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
-    else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
-    else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
+    const searchYahoo = async (query, filterFn) => {
+      const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
+      const urls = [`/api/yahoo?type=search&q=${encodeURIComponent(query)}`, `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`, base];
+      for (const url of urls) {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 8000);
+          const r = await fetch(url, { signal: ctrl.signal });
+          clearTimeout(t);
+          if (!r.ok) continue;
+          const text = await r.text();
+          const data = typeof text === "string" ? JSON.parse(text) : text;
+          const list = (data.quotes||[]).filter(x=>["ETF","EQUITY","MUTUALFUND"].includes(x.quoteType));
+          const filtered = filterFn ? list.filter(filterFn) : list;
+          if (filtered.length > 0) return filtered;
+        } catch(e) {}
+      }
+      return [];
+    };
+    try {
+      if (ctry === "KR") {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 6000);
+          const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`, { signal: ctrl.signal });
+          clearTimeout(t);
+          if (res.ok) {
+            const data = await res.json();
+            results = (data.quotes||[]).filter(r=>["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
+          }
+        } catch(e) {}
+        if (results.length === 0)
+          results = await searchYahoo(qTrimmed, q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
+      } else {
+        const filterFn =
+          ctry==="US" ? (q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange)) :
+          ctry==="JP" ? (q=>q.symbol?.endsWith(".T")) :
+          ctry==="CN" ? (q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ")) : null;
+        results = await searchYahoo(qTrimmed, filterFn);
+      }
+    } catch(e) { console.warn("검색 오류:", e.message); }
     setSearchResults(results.slice(0,6));
     setSearching(false);
   };
@@ -1796,43 +1814,64 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
   const doSearch = async (q, ctry) => {
     if (!q || q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
+    const qTrimmed = q.trim(); // 앞뒤 공백 제거
     let results = [];
+
+    // ── Yahoo 검색 공통 함수 ──────────────────────────────────
+    const searchYahoo = async (query, filterFn) => {
+      const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
+      const urls = [
+        `/api/yahoo?type=search&q=${encodeURIComponent(query)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+        base,
+      ];
+      for (const url of urls) {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 8000);
+          const r = await fetch(url, { signal: ctrl.signal });
+          clearTimeout(t);
+          if (!r.ok) continue;
+          const text = await r.text();
+          const data = typeof text === "string" ? JSON.parse(text) : text;
+          const list = (data.quotes||[]).filter(x=>["ETF","EQUITY","MUTUALFUND"].includes(x.quoteType));
+          const filtered = filterFn ? list.filter(filterFn) : list;
+          if (filtered.length > 0) return filtered;
+        } catch(e) {}
+      }
+      return [];
+    };
+
     try {
       if (ctry === "KR") {
-        // 한국 종목 → 네이버 금융 검색 (한국어 이름 반환)
-        const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(q)}`);
-        if (res.ok) {
-          const data = await res.json();
-          results = (data.quotes || []).filter(r => ["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
+        // 1순위: 네이버 금융 검색 (한국어 이름)
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 6000);
+          const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`, { signal: ctrl.signal });
+          clearTimeout(t);
+          if (res.ok) {
+            const data = await res.json();
+            results = (data.quotes || []).filter(r => ["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
+          }
+        } catch(e) { console.warn("네이버 검색 실패:", e.message); }
+
+        // 2순위: 네이버가 빈 결과면 Yahoo fallback (KR 필터)
+        if (results.length === 0) {
+          console.log("네이버 결과 없음 → Yahoo fallback");
+          results = await searchYahoo(qTrimmed, q => q.symbol?.endsWith(".KS") || q.symbol?.endsWith(".KQ"));
         }
       } else {
-        // 해외 종목 → Yahoo Finance 검색
-        const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
-        const urls = [
-          `/api/yahoo?type=search&q=${encodeURIComponent(q)}`,
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
-          base,
-        ];
-        for (const url of urls) {
-          try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 8000);
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timer);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const text = await res.text();
-            const data = typeof text === "string" ? JSON.parse(text) : text;
-            results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
-            if (results.length > 0) break;
-          } catch(e) { console.warn("검색 실패:", e.message); }
-        }
-        // 국가 필터 (KR 제외)
-        if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
-        else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
-        else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
+        // 해외 종목: Yahoo Finance
+        const filterFn =
+          ctry === "US" ? (q => !q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange)) :
+          ctry === "JP" ? (q => q.symbol?.endsWith(".T")) :
+          ctry === "CN" ? (q => q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ")) :
+          null;
+        results = await searchYahoo(qTrimmed, filterFn);
       }
     } catch(e) { console.warn("검색 오류:", e.message); }
+
     setSearchResults(results.slice(0, 6));
     setSearching(false);
   };
