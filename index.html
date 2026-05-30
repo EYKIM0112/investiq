@@ -2187,7 +2187,7 @@ function Portfolio() {
       }
 
       const price = meta.regularMarketPrice || meta.previousClose;
-      const prev  = meta.chartPreviousClose || meta.previousClose;
+      const prev  = meta.previousClose || meta.chartPreviousClose;
       if (!price || price <= 0) return null;
       const changePct = prev ? ((price - prev) / prev * 100) : 0;
       return { current_price: price, change_pct: changePct };
@@ -3301,7 +3301,7 @@ function IndexWidget() {
         const valid  = closes.map((c,i) => ({ t:ts[i], c })).filter(x => x.c != null);
         // regularMarketPrice 우선 (더 최신), 없으면 마지막 종가
         const current   = meta?.regularMarketPrice || valid[valid.length-1]?.c || 0;
-        const prevClose = meta?.chartPreviousClose  || valid[valid.length-2]?.c || 0;
+        const prevClose = meta?.previousClose || valid[valid.length-2]?.c || 0;
         const weekAgo   = valid.length >= 6 ? valid[valid.length-6]?.c : null;
         const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
         const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
