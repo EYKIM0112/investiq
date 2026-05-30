@@ -1844,21 +1844,54 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
 
     try {
       if (ctry === "KR") {
-        // 1순위: 네이버 금융 검색 (한국어 이름)
+        // ── 한국 종목: 네이버 검색 우선 (브라우저 직접 → 프록시 → Yahoo fallback) ──
+
+        // 1차: 브라우저에서 ac.finance.naver.com 직접 호출 (CORS 허용)
         try {
           const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 6000);
-          const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`, { signal: ctrl.signal });
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const acUrl = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(qTrimmed)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
+          const r = await fetch(acUrl, { signal: ctrl.signal });
           clearTimeout(t);
-          if (res.ok) {
-            const data = await res.json();
-            results = (data.quotes || []).filter(r => ["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
+          if (r.ok) {
+            const data = await r.json();
+            const items = data.items || [];
+            if (items.length > 0) {
+              const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
+              results = items.slice(0, 8).map(item => {
+                const name   = item[0] || "";
+                const code   = item[1] || "";
+                const market = item[2] === "2" ? "KOSDAQ" : "KOSPI";
+                const isETF  = ETF_BRANDS.some(b => name.toUpperCase().startsWith(b));
+                return {
+                  symbol:    code + (market === "KOSDAQ" ? ".KQ" : ".KS"),
+                  longname:  name,
+                  shortname: name,
+                  quoteType: isETF ? "ETF" : "EQUITY",
+                  exchDisp:  market,
+                };
+              }).filter(x => x.symbol.length > 3);
+            }
           }
-        } catch(e) { console.warn("네이버 검색 실패:", e.message); }
+        } catch(e) { console.log("Naver AC 직접 호출 실패:", e.message); }
 
-        // 2순위: 네이버가 빈 결과면 Yahoo fallback (KR 필터)
+        // 2차: 프록시 경유 (/api/naver?type=search)
         if (results.length === 0) {
-          console.log("네이버 결과 없음 → Yahoo fallback");
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 6000);
+            const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`, { signal: ctrl.signal });
+            clearTimeout(t);
+            if (res.ok) {
+              const data = await res.json();
+              results = (data.quotes || []).filter(r => ["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
+            }
+          } catch(e) { console.log("Naver 프록시 실패:", e.message); }
+        }
+
+        // 3차: Yahoo fallback (영어 이름, KR 필터)
+        if (results.length === 0) {
+          console.log("Naver 검색 실패 → Yahoo fallback");
           results = await searchYahoo(qTrimmed, q => q.symbol?.endsWith(".KS") || q.symbol?.endsWith(".KQ"));
         }
       } else {
@@ -2186,13 +2219,12 @@ function Portfolio() {
   * 예: "3026-1683-01" (계좌명 없음) → "3026-1683-01"
 - cash: 예수금/현금 잔고 (없으면 0)
 
-[partial_fail 규칙 - 매우 중요]
-다음 경우는 반드시 partial_fail 배열에 종목명(또는 식별 가능한 텍스트)을 추가할 것:
-1. 화면 하단에서 종목 행이 잘려서 종목명·수량·금액 중 하나라도 읽을 수 없는 경우
-2. 종목명은 보이지만 수량이나 매입금액을 확인할 수 없어 avg_price 계산이 불가능한 경우
-3. 화면이 흐리거나 가려져서 숫자를 정확히 읽을 수 없는 경우
-4. 종목명이 "..." 또는 불완전하게 잘린 경우 (예: "KODEX 코리아밸...")
-→ 위 경우에 해당하면 holdings에 포함하지 말고 partial_fail에만 넣을 것. 절대 생략하거나 무시하지 말 것.
+[partial_fail 규칙 - 절대 원칙]
+아래 경우는 holdings에 절대 포함하지 말고 반드시 partial_fail에만 넣을 것:
+1. 종목명에 "..." 또는 "…"이 포함된 경우 (예: "KODEX 코리아밸...", "TIGER 미국우주테크...") → 이름이 완전하지 않으므로 무조건 partial_fail. 설령 수량과 금액이 읽혀도 절대 holdings에 넣지 말 것.
+2. 화면 하단에서 행 전체가 잘려서 수량/금액 중 하나라도 없는 경우
+3. 숫자가 흐리거나 가려져 정확히 읽을 수 없는 경우
+→ partial_fail에 넣을 때는 화면에서 읽은 텍스트 그대로 기록 (예: "KODEX 코리아밸...")
 
 {"holdings":[{"ticker":"종목코드","yahoo_ticker":"133690.KQ","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"current_price":현재가또는null,"change_pct":당일등락률숫자또는null,"currency":"KRW","sector":"섹터","account":"화면에보이는계좌명또는번호"}],"account_type":"국내/해외/혼합","account":"화면에보이는계좌명또는번호","cash":예수금,"partial_fail":["잘린종목명또는식별텍스트"]}`,
           imageBase64: base64,
@@ -2918,7 +2950,7 @@ function Portfolio() {
                 <div style={{ fontSize: 10, color: "#3a3a6a", fontWeight: 700, letterSpacing: 2.5, marginBottom: 4, textTransform:"uppercase" }}>
                   {viewMode === "all" ? "전체 포트폴리오" : viewMode}
                 </div>
-                <div style={{ fontSize: 10, color: "#16162a" }}>{new Date(portfolio.updatedAt).toLocaleString("ko-KR")}</div>
+                <div style={{ fontSize: 10, color: "#475569" }}>{new Date(portfolio.updatedAt).toLocaleString("ko-KR")}</div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={updatePrices} disabled={updating} style={{
@@ -3094,7 +3126,7 @@ function Portfolio() {
                 <button onClick={() => {
                   const input = prompt("현금 잔고 입력 (원):", 0);
                   if (input !== null) { const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
-                }} style={{ background: "none", border: "none", color: "#16162a", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 현금 잔고 추가</button>
+                }} style={{ background: "none", border: "none", color: "#4f6ef7", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 현금 잔고 추가</button>
               </div>
             )}
 
@@ -3143,8 +3175,8 @@ function Portfolio() {
                         <div style={{ fontSize: 10, color: "#64748b", background:"#1e293b", padding:"2px 6px", borderRadius:4 }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "none", color: "#16162a", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#16162a", fontSize: 16, cursor: "pointer", padding: "2px 3px", lineHeight: 1 }}>×</button>
+                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 16, cursor: "pointer", padding: "2px 3px", lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
