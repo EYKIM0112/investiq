@@ -1604,6 +1604,29 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
         if(results.length===0){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),6000);const res=await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`,{signal:ctrl.signal});clearTimeout(t);if(res.ok){const d=await res.json();results=(d.quotes||[]).filter(r=>["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));}}catch(e){}}
         // 4차: Yahoo fallback
         if(results.length===0) results=await searchYahoo(qTrimmed,q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
+        // 5차: 한국어명 보정 — Yahoo 결과에 영어명만 있으면 Naver에서 한국어명 덮어씌우기
+        // m.stock.naver.com/api/stock/{code}/basic 은 현재가 조회에서 이미 동작 확인된 API
+        if(results.length>0 && !results.some(r=>/[가-힣]/.test(r.longname||""))) {
+          try {
+            const codes=results.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>/^\d{6}$/.test(c)).join(",");
+            if(codes){
+              const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);
+              const nr=await fetch(`/api/naver?type=names&codes=${codes}`,{signal:ctrl.signal});
+              clearTimeout(t);
+              if(nr.ok){
+                const nd=await nr.json();
+                if(nd.names&&Object.keys(nd.names).length>0){
+                  results=results.map(r=>{
+                    const code=(r.symbol||"").replace(/\.(KS|KQ)$/,"");
+                    const ko=nd.names[code];
+                    return ko?{...r,longname:ko,shortname:ko}:r;
+                  });
+                }
+              }
+            }
+          } catch(e){}
+        }
+
       } else {
         const filterFn =
           ctry==="US" ? (q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange)) :
