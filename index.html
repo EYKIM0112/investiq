@@ -1795,33 +1795,44 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
   const doSearch = async (q, ctry) => {
     if (!q || q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
-    const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
-    const urls = [
-      `/api/yahoo?type=search&q=${encodeURIComponent(q)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
-      base,
-    ];
     let results = [];
-    for (const url of urls) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        const data = typeof text === "string" ? JSON.parse(text) : text;
-        results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
-        break;
-      } catch(e) { console.warn("검색 실패:", e.message); }
-    }
-    // 국가 필터
-    if (ctry==="KR") results = results.filter(q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
-    else if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
-    else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
-    else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
-    setSearchResults(results.slice(0,6));
+    try {
+      if (ctry === "KR") {
+        // 한국 종목 → 네이버 금융 검색 (한국어 이름 반환)
+        const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const data = await res.json();
+          results = (data.quotes || []).filter(r => ["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
+        }
+      } else {
+        // 해외 종목 → Yahoo Finance 검색
+        const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false`;
+        const urls = [
+          `/api/yahoo?type=search&q=${encodeURIComponent(q)}`,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(base)}`,
+          base,
+        ];
+        for (const url of urls) {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const text = await res.text();
+            const data = typeof text === "string" ? JSON.parse(text) : text;
+            results = (data.quotes||[]).filter(q=>["ETF","EQUITY","MUTUALFUND"].includes(q.quoteType));
+            if (results.length > 0) break;
+          } catch(e) { console.warn("검색 실패:", e.message); }
+        }
+        // 국가 필터 (KR 제외)
+        if (ctry==="US") results = results.filter(q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange));
+        else if (ctry==="JP") results = results.filter(q=>q.symbol?.endsWith(".T"));
+        else if (ctry==="CN") results = results.filter(q=>q.symbol?.endsWith(".SS")||q.symbol?.endsWith(".SZ"));
+      }
+    } catch(e) { console.warn("검색 오류:", e.message); }
+    setSearchResults(results.slice(0, 6));
     setSearching(false);
   };
 
@@ -2145,8 +2156,12 @@ function Portfolio() {
 
         // 부분 인식 실패 안내
         if (parsed.partial_fail?.length > 0) {
+          const total = (parsed.holdings?.length || 0) + parsed.partial_fail.length;
+          const failCount = parsed.partial_fail.length;
           const failList = parsed.partial_fail.join(", ");
-          const proceed = window.confirm(`${parsed.holdings.length}개 종목 인식 완료.\n\n다음 ${parsed.partial_fail.length}개 종목을 확인할 수 없습니다:\n${failList}\n\n나머지 종목만 등록하시겠습니까?\n(취소 시 직접 입력으로 추가 가능)`);
+          const proceed = window.confirm(
+            `⚠️ ${total}개 종목 중 ${failCount}개 종목 인식에 실패하였습니다.\n\n실패 종목: ${failList}\n\n나머지 ${total - failCount}개 종목만 등록하시겠습니까?\n(취소 시 직접 입력으로 추가 가능)`
+          );
           if (!proceed) { setUploading(false); setUploadMsg(""); return; }
         }
         if (!parsed?.holdings?.length) throw new Error("종목을 인식할 수 없습니다.\n계좌 잔고 화면의 스크린샷을 올려주세요.");
