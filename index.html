@@ -2833,7 +2833,7 @@ function Portfolio() {
                   </span>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: "#16162a", paddingTop: 8, borderTop: "1px solid #13183a" }}>
+              <div style={{ fontSize: 11, color: "#475569", paddingTop: 8, borderTop: "1px solid #13183a" }}>
                 총 매입 {totalCost >= 100000000 ? `₩${(totalCost/100000000).toFixed(2)}억` : `₩${Math.round(totalCost/10000).toLocaleString()}만`}
               </div>
             </div>
@@ -2940,14 +2940,14 @@ function Portfolio() {
                     <div style={{ minWidth:0, flex:1 }}>
                       <div style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {h.name || ""}
-                        {h.ticker && <span style={{ fontSize:9, color:"#475569", fontWeight:400, marginLeft:5 }}>{h.ticker}</span>}
+                        {h.ticker && <span style={{ fontSize:9, color:"#64748b", fontWeight:400, marginLeft:5 }}>{h.ticker}</span>}
                       </div>
-                      <div style={{ fontSize: 10, color: "#94a3b8" }}>
+                      <div style={{ fontSize: 10, color: "#7c8db5" }}>
                         <span style={{ color: "#cbd5e1" }}>{h.shares}주</span>
                         {" · "}
                         <span>평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
                         {h.current_price ? (
-                          <span style={{ color: "#94a3b8" }}>{" · "}현재 {(h.current_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
+                          <span style={{ color: "#7c8db5" }}>{" · "}현재 {(h.current_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
                         ) : null}
                       </div>
                     </div>
@@ -3207,7 +3207,7 @@ function Settings() {
           { done: false, text: "포폴 전체를 KRW / USD 선택 통일 기능" },
         ].map((item, i) => (
           <div key={i} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
-            <span style={{ fontSize:13, color: item.done ? "#22d3a0" : "#334155", flexShrink:0, marginTop:1 }}>
+            <span style={{ fontSize:13, color: item.done ? "#22d3a0" : "#64748b", flexShrink:0, marginTop:1 }}>
               {item.done ? "✓" : "○"}
             </span>
             <span style={{ fontSize:13, color: item.done ? "#64748b" : "#94a3b8", textDecoration: item.done ? "line-through" : "none" }}>
