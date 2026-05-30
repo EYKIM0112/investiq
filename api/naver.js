@@ -11,7 +11,40 @@ export default async function handler(req, res) {
   // ── 한국 종목 검색 ────────────────────────────────────────
   if (type === "search") {
     if (!q) return res.status(400).json({ error: "q required" });
+
     const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
+    const toSymbol = (code, market) => code + (market === "KOSDAQ" ? ".KQ" : ".KS");
+    const isETF = (name) => ETF_BRANDS.some(b => name.toUpperCase().startsWith(b));
+
+    // [1차] m.stock.naver.com 검색 API (모바일 앱 API, 안정적)
+    try {
+      const url = `https://m.stock.naver.com/api/search/items?keyword=${encodeURIComponent(q)}&market=&page=1&pageSize=20`;
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15",
+          "Referer": "https://m.stock.naver.com/",
+          "Accept": "application/json",
+        },
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const items = data.result || data.items || [];
+        if (items.length > 0) {
+          const quotes = items.slice(0, 10).map(item => ({
+            symbol:    toSymbol(item.itemCode, item.market),
+            longname:  item.itemName,
+            shortname: item.itemName,
+            quoteType: (item.marketCategory === "ETF" || isETF(item.itemName)) ? "ETF" : "EQUITY",
+            exchDisp:  item.market || "KOSPI",
+            exchange:  item.market === "KOSDAQ" ? "KQ" : "KS",
+          }));
+          res.setHeader("Cache-Control", "public, s-maxage=60");
+          return res.status(200).json({ quotes });
+        }
+      }
+    } catch (e) { console.error("[naver search 1차]", e.message); }
+
+    // [2차] ac.finance.naver.com 자동완성 API
     try {
       const url = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(q)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
       const r = await fetch(url, {
@@ -21,31 +54,31 @@ export default async function handler(req, res) {
           "Accept": "application/json, text/javascript, */*",
         },
       });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
-      // items: [[name, code, marketType, ...], ...]  marketType: "1"=KOSPI, "2"=KOSDAQ
-      const quotes = (data.items || []).slice(0, 8).map(item => {
-        const name   = item[0] || "";
-        const code   = item[1] || "";
-        const market = item[2] || "1";
-        const suffix = market === "2" ? ".KQ" : ".KS";
-        const symbol = code + suffix;
-        const upper  = name.toUpperCase();
-        const isETF  = ETF_BRANDS.some(b => upper.startsWith(b));
-        return {
-          symbol,
-          longname:  name,
-          shortname: name,
-          quoteType: isETF ? "ETF" : "EQUITY",
-          exchDisp:  market === "2" ? "KOSDAQ" : "KOSPI",
-          exchange:  market === "2" ? "KQ"     : "KS",
-        };
-      }).filter(item => item.symbol.length > 3);
-      res.setHeader("Cache-Control", "public, s-maxage=60");
-      return res.status(200).json({ quotes });
-    } catch (e) {
-      return res.status(500).json({ error: e.message, quotes: [] });
-    }
+      if (r.ok) {
+        const data = await r.json();
+        const items = data.items || [];
+        if (items.length > 0) {
+          const quotes = items.slice(0, 10).map(item => {
+            const name   = item[0] || "";
+            const code   = item[1] || "";
+            const market = item[2] === "2" ? "KOSDAQ" : "KOSPI";
+            return {
+              symbol:    toSymbol(code, market),
+              longname:  name,
+              shortname: name,
+              quoteType: isETF(name) ? "ETF" : "EQUITY",
+              exchDisp:  market,
+              exchange:  market === "KOSDAQ" ? "KQ" : "KS",
+            };
+          }).filter(x => x.symbol.length > 3);
+          res.setHeader("Cache-Control", "public, s-maxage=60");
+          return res.status(200).json({ quotes });
+        }
+      }
+    } catch (e) { console.error("[naver search 2차]", e.message); }
+
+    // 두 API 모두 실패
+    return res.status(200).json({ quotes: [] });
   }
 
   // ── 현재가 조회 ───────────────────────────────────────────
@@ -65,7 +98,7 @@ export default async function handler(req, res) {
   const results = {};
 
   await Promise.allSettled(codeList.map(async (code) => {
-    // [1차] api.finance.naver.com itemSummary - 가장 심플한 JSON
+    // [1차] api.finance.naver.com itemSummary
     try {
       const url = `https://api.finance.naver.com/service/itemSummary.nhn?itemcode=${code}`;
       const r = await fetch(url, { headers: HEADERS });
@@ -105,7 +138,7 @@ export default async function handler(req, res) {
       }
     } catch (e) {}
 
-    // [3차] fchart (시세 차트 API) - 마지막 종가
+    // [3차] fchart API
     try {
       const url = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=2&requestType=0`;
       const r = await fetch(url, { headers: HEADERS });
