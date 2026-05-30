@@ -1394,7 +1394,7 @@ function ReturnHistoryChart({ portfolio, viewMode = "all" }) {
           </div>
           <div style={{textAlign:"center",marginTop:8,fontSize:13,color:"#94a3b8"}}>
             현재 수익률: <span style={{color:parseFloat(curRet)>=0?"#10b981":"#ef4444",fontWeight:700}}>{parseFloat(curRet)>=0?"+":""}{curRet}%</span>
-            <span style={{fontSize:11,color:"#2a2a48",marginLeft:8}}>(파란 막대 = 현재)</span>
+            <span style={{fontSize:11,color:"#64748b",marginLeft:8}}>(파란 막대 = 현재)</span>
           </div>
         </div>
       )}
@@ -1638,12 +1638,12 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
       <div style={{ background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"20px 18px 36px", width:"100%", maxWidth:480, margin:"0 auto" }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
           <div style={{ fontSize:16, fontWeight:800, color:"#6b7280" }}>💰 현금 잔고 조정</div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"#2a2a48", fontSize:22, cursor:"pointer" }}>×</button>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
-        <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>현금 잔고 (₩)</div>
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>현금 잔고 (₩)</div>
         <input value={cashAmt} onChange={e=>setCashAmt(e.target.value)} inputMode="decimal" placeholder="0"
           style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"14px 12px", color:"#e8eaf0", fontSize:18, outline:"none", marginBottom:8, fontWeight:700 }} />
-        <div style={{ fontSize:12, color:"#2a2a48", marginBottom:16 }}>현재 잔고: ₩{Math.round(currentCash).toLocaleString()}</div>
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:16 }}>현재 잔고: ₩{Math.round(currentCash).toLocaleString()}</div>
         <button onClick={()=>onConfirm({type:"cash",amount:parseFloat(String(cashAmt).replace(/,/g,""))||0})}
           style={{ width:"100%", padding:"14px", borderRadius:12, border:"none", background:"#22293a", color:"#e8eaf0", fontWeight:800, fontSize:15, cursor:"pointer" }}>저장</button>
       </div>
@@ -1655,13 +1655,13 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
       <div style={{ background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"20px 18px 36px", width:"100%", maxWidth:480, margin:"0 auto", maxHeight:"90vh", overflowY:"auto" }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
           <div style={{ fontSize:16, fontWeight:800, color:isBuy?"#22d3a0":"#f87171" }}>{isBuy?"▲ 매수 입력":"▼ 매도 입력"}</div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"#2a2a48", fontSize:22, cursor:"pointer" }}>×</button>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
 
         {/* 계좌 선택 */}
         {accounts.length > 1 && (
           <div style={{ marginBottom:14 }}>
-            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>계좌</div>
+            <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>계좌</div>
             <select value={account} onChange={e=>{setAccount(e.target.value);setName("");setSearchQ("");setSearchResults([]);}}
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }}>
               {accounts.map(a => <option key={a} value={a}>{a}</option>)}
@@ -1676,7 +1676,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
               <button key={t.id} onClick={()=>{setBuyTab(t.id);setName("");setSearchQ("");setSearchResults([]);setYahooTicker(null);}} style={{
                 flex:1, padding:"8px 4px", border:"none", borderRadius:8,
                 background:buyTab===t.id?"#0f0f18":"transparent",
-                color:buyTab===t.id?"#22d3a0":"#2a2a48",
+                color:buyTab===t.id?"#22d3a0":"#475569",
                 fontSize:12, fontWeight:700, cursor:"pointer",
               }}>{t.label}</button>
             ))}
@@ -1685,12 +1685,12 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
 
         {/* 종목 선택 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>종목</div>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>종목</div>
 
           {/* 기존 종목 드롭다운 (매도 or 기존 추가매수) */}
           {(isSell || (isBuy && buyTab==="existing")) && (
             <select value={name} onChange={e=>setName(e.target.value)}
-              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:name?"#e8eaf0":"#2a2a48", fontSize:14, outline:"none" }}>
+              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:name?"#e8eaf0":"#475569", fontSize:14, outline:"none" }}>
               <option value="">종목 선택...</option>
               {existingOptions.map((h,i) => (
                 <option key={i} value={h.name}>{h.name} ({isSell?h.shares+"주":"평단 "+Math.round(h.avg_price||0).toLocaleString()+"원"})</option>
@@ -1707,7 +1707,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
                   <button key={c.id} onClick={()=>handleCountryChange(c.id)} style={{
                     padding:"5px 10px", borderRadius:8, border:"none", cursor:"pointer", whiteSpace:"nowrap", flexShrink:0,
                     background:country===c.id?"#22d3a022":"#16162a",
-                    color:country===c.id?"#22d3a0":"#2a2a48",
+                    color:country===c.id?"#22d3a0":"#475569",
                     fontSize:11, fontWeight:700,
                   }}>{c.label}</button>
                 ))}
@@ -1725,7 +1725,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
               {name && yahooTicker && (
                 <div style={{ fontSize:11, color:"#22d3a0", marginBottom:4 }}>✓ {name} ({yahooTicker})</div>
               )}
-              {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
+              {searching && <div style={{ fontSize:12, color:"#a8b4f8", padding:"6px 4px", display:"flex", alignItems:"center", gap:6 }}><Spinner size={11}/> 검색 중...</div>}
               {searchResults.length > 0 && !name && (
                 <div style={{ background:"#22223a", borderRadius:8, overflow:"hidden", border:"1px solid #3a3a6a" }}>
                   {searchResults.map((q,i) => (
@@ -1755,14 +1755,14 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
 
         {/* 단가 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>{isBuy?"매수":"매도"} 단가</div>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>{isBuy?"매수":"매도"} 단가</div>
           <input value={price} onChange={e=>setPrice(e.target.value)} inputMode="decimal" placeholder="0"
             style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
         </div>
 
         {/* 수량 */}
         <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>
             수량 {isSell && maxShares>0 && <span>(보유 {maxShares}주)</span>}
           </div>
           <div style={{ display:"flex", gap:8 }}>
@@ -1777,7 +1777,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
 
         {totalCost > 0 && (
           <div style={{ background:"#16162a", borderRadius:10, padding:"12px 14px", marginBottom:16, display:"flex", justifyContent:"space-between" }}>
-            <span style={{ fontSize:13, color:"#2a2a48" }}>총 {isBuy?"매수":"매도"}금액</span>
+            <span style={{ fontSize:13, color:"#64748b" }}>총 {isBuy?"매수":"매도"}금액</span>
             <span style={{ fontSize:14, fontWeight:700, color:isBuy?"#22d3a0":"#f87171" }}>₩{Math.round(totalCost).toLocaleString()}</span>
           </div>
         )}
@@ -1786,7 +1786,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
           disabled={!isValid} style={{
           width:"100%", padding:"14px", borderRadius:12, border:"none",
           background:!isValid?"#16162a":isBuy?"linear-gradient(135deg,#22d3a0,#0891b2)":"linear-gradient(135deg,#f87171,#dc2626)",
-          color:!isValid?"#2a2a48":"#fff", fontWeight:800, fontSize:15, cursor:isValid?"pointer":"not-allowed",
+          color:!isValid?"#334155":"#fff", fontWeight:800, fontSize:15, cursor:isValid?"pointer":"not-allowed",
         }}>{isBuy?"매수 반영":"매도 반영"}</button>
       </div>
     </div>
@@ -1863,18 +1863,23 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
 
         const naverAcUrl = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(qTrimmed)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
 
-        // 1차: allorigins.win → Naver AC (Vercel IP 차단 우회, 브라우저에서 호출)
+        // 1차: CORS 프록시 → Naver AC (allorigins / corsproxy 병렬)
         if (results.length === 0) {
-          try {
+          const proxies = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(naverAcUrl)}`,
+            `https://corsproxy.io/?${encodeURIComponent(naverAcUrl)}`,
+          ];
+          const fetched = await Promise.any(proxies.map(async (pUrl) => {
             const ctrl = new AbortController();
-            const t = setTimeout(() => ctrl.abort(), 7000);
-            const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(naverAcUrl)}`, { signal: ctrl.signal });
+            const t = setTimeout(() => ctrl.abort(), 6000);
+            const r = await fetch(pUrl, { signal: ctrl.signal });
             clearTimeout(t);
-            if (r.ok) {
-              const data = await r.json();
-              if ((data.items || []).length > 0) results = parseNaverAC(data.items);
-            }
-          } catch(e) { console.log("allorigins→Naver 실패:", e.message); }
+            if (!r.ok) throw new Error("not ok");
+            const d = await r.json();
+            if (!(d.items || []).length) throw new Error("empty");
+            return d;
+          })).catch(() => null);
+          if (fetched) results = parseNaverAC(fetched.items);
         }
 
         // 2차: Naver AC 직접 호출
@@ -1953,38 +1958,38 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
       <div style={{ background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"20px 18px 36px", width:"100%", maxWidth:480, margin:"0 auto", maxHeight:"90vh", overflowY:"auto" }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
           <div style={{ fontSize:16, fontWeight:800, color:"#a8b4f8" }}>✏️ 종목 추가</div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:"#2a2a48", fontSize:22, cursor:"pointer" }}>×</button>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer" }}>×</button>
         </div>
 
         {/* 계좌 선택 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>계좌</div>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>계좌</div>
           {!showNewAccount && existingAccounts.length > 0 ? (
             <div style={{ display:"flex", gap:8 }}>
               <select value={account} onChange={e=>setAccount(e.target.value)}
                 style={{ flex:1, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }}>
                 {existingAccounts.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
-              <button onClick={()=>setShowNewAccount(true)} style={{ padding:"0 12px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#2a2a48", fontSize:12, cursor:"pointer", whiteSpace:"nowrap" }}>+ 신규</button>
+              <button onClick={()=>setShowNewAccount(true)} style={{ padding:"0 12px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#64748b", fontSize:12, cursor:"pointer", whiteSpace:"nowrap" }}>+ 신규</button>
             </div>
           ) : (
             <div style={{ display:"flex", gap:8 }}>
               <input value={newAccountName} onChange={e=>setNewAccountName(e.target.value)} placeholder="새 계좌명 입력"
                 style={{ flex:1, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
-              {existingAccounts.length>0 && <button onClick={()=>setShowNewAccount(false)} style={{ padding:"0 12px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#2a2a48", fontSize:12, cursor:"pointer" }}>기존</button>}
+              {existingAccounts.length>0 && <button onClick={()=>setShowNewAccount(false)} style={{ padding:"0 12px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#64748b", fontSize:12, cursor:"pointer" }}>기존</button>}
             </div>
           )}
         </div>
 
         {/* 국가 선택 */}
         <div style={{ marginBottom:10 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>국가</div>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>국가</div>
           <div style={{ display:"flex", gap:4, overflowX:"auto" }}>
             {COUNTRIES.map(c => (
               <button key={c.id} onClick={()=>{setCountry(c.id);if(searchQ)doSearch(searchQ,c.id);}} style={{
                 padding:"6px 10px", borderRadius:8, border:"none", cursor:"pointer", whiteSpace:"nowrap", flexShrink:0,
                 background:country===c.id?"#a8b4f822":"#16162a",
-                color:country===c.id?"#a8b4f8":"#2a2a48",
+                color:country===c.id?"#a8b4f8":"#475569",
                 fontSize:11, fontWeight:700,
               }}>{c.label}</button>
             ))}
@@ -1993,7 +1998,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
 
         {/* 종목 검색 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>종목 검색</div>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>종목 검색</div>
           <div style={{ display:"flex", gap:8, marginBottom:4 }}>
             <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&handleSearchSubmit()}
@@ -2004,7 +2009,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
             </button>
           </div>
           {selected && <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:4 }}>✓ {selected.name} ({selected.ticker}) · {selected.exchange}</div>}
-          {searching && <div style={{ fontSize:12, color:"#2a2a48", padding:"6px 0" }}>검색 중...</div>}
+          {searching && <div style={{ fontSize:12, color:"#a8b4f8", padding:"6px 4px", display:"flex", alignItems:"center", gap:6 }}><Spinner size={11}/> 검색 중...</div>}
           {searchResults.length>0 && !selected && (
             <div style={{ background:"#22223a", borderRadius:8, overflow:"hidden", border:"1px solid #3a3a6a" }}>
               {searchResults.map((q,i) => (
@@ -2032,12 +2037,12 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
         {/* 평균단가 + 수량 */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
           <div>
-            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>평균단가</div>
+            <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>평균단가</div>
             <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal" placeholder="0"
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
           </div>
           <div>
-            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>수량 (주/좌)</div>
+            <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>수량 (주/좌)</div>
             <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal" placeholder="0"
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
           </div>
@@ -2046,7 +2051,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
         {/* 통화 + 섹터 */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:10, marginBottom:18 }}>
           <div>
-            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>통화</div>
+            <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>통화</div>
             <select value={currency} onChange={e=>setCurrency(e.target.value)}
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 8px", color:"#e8eaf0", fontSize:13, outline:"none" }}>
               <option value="KRW">₩ KRW</option>
@@ -2055,7 +2060,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
             </select>
           </div>
           <div>
-            <div style={{ fontSize:12, color:"#2a2a48", marginBottom:6, fontWeight:600 }}>섹터</div>
+            <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>섹터</div>
             <select value={sector} onChange={e=>setSector(e.target.value)}
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:13, outline:"none" }}>
               {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2788,7 +2793,7 @@ function Portfolio() {
             >
               <div style={{ fontSize: 26, marginBottom: 5 }}></div>
               <div style={{ fontSize: 14, color: "#64748b" }}>PC: 파일을 여기로 드래그</div>
-              <div style={{ fontSize: 13, color: "#2a2a48", marginTop: 2 }}>이미지 · xlsx · csv</div>
+              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>이미지 · xlsx · csv</div>
             </div>
 
             {/* label 버튼 - htmlFor로 input 직접 연결 (모바일에서 가장 확실) */}
@@ -3136,12 +3141,12 @@ function Portfolio() {
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8" }}>
                       {cash >= 100000000 ? `₩${(cash/100000000).toFixed(2)}억` : `₩${Math.round(cash/10000).toLocaleString()}만`}
                     </div>
-                    <div style={{ fontSize: 10, color: "#2a2a48" }}>{totalValue > 0 ? `${((cash/totalValue)*100).toFixed(1)}%` : ""}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{totalValue > 0 ? `${((cash/totalValue)*100).toFixed(1)}%` : ""}</div>
                   </div>
                   <button onClick={() => {
                     const input = prompt("현금 잔고 입력 (원):", portfolio.cash || 0);
                     if (input !== null) { const p = { ...portfolio, cash: parseFloat(input.replace(/,/g,""))||0, updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
-                  }} style={{ background: "none", border: "1px solid #1a2040", borderRadius: 6, color: "#2a2a48", fontSize: 11, cursor: "pointer", padding: "2px 5px" }}>✎</button>
+                  }} style={{ background: "none", border: "1px solid #1a2040", borderRadius: 6, color: "#64748b", fontSize: 11, cursor: "pointer", padding: "2px 5px" }}>✎</button>
                 </div>
               </div>
             )}
@@ -3452,7 +3457,7 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div>버전: 1.0.0</div>
           <div>InvestIQ - AI 투자 어드바이저</div>
-          <div style={{ marginTop: 8, fontSize: 13, color: "#2a2a48" }}>
+          <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>
             [!] 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
           </div>
         </div>
