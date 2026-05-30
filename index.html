@@ -1585,18 +1585,25 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
     };
     try {
       if (ctry === "KR") {
+        const ETF_BRANDS2 = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
+        const parseAC = (items) => items.slice(0,8).map(item => {
+          const name=item[0]||"", code=item[1]||"", mkt=item[2]==="2"?"KOSDAQ":"KOSPI";
+          return { symbol:code+(mkt==="KOSDAQ"?".KQ":".KS"), longname:name, shortname:name, quoteType:ETF_BRANDS2.some(b=>name.toUpperCase().startsWith(b))?"ETF":"EQUITY", exchDisp:mkt };
+        }).filter(x=>x.symbol.length>3);
+        const acUrl = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(qTrimmed)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
+        // 1차: allorigins → Naver AC
         try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 6000);
-          const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`, { signal: ctrl.signal });
+          const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),7000);
+          const r=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(acUrl)}`,{signal:ctrl.signal});
           clearTimeout(t);
-          if (res.ok) {
-            const data = await res.json();
-            results = (data.quotes||[]).filter(r=>["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));
-          }
-        } catch(e) {}
-        if (results.length === 0)
-          results = await searchYahoo(qTrimmed, q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
+          if(r.ok){const d=await r.json();if((d.items||[]).length>0)results=parseAC(d.items);}
+        } catch(e){}
+        // 2차: Naver AC 직접
+        if(results.length===0){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const r=await fetch(acUrl,{signal:ctrl.signal});clearTimeout(t);if(r.ok){const d=await r.json();if((d.items||[]).length>0)results=parseAC(d.items);}}catch(e){}}
+        // 3차: /api/naver 프록시
+        if(results.length===0){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),6000);const res=await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`,{signal:ctrl.signal});clearTimeout(t);if(res.ok){const d=await res.json();results=(d.quotes||[]).filter(r=>["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));}}catch(e){}}
+        // 4차: Yahoo fallback
+        if(results.length===0) results=await searchYahoo(qTrimmed,q=>q.symbol?.endsWith(".KS")||q.symbol?.endsWith(".KQ"));
       } else {
         const filterFn =
           ctry==="US" ? (q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange)) :
@@ -1844,38 +1851,47 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
 
     try {
       if (ctry === "KR") {
-        // ── 한국 종목: 네이버 검색 우선 (브라우저 직접 → 프록시 → Yahoo fallback) ──
+        // ── 한국 종목: 네이버 AC 검색 (allorigins 우회 → 직접 → 프록시 → Yahoo) ──
+        const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
+        const parseNaverAC = (items) => items.slice(0, 8).map(item => {
+          const name   = item[0] || "";
+          const code   = item[1] || "";
+          const market = item[2] === "2" ? "KOSDAQ" : "KOSPI";
+          const isETF  = ETF_BRANDS.some(b => name.toUpperCase().startsWith(b));
+          return { symbol: code + (market === "KOSDAQ" ? ".KQ" : ".KS"), longname: name, shortname: name, quoteType: isETF ? "ETF" : "EQUITY", exchDisp: market };
+        }).filter(x => x.symbol.length > 3);
 
-        // 1차: 브라우저에서 ac.finance.naver.com 직접 호출 (CORS 허용)
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
-          const acUrl = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(qTrimmed)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
-          const r = await fetch(acUrl, { signal: ctrl.signal });
-          clearTimeout(t);
-          if (r.ok) {
-            const data = await r.json();
-            const items = data.items || [];
-            if (items.length > 0) {
-              const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
-              results = items.slice(0, 8).map(item => {
-                const name   = item[0] || "";
-                const code   = item[1] || "";
-                const market = item[2] === "2" ? "KOSDAQ" : "KOSPI";
-                const isETF  = ETF_BRANDS.some(b => name.toUpperCase().startsWith(b));
-                return {
-                  symbol:    code + (market === "KOSDAQ" ? ".KQ" : ".KS"),
-                  longname:  name,
-                  shortname: name,
-                  quoteType: isETF ? "ETF" : "EQUITY",
-                  exchDisp:  market,
-                };
-              }).filter(x => x.symbol.length > 3);
+        const naverAcUrl = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(qTrimmed)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
+
+        // 1차: allorigins.win → Naver AC (Vercel IP 차단 우회, 브라우저에서 호출)
+        if (results.length === 0) {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 7000);
+            const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(naverAcUrl)}`, { signal: ctrl.signal });
+            clearTimeout(t);
+            if (r.ok) {
+              const data = await r.json();
+              if ((data.items || []).length > 0) results = parseNaverAC(data.items);
             }
-          }
-        } catch(e) { console.log("Naver AC 직접 호출 실패:", e.message); }
+          } catch(e) { console.log("allorigins→Naver 실패:", e.message); }
+        }
 
-        // 2차: 프록시 경유 (/api/naver?type=search)
+        // 2차: Naver AC 직접 호출
+        if (results.length === 0) {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 5000);
+            const r = await fetch(naverAcUrl, { signal: ctrl.signal });
+            clearTimeout(t);
+            if (r.ok) {
+              const data = await r.json();
+              if ((data.items || []).length > 0) results = parseNaverAC(data.items);
+            }
+          } catch(e) { console.log("Naver 직접 호출 실패:", e.message); }
+        }
+
+        // 3차: /api/naver?type=search 프록시
         if (results.length === 0) {
           try {
             const ctrl = new AbortController();
@@ -1889,9 +1905,8 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
           } catch(e) { console.log("Naver 프록시 실패:", e.message); }
         }
 
-        // 3차: Yahoo fallback (영어 이름, KR 필터)
+        // 4차: Yahoo fallback (영어 이름)
         if (results.length === 0) {
-          console.log("Naver 검색 실패 → Yahoo fallback");
           results = await searchYahoo(qTrimmed, q => q.symbol?.endsWith(".KS") || q.symbol?.endsWith(".KQ"));
         }
       } else {
@@ -2232,6 +2247,15 @@ function Portfolio() {
           user: "이 계좌 스크린샷에서 모든 보유 종목과 계좌 정보를 추출해줘. JSON만.",
         });
         parsed = safeParseJSON(text);
+
+        // ── JS 레벨 강제 처리: "..." 포함된 종목명 → partial_fail (AI 프롬프트 의존 X)
+        if (parsed?.holdings) {
+          const truncated = parsed.holdings.filter(h => h.name && (h.name.includes("...") || h.name.includes("…")));
+          if (truncated.length > 0) {
+            parsed.holdings = parsed.holdings.filter(h => !h.name?.includes("...") && !h.name?.includes("…"));
+            parsed.partial_fail = [...(parsed.partial_fail || []), ...truncated.map(h => h.name)];
+          }
+        }
 
         // 부분 인식 실패 안내
         if (parsed.partial_fail?.length > 0) {
