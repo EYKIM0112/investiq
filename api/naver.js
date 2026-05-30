@@ -147,6 +147,37 @@ export default async function handler(req, res) {
     return res.status(200).json({ quotes: [] });
   }
 
+  // ── 한국어 종목명 조회 (type=names) ─────────────────────────
+  // Yahoo 검색 결과의 코드로 Naver에서 한국어명만 가져옴
+  // m.stock.naver.com/api/stock/{code}/basic 은 현재가 조회에서 이미 동작 확인됨
+  if (type === "names") {
+    if (!codes) return res.status(400).json({ error: "codes required" });
+    const codeList = codes.split(",").map(c => c.trim()).filter(c => /^\d{6}$/.test(c)).slice(0, 10);
+    const names = {};
+
+    await Promise.allSettled(codeList.map(async (code) => {
+      try {
+        const r = await fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Referer": "https://m.stock.naver.com/",
+            "Accept": "application/json",
+          },
+        });
+        if (r.ok) {
+          const d = await r.json();
+          // stockName, itemName, name 순으로 시도
+          const name = d.stockName || d.itemName || d.name
+            || d.stockItemTotalInfos?.find(x => x.key === "종목명")?.value
+            || null;
+          if (name) names[code] = name;
+        }
+      } catch (e) {}
+    }));
+
+    return res.status(200).json({ names });
+  }
+
   // ── 현재가 조회 ───────────────────────────────────────────
   if (!codes) return res.status(400).json({ error: "codes or type=search required" });
 
