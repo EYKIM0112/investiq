@@ -378,7 +378,7 @@ const MARKET_PROMPTS = {
 
   asia: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 아시아 주식시장 최신 데이터를 웹 검색으로 수집하라. 한국 증시는 제외.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
-대상 국가: 일본, 중국, 홍콩, 대만, 인도, 싱가포르, 베트남 중 주요 4~5개국.
+대상 국가: 일본, 중국, 홍콩, 대만, 인도(Sensex 기준), 싱가포르, 베트남 중 주요 4~5개국.
 [index_change 규칙] 프롬프트 하단에 API 실시간 지수 데이터가 제공된 경우 반드시 그 값을 사용. 없으면 검색으로 조회.
 [ETF 규칙] etf 배열에는 반드시 해당 국가 시장과 직접 관련된 ETF만. 예: 일본→KODEX 일본TOPIX, TIGER 일본니케이225 등. 중국→KODEX 차이나H, TIGER 차이나CSI300 등. 해당 국가와 무관한 ETF(반도체, AI, 방산 등) 절대 금지.
 {"summary":"2문장(한국 제외)","markets":[{"country":"일본","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["해당국가관련ETF만"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
@@ -423,13 +423,14 @@ function SectorRow({ item, showScore }) {
 
 // ---------- 세계 주요 지수 목록 (MarketInsight 용) ----------
 const WORLD_INDEX_LIST = [
-  { name: "닛케이225",  ticker: "%5EN225",   },
-  { name: "홍콩항생",   ticker: "%5EHSI",    },
-  { name: "상해종합",   ticker: "000001.SS", },
-  { name: "인도Nifty",  ticker: "%5ENSEI",   },
-  { name: "대만가권",   ticker: "%5ETWII",   },
-  { name: "독일DAX",    ticker: "%5EGDAXI",  },
-  { name: "영국FTSE",   ticker: "%5EFTSE",   },
+  { name: "닛케이225",      ticker: "%5EN225",   },
+  { name: "홍콩항생",       ticker: "%5EHSI",    },
+  { name: "상해종합",       ticker: "000001.SS", },
+  { name: "인도Sensex",     ticker: "%5EBSESN",  },
+  { name: "대만가권",       ticker: "%5ETWII",   },
+  { name: "독일DAX",        ticker: "%5EGDAXI",  },
+  { name: "영국FTSE",       ticker: "%5EFTSE",   },
+  { name: "필라델피아반도체", ticker: "%5ESOX",    },
 ];
 
 function MarketInsight({ onRefreshAll }) {
@@ -520,7 +521,7 @@ function MarketInsight({ onRefreshAll }) {
       // ── 세계 지수 실시간 컨텍스트 주입 (asia / europe / summary) ──
       let worldCtx = "";
       if (worldIndices && worldIndices.length > 0) {
-        const asiaNames  = ["닛케이225","홍콩항생","상해종합","인도Nifty","대만가권"];
+        const asiaNames  = ["닛케이225","홍콩항생","상해종합","인도Sensex","대만가권"];
         const euroNames  = ["독일DAX","영국FTSE"];
         const asiaData   = worldIndices.filter(i => asiaNames.includes(i.name));
         const euroData   = worldIndices.filter(i => euroNames.includes(i.name));
@@ -2145,9 +2146,16 @@ function Portfolio() {
   * 예: "270-82-452759 [01] 종합계좌 김응용" → "종합계좌"
   * 예: "3026-1683-01" (계좌명 없음) → "3026-1683-01"
 - cash: 예수금/현금 잔고 (없으면 0)
-- 인식 불가능한 종목은 partial_fail 배열에 기록
 
-{"holdings":[{"ticker":"종목코드","yahoo_ticker":"133690.KQ","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"current_price":현재가또는null,"change_pct":당일등락률숫자또는null,"currency":"KRW","sector":"섹터","account":"화면에보이는계좌명또는번호"}],"account_type":"국내/해외/혼합","account":"화면에보이는계좌명또는번호","cash":예수금,"partial_fail":[]}`,
+[partial_fail 규칙 - 매우 중요]
+다음 경우는 반드시 partial_fail 배열에 종목명(또는 식별 가능한 텍스트)을 추가할 것:
+1. 화면 하단에서 종목 행이 잘려서 종목명·수량·금액 중 하나라도 읽을 수 없는 경우
+2. 종목명은 보이지만 수량이나 매입금액을 확인할 수 없어 avg_price 계산이 불가능한 경우
+3. 화면이 흐리거나 가려져서 숫자를 정확히 읽을 수 없는 경우
+4. 종목명이 "..." 또는 불완전하게 잘린 경우 (예: "KODEX 코리아밸...")
+→ 위 경우에 해당하면 holdings에 포함하지 말고 partial_fail에만 넣을 것. 절대 생략하거나 무시하지 말 것.
+
+{"holdings":[{"ticker":"종목코드","yahoo_ticker":"133690.KQ","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"current_price":현재가또는null,"change_pct":당일등락률숫자또는null,"currency":"KRW","sector":"섹터","account":"화면에보이는계좌명또는번호"}],"account_type":"국내/해외/혼합","account":"화면에보이는계좌명또는번호","cash":예수금,"partial_fail":["잘린종목명또는식별텍스트"]}`,
           imageBase64: base64,
           mediaType,
           user: "이 계좌 스크린샷에서 모든 보유 종목과 계좌 정보를 추출해줘. JSON만.",
