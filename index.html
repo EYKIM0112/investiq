@@ -353,10 +353,9 @@ const MARKET_TABS = [
 const MARKET_PROMPTS = {
   summary: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 최신 데이터를 웹 검색으로 수집하라. 오늘자 또는 어제자 데이터만 사용할 것.
 반드시 아래 JSON 형식으로만 응답. {로 시작 }로 끝. JSON 외 텍스트/마크다운/인용 절대 금지. 모든 값 한국어.
-지수는 정확히 이 6개만: 닛케이225/상해종합/홍콩항셍/인도Nifty50/유로스탁스50/대만가권 (코스피/코스닥/S&P500/나스닥/다우/독일DAX 제외 - 별도 표시됨)
-[중요] 각 지수의 value와 change_pct는 반드시 숫자 데이터로 채울 것. 개장 전이거나 데이터 없으면 가장 최근 종가와 전일대비 등락률 사용. "데이터 없음" 같은 텍스트 절대 금지.
-{"index_alerts":[{"name":"닛케이225","value":"현재값(숫자)","change_pct":"+0.34% 형식","status":"normal","comment":"한줄"}],"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
-[ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 예: 방산섹터→방산ETF, 반도체섹터→반도체ETF. 다른 섹터 ETF 절대 금지.
+[중요] index_alerts 필드는 필요 없음. 주요 지수는 이미 실시간 API로 별도 표시 중.
+{"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
+[ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 다른 섹터 ETF 절대 금지.
 [중복 규칙] leading(모멘텀)과 turnaround(턴어라운드)의 섹터명은 반드시 서로 달라야 함.
 [black_swan 규칙] 현재 실제로 진행 중인 거시 리스크만 포함. 전쟁/지정학/금리/금융위기/환율/에너지 위기 등. 해당 없으면 빈 배열 [].`,
 
@@ -380,6 +379,7 @@ const MARKET_PROMPTS = {
   asia: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 아시아 주식시장 최신 데이터를 웹 검색으로 수집하라. 한국 증시는 제외.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 대상 국가: 일본, 중국, 홍콩, 대만, 인도, 싱가포르, 베트남 중 주요 4~5개국.
+[index_change 규칙] 프롬프트 하단에 API 실시간 지수 데이터가 제공된 경우 반드시 그 값을 사용. 없으면 검색으로 조회.
 [ETF 규칙] etf 배열에는 반드시 해당 국가 시장과 직접 관련된 ETF만. 예: 일본→KODEX 일본TOPIX, TIGER 일본니케이225 등. 중국→KODEX 차이나H, TIGER 차이나CSI300 등. 해당 국가와 무관한 ETF(반도체, AI, 방산 등) 절대 금지.
 {"summary":"2문장(한국 제외)","markets":[{"country":"일본","index_change":"등락%","strong":[{"name":"섹터","reason":"1문장","leaders":["종목"],"etf":["해당국가관련ETF만"]}],"weak":[{"name":"섹터","reason":"1문장"}],"outlook":"1문장"}],"events":["이벤트1"]}`,
 
@@ -390,7 +390,8 @@ majors 첫 두 개는 반드시 비트코인(BTC)과 이더리움(ETH)으로 시
 
   europe: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 유럽 주식시장 최신 데이터를 웹 검색으로 수집하라.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
-{"summary":"2문장","strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
+주요 지수: 독일DAX, 영국FTSE100 기준. 프롬프트 하단에 API 실시간 지수 데이터가 제공된 경우 해당 값을 참고.
+{"summary":"2문장","indices":[{"name":"독일DAX","value":"현재값","change":"등락%"},{"name":"영국FTSE100","value":"현재값","change":"등락%"}],"strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
 
   ipo: (d) => `오늘 날짜: ${d}. 한국 거래소 최근 1개월 신규상장 및 향후 1개월 상장예정 검색.
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
@@ -420,6 +421,17 @@ function SectorRow({ item, showScore }) {
   );
 }
 
+// ---------- 세계 주요 지수 목록 (MarketInsight 용) ----------
+const WORLD_INDEX_LIST = [
+  { name: "닛케이225",  ticker: "%5EN225",   },
+  { name: "홍콩항생",   ticker: "%5EHSI",    },
+  { name: "상해종합",   ticker: "000001.SS", },
+  { name: "인도Nifty",  ticker: "%5ENSEI",   },
+  { name: "대만가권",   ticker: "%5ETWII",   },
+  { name: "독일DAX",    ticker: "%5EGDAXI",  },
+  { name: "영국FTSE",   ticker: "%5EFTSE",   },
+];
+
 function MarketInsight({ onRefreshAll }) {
   // localStorage 캐시 초기 로드
   const loadCachedResults = () => {
@@ -446,6 +458,52 @@ function MarketInsight({ onRefreshAll }) {
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState(initTimes);
 
+  // ── 세계 지수 Yahoo 직접 조회 ──────────────────────────────
+  const [worldIndices, setWorldIndices] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("investiq_world_idx_v1") || "null");
+      if (c && Date.now() - c.ts < 30*60*1000) return c.data;
+    } catch {}
+    return null;
+  });
+  const [worldIdxLoading, setWorldIdxLoading] = useState(false);
+
+  const fetchWorldIndices = async () => {
+    setWorldIdxLoading(true);
+    try {
+      const results = await Promise.allSettled(
+        WORLD_INDEX_LIST.map(async ({ name, ticker }) => {
+          const res = await fetch(`/api/yahoo?type=chart&ticker=${ticker}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const d = await res.json();
+          if (d.error) throw new Error(d.error);
+          const meta   = d.chart?.result?.[0]?.meta;
+          const closes = (d.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(c => c != null);
+          const current   = meta?.regularMarketPrice || closes[closes.length-1] || 0;
+          const prevClose = meta?.previousClose      || closes[closes.length-2] || 0;
+          const changeVal = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
+          return {
+            name,
+            value: current >= 1000
+              ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+              : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            change: Math.abs(changeVal).toFixed(2),
+            up: changeVal >= 0,
+            rawChange: changeVal,
+          };
+        })
+      );
+      const ok = results.filter(r => r.status === "fulfilled").map(r => r.value);
+      if (ok.length > 0) {
+        setWorldIndices(ok);
+        localStorage.setItem("investiq_world_idx_v1", JSON.stringify({ data: ok, ts: Date.now() }));
+      }
+    } catch(e) { console.warn("세계 지수 조회 실패:", e); }
+    setWorldIdxLoading(false);
+  };
+
+  React.useEffect(() => { if (!worldIndices) fetchWorldIndices(); }, []);
+
   const isLoading = (tabId) => loading.has(tabId);
   const setTabLoading = (tabId, val) => setLoading(prev => {
     const next = new Set(prev);
@@ -458,6 +516,24 @@ function MarketInsight({ onRefreshAll }) {
     setErrors(e => ({ ...e, [tabId]: "" }));
     try {
       const today = new Date().toLocaleDateString("ko-KR");
+
+      // ── 세계 지수 실시간 컨텍스트 주입 (asia / europe / summary) ──
+      let worldCtx = "";
+      if (worldIndices && worldIndices.length > 0) {
+        const asiaNames  = ["닛케이225","홍콩항생","상해종합","인도Nifty","대만가권"];
+        const euroNames  = ["독일DAX","영국FTSE"];
+        const asiaData   = worldIndices.filter(i => asiaNames.includes(i.name));
+        const euroData   = worldIndices.filter(i => euroNames.includes(i.name));
+        const allData    = worldIndices;
+        const fmt = (arr) => arr.map(i => `${i.name}: ${i.value} (${i.up?"+":"-"}${i.change}%)`).join(", ");
+        if (tabId === "asia"    && asiaData.length > 0)
+          worldCtx = `\n\n[API 실시간 아시아 지수 - 이 값을 index_change에 정확히 사용]\n${fmt(asiaData)}`;
+        if (tabId === "europe"  && euroData.length > 0)
+          worldCtx = `\n\n[API 실시간 유럽 지수 - 이 값을 참고]\n${fmt(euroData)}`;
+        if (tabId === "summary" && allData.length > 0)
+          worldCtx = `\n\n[API 실시간 세계 지수 (index_alerts 생성 불필요, 이미 별도 표시됨)]\n${fmt(allData)}`;
+      }
+
       const timeoutMs = (tabId === "summary" || tabId === "commodities") ? 90000 : 60000;
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error(`타임아웃 (${timeoutMs/1000}초)`)), timeoutMs));
       const text = await Promise.race([
@@ -474,7 +550,7 @@ function MarketInsight({ onRefreshAll }) {
 7. NO citations like [1] [2] or [cite:...] anywhere
 8. All string values must be in Korean (한국어)
 9. Keep each string value concise`,
-          user: MARKET_PROMPTS[tabId](today),
+          user: MARKET_PROMPTS[tabId](today) + worldCtx,
         }),
         timeoutPromise,
       ]);
@@ -538,9 +614,12 @@ function MarketInsight({ onRefreshAll }) {
       setResults({});
       setErrors({});
       setLoading(new Set());
+      setWorldIndices(null);
+      localStorage.removeItem("investiq_world_idx_v1");
       ["summary","kr","us","asia","europe","commodities","crypto","ipo"].forEach(t => {
         localStorage.removeItem(`market_cache_${t}`);
       });
+      fetchWorldIndices();
       setActiveTab(prev => {
         setTimeout(() => fetchTab(prev), 150);
         return prev;
@@ -569,38 +648,48 @@ function MarketInsight({ onRefreshAll }) {
 
   const renderSummary = (d) => (
     <>
-      {/* 지수 급등락 경고 */}
-      {d.index_alerts?.some(a => a.status !== "normal") && (
+      {/* 지수 급등락 경고 (worldIndices 기반, |변화| > 2%) */}
+      {(worldIndices||[]).filter(i => Math.abs(i.rawChange) > 2).length > 0 && (
         <div style={{ background:"#1a0808", border:"1px solid #ef444466", borderRadius:12, padding:16, marginBottom:14 }}>
           <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>! 지수 급등락 경고</div>
-          {d.index_alerts.filter(a=>a.status!=="normal").map((a,i) => (
+          {worldIndices.filter(i => Math.abs(i.rawChange) > 2).map((idx,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-              <div>
-                <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{a.name}</span>
-                <span style={{ fontSize:14, color:"#94a3b8", marginLeft:8 }}>{a.comment}</span>
-              </div>
-              <span style={{ fontWeight:800, color:changePctColor(a.change_pct), fontSize:16 }}>{a.change_pct}</span>
+              <span style={{ fontWeight:700, color:"#e2e8f0", fontSize:16 }}>{idx.name}</span>
+              <span style={{ fontWeight:800, color:idx.up?"#10b981":"#ef4444", fontSize:16 }}>
+                {idx.up?"+":"-"}{idx.change}%
+              </span>
             </div>
           ))}
-          {d.vix && d.vix.status !== "normal" && (
-            <div style={{ marginTop:8, padding:"8px 12px", background:"#2a0a0a", borderRadius:8, fontSize:15, color:"#fca5a5" }}>
-              VIX {d.vix.value} - 공포지수 {d.vix.status==="danger"?"위험":"주의"} 구간
-            </div>
-          )}
+        </div>
+      )}
+      {d.vix && d.vix.status !== "normal" && (
+        <div style={{ background:"#2a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:"8px 12px", marginBottom:14, fontSize:15, color:"#fca5a5" }}>
+          VIX {d.vix.value} - 공포지수 {d.vix.status==="danger"?"위험":"주의"} 구간
         </div>
       )}
 
-      {/* 전체 지수 현황 */}
+      {/* 주요 지수 현황 - Yahoo Finance 실시간 */}
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-        <div style={{ fontSize:13, color:"#94a3b8", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 지수 현황</div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ fontSize:13, color:"#94a3b8", fontWeight:700, letterSpacing:2 }}>주요 지수 현황</div>
+          {worldIdxLoading && <Spinner size={12}/>}
+          {!worldIndices && !worldIdxLoading && (
+            <button onClick={fetchWorldIndices} style={{ fontSize:11, color:"#4f6ef7", background:"none", border:"none", cursor:"pointer" }}>불러오기</button>
+          )}
+        </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-          {d.index_alerts?.map((a,i) => (
+          {(worldIndices||[]).map((idx,i) => (
             <div key={i} style={{ background:"#16162a", borderRadius:8, padding:"10px 12px" }}>
-              <div style={{ fontSize:14, color:"#94a3b8", marginBottom:3 }}>{a.name}</div>
-              <div style={{ fontSize:17, fontWeight:700, color:changePctColor(a.change_pct) }}>{a.change_pct}</div>
-              <div style={{ fontSize:13, color:"#64748b" }}>{a.value}</div>
+              <div style={{ fontSize:14, color:"#94a3b8", marginBottom:3 }}>{idx.name}</div>
+              <div style={{ fontSize:17, fontWeight:700, color:idx.up?"#10b981":"#ef4444" }}>
+                {idx.up?"+":"-"}{idx.change}%
+              </div>
+              <div style={{ fontSize:13, color:"#64748b" }}>{idx.value}</div>
             </div>
           ))}
+          {!worldIndices && !worldIdxLoading && (
+            <div style={{ gridColumn:"1/-1", color:"#64748b", fontSize:13, textAlign:"center", padding:8 }}>지수 데이터를 불러오는 중...</div>
+          )}
         </div>
       </div>
 
@@ -874,11 +963,33 @@ function MarketInsight({ onRefreshAll }) {
   const renderEurope = (d) => (
     <>
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-      <div style={{ fontSize:13, color:"#ec4899", fontWeight:700, marginBottom:12, letterSpacing:2 }}>EUROPE SUMMARY</div>
-      
+        <div style={{ fontSize:13, color:"#ec4899", fontWeight:700, marginBottom:12, letterSpacing:2 }}>EUROPE SUMMARY</div>
         <div style={{ color:"#e2e8f0", lineHeight:1.8, fontSize:16 }}>{d.summary}</div>
-      
-    </div>
+      </div>
+      {/* 유럽 주요 지수 - API 또는 Gemini */}
+      {(() => {
+        const euroApi = (worldIndices||[]).filter(i => ["독일DAX","영국FTSE"].includes(i.name));
+        const euroGemini = d.indices || [];
+        const show = euroApi.length > 0 ? euroApi : euroGemini;
+        return show.length > 0 ? (
+          <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
+            <div style={{ fontSize:13, color:"#ec4899", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 지수</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {show.map((idx,i) => {
+                const up = euroApi.length > 0 ? idx.up : !String(idx.change||"").startsWith("-");
+                const chg = euroApi.length > 0 ? `${idx.up?"+":"-"}${idx.change}%` : idx.change;
+                return (
+                  <div key={i} style={{ background:"#16162a", borderRadius:8, padding:"10px 12px" }}>
+                    <div style={{ fontSize:13, color:"#94a3b8", marginBottom:3 }}>{idx.name}</div>
+                    <div style={{ fontSize:16, fontWeight:700, color:up?"#10b981":"#ef4444" }}>{chg}</div>
+                    <div style={{ fontSize:12, color:"#64748b" }}>{idx.value}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null;
+      })()}
       {d.strong?.length > 0 && (
         <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>^ 강한 섹터</div>
@@ -3291,10 +3402,11 @@ function IndexWidget() {
         { name: "다우",     ticker: "%5EDJI"  },
         { name: "나스닥",   ticker: "%5EIXIC" },
         { name: "S&P500",  ticker: "%5EGSPC" },
+        { name: "금(Gold)", ticker: "GC%3DF",  isGold: true },
       ];
 
       // ── Yahoo Finance 병렬 조회 ──────────────────────────────
-      const parseYahooChart = (data, name) => {
+      const parseYahooChart = (data, name, opts = {}) => {
         const meta   = data.chart?.result?.[0]?.meta;
         const ts     = data.chart?.result?.[0]?.timestamp || [];
         const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
@@ -3305,15 +3417,18 @@ function IndexWidget() {
         const weekAgo   = valid.length >= 6 ? valid[valid.length-6]?.c : null;
         const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
         const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
-        const isFX = name === "원/달러";
+        const isFX   = name === "원/달러" || !!opts.isFX;
+        const isGold = name === "금(Gold)" || !!opts.isGold;
         return {
           name,
-          // 환율: 소수점 없이 원화 표시 (1,420원), 나머지는 기존
+          // 환율: 원화, 금: USD 달러, 나머지: 숫자
           value: isFX
             ? Math.round(current).toLocaleString("ko-KR") + "원"
-            : current >= 1000
-              ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-              : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            : isGold
+              ? "$" + current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : current >= 1000
+                ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
           change: String(Math.abs(changeVal).toFixed(2)),
           // 환율: 달러 강세(숫자↑)는 한국 입장에서 불리 → 빨간색으로 표시
           up: isFX ? changeVal <= 0 : changeVal >= 0,
@@ -3324,12 +3439,12 @@ function IndexWidget() {
       };
 
       const yahooResults = await Promise.allSettled(
-        YAHOO_INDICES.map(async ({ name, ticker }) => {
+        YAHOO_INDICES.map(async ({ name, ticker, isFX, isGold }) => {
           const res = await fetch(`/api/yahoo?type=chart&ticker=${ticker}`);
           if (!res.ok) throw new Error(`${name} HTTP ${res.status}`);
           const data = await res.json();
           if (data.error) throw new Error(data.error);
-          return parseYahooChart(data, name);
+          return parseYahooChart(data, name, { isFX, isGold });
         })
       );
 
@@ -3379,47 +3494,13 @@ function IndexWidget() {
         } catch(e) { console.warn("지수 Gemini fallback 실패:", e.message); }
       }
 
-      // ── 금(Gold): Gemini ─────────────────────────────────────
-      let goldResult = null;
-      try {
-        const today = new Date().toLocaleDateString("ko-KR");
-        const goldBody = {
-          contents: [{ role: "user", parts: [{ text: `오늘(${today}) 금(Gold) 현재가, 직전 거래일 종가, 7거래일 전 종가를 검색해서 JSON으로만 반환. 마크다운 없이.
-{"current":숫자,"prev_close":숫자,"week_ago":숫자}` }] }],
-          tools: [{ googleSearch: {} }],
-          generationConfig: { maxOutputTokens: 200, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-        };
-        const goldRes = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:goldBody, stream:false }) });
-        if (goldRes.ok) {
-          const goldData = await goldRes.json();
-          const goldText = goldData.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
-          const goldMatch = goldText.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-          if (goldMatch) {
-            const g = JSON.parse(goldMatch[0]);
-            const current   = parseFloat(g.current)    || 0;
-            const prevClose = parseFloat(g.prev_close) || 0;
-            const weekAgo   = parseFloat(g.week_ago)   || 0;
-            const changeVal  = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
-            const weekChange = weekAgo  > 0 ? ((current - weekAgo)   / weekAgo   * 100) : null;
-            goldResult = {
-              name: "금(Gold)",
-              value: current.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-              change: String(Math.abs(changeVal).toFixed(2)),
-              up: changeVal >= 0,
-              weekChange: weekChange !== null ? weekChange.toFixed(2) : null,
-              weekUp: weekChange !== null ? weekChange >= 0 : null,
-            };
-          }
-        }
-      } catch(e) { console.warn("금 조회 실패:", e.message); }
-
       // ── 결과 합치기 ──────────────────────────────────────────
       // Yahoo 성공 종목 + Gemini fallback 종목 (YAHOO_INDICES 순서 유지)
       const mergedIndices = YAHOO_INDICES
         .map(({ name }) => yahooOK.find(r => r.name === name) || geminiResults.find(r => r.name === name))
         .filter(Boolean);
 
-      const finalResults = [...mergedIndices, ...(goldResult ? [goldResult] : [])];
+      const finalResults = [...mergedIndices];
       if (finalResults.length > 0) {
         setIndices(finalResults);
         saveCache(CACHE_KEY, finalResults);
