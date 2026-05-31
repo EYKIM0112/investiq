@@ -1916,10 +1916,14 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
           } catch(e) { console.log("Naver 프록시 실패:", e.message); }
         }
 
-        // 4차: Yahoo fallback (영어 이름)
+        // 4차: Yahoo KR 로케일 검색 — lang=ko-KR&region=KR 파라미터로 한국어명 직접 반환
         if (results.length === 0) {
-          results = await searchYahoo(qTrimmed, q => q.symbol?.endsWith(".KS") || q.symbol?.endsWith(".KQ"));
+          const krBase=`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(qTrimmed)}&lang=ko-KR&region=KR&quotesCount=10&newsCount=0`;
+          const krUrls=[`/api/yahoo?type=search&q=${encodeURIComponent(qTrimmed)}&region=KR`,`https://api.allorigins.win/raw?url=${encodeURIComponent(krBase)}`,krBase];
+          for(const url of krUrls){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),8000);const r=await fetch(url,{signal:ctrl.signal});clearTimeout(t);if(!r.ok)continue;const d=await r.json();const q=(d.quotes||[]).filter(x=>["ETF","EQUITY","MUTUALFUND"].includes(x.quoteType)&&(x.symbol?.endsWith(".KS")||x.symbol?.endsWith(".KQ")));if(q.length>0){results=q;break;}}catch(e){}}
         }
+        // 5차: 여전히 영어명이면 /api/naver type=names 로 보완
+        if(results.length>0&&!results.some(r=>/[가-힣]/.test(r.longname||""))){try{const kodesStr=results.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>/^\d{6}$/.test(c)).join(",");if(kodesStr){const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const nr=await fetch(`/api/naver?type=names&codes=${kodesStr}`,{signal:ctrl.signal});clearTimeout(t);if(nr.ok){const nd=await nr.json();if(nd.names&&Object.keys(nd.names).length>0)results=results.map(r=>{const code=(r.symbol||"").replace(/\.(KS|KQ)$/,"");const ko=nd.names[code];return ko?{...r,longname:ko,shortname:ko}:r;});}}}catch(e){}}
       } else {
         // 해외 종목: Yahoo Finance
         const filterFn =
