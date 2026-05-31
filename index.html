@@ -2380,6 +2380,7 @@ function Portfolio() {
       : { holdings: [h], account_type: "혼합", broker: h.account || "", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     savePortfolio(updated);
     setPortfolio(updated);
+    setTimeout(() => updatePrices(updated), 400); // 추가 즉시 현재가 자동 조회
   };
 
   // 종목 삭제
@@ -2994,7 +2995,7 @@ function Portfolio() {
                 <div style={{ fontSize: 10, color: "#475569" }}>{new Date(portfolio.updatedAt).toLocaleString("ko-KR")}</div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={updatePrices} disabled={updating} style={{
+                <button onClick={() => updatePrices()} disabled={updating} style={{
                   background: "#0f0f18", color: updating ? "#2a2a48" : "#22d3ee",
                   border: "1px solid #1a3050", borderRadius: 8, padding: "6px 11px",
                   cursor: updating ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600,
