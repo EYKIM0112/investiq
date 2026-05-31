@@ -15,7 +15,63 @@ export default async function handler(req, res) {
     const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP","TIME"];
     const isETF = (name) => ETF_BRANDS.some(b => name.toUpperCase().startsWith(b));
 
-    // 1차: 다음(카카오) 금융
+    const BASE_HDRS = {
+      "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Referer":         "https://finance.naver.com/",
+      "Accept-Language": "ko-KR,ko;q=0.9",
+    };
+
+    // 1차: finance.naver.com/search/searchList.nhn — HTML 스크래핑
+    // ac.finance.naver.com(차단)과 다른 경로, 일반 HTML 페이지라 차단 가능성 낮음
+    try {
+      const url = `https://finance.naver.com/search/searchList.nhn?query=${encodeURIComponent(q)}`;
+      const r = await fetch(url, {
+        headers: { ...BASE_HDRS, "Accept": "text/html,application/xhtml+xml" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (r.ok) {
+        const html = await r.text();
+        // <a href="/item/main.naver?code=475080">KODEX 코리아밸류업</a>
+        const matches = [...html.matchAll(/href="\/item\/main\.naver\?code=(\d{6})"[^>]*>([^<]{2,50})<\/a>/g)];
+        if (matches.length > 0) {
+          const seen = new Set();
+          const items = [];
+          for (const m of matches) {
+            const code = m[1], name = m[2].trim();
+            if (!seen.has(code) && name.length >= 2 && !/^[0-9,]+$/.test(name)) {
+              seen.add(code);
+              // HTML 앞뒤 500자에서 코스닥 여부 확인
+              const idx = html.indexOf(`code=${code}`);
+              const ctx = idx >= 0 ? html.slice(Math.max(0,idx-200), idx+300) : "";
+              const isKosdaq = ctx.includes("코스닥") || ctx.includes("KOSDAQ");
+              items.push({ code, name, isKosdaq });
+            }
+          }
+          if (items.length > 0) {
+            const quotes = items.slice(0, 10).map(item => ({
+              symbol:    item.code + (item.isKosdaq ? ".KQ" : ".KS"),
+              longname:  item.name,
+              shortname: item.name,
+              quoteType: isETF(item.name) ? "ETF" : "EQUITY",
+              exchDisp:  item.isKosdaq ? "KOSDAQ" : "KOSPI",
+              exchange:  item.isKosdaq ? "KQ" : "KS",
+            }));
+            console.warn(`[search] naver-html 성공: ${quotes.length}건`);
+            res.setHeader("Cache-Control", "public, s-maxage=60");
+            return res.status(200).json({ quotes, source: "naver-html" });
+          }
+          console.warn(`[search] naver-html: match ${matches.length}건이지만 유효 결과 없음`);
+        } else {
+          console.warn(`[search] naver-html: 매칭 없음. snippet=${html.slice(0,300)}`);
+        }
+      } else {
+        console.warn(`[search] naver-html HTTP ${r.status}`);
+      }
+    } catch (e) {
+      console.warn(`[search] naver-html 실패: ${e.message}`);
+    }
+
+    // 2차: 다음(카카오) 금융
     try {
       const url = `https://finance.daum.net/api/search/symbols?q=${encodeURIComponent(q)}&types[]=STOCK&types[]=ETF&perPage=10`;
       const r = await fetch(url, {
