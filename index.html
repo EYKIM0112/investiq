@@ -1799,8 +1799,8 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
   );
 }
 
-function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
-  const [account, setAccount]         = useState(existingAccounts[0] || "");
+function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccount = "" }) {
+  const [account, setAccount]         = useState(defaultAccount || existingAccounts[0] || "");
   const [newAccountName, setNewAccountName] = useState("");
   const [showNewAccount, setShowNewAccount] = useState(existingAccounts.length === 0);
   const [country, setCountry]         = useState("KR");
@@ -2380,7 +2380,7 @@ function Portfolio() {
       : { holdings: [h], account_type: "혼합", broker: h.account || "", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     savePortfolio(updated);
     setPortfolio(updated);
-    setTimeout(() => updatePrices(updated), 400); // 추가 즉시 현재가 자동 조회
+    setTimeout(() => updatePrices(updated, true), 400); // 새로 추가한 종목만 현재가 조회
   };
 
   // 종목 삭제
@@ -2557,11 +2557,16 @@ function Portfolio() {
   // KRW + 6자리 ticker → 네이버 금융 (가장 정확)
   // KRW + ticker 없음  → Gemini Search
   // USD 등 외화        → Yahoo Finance → Gemini fallback
-  const updatePrices = async (targetPortfolio) => {
+  const updatePrices = async (targetPortfolio, onlyMissing = false) => {
     const pf = targetPortfolio || portfolio;
     if (!pf || !pf.holdings) return;
+    // onlyMissing=true면 current_price 없는 종목만 조회 후 전체 포폴에 병합
+    const fullHoldings = pf.holdings;
+    const activeHoldings = onlyMissing ? fullHoldings.filter(h => !h.current_price) : fullHoldings;
+    if (activeHoldings.length === 0) return;
+    const activePf = { ...pf, holdings: activeHoldings };
     setUpdating(true);
-    setUploadMsg("📡 현재가 조회 중...");
+    setUploadMsg(onlyMissing ? "📡 신규 종목 현재가 조회 중..." : "📡 현재가 조회 중...");
     try {
       const isNoPriceAsset = (h) => {
         const lower = (h.name||"").toLowerCase();
@@ -2579,8 +2584,8 @@ function Portfolio() {
             || lower.includes("수시입출금")||lower.includes("파킹");
       };
 
-      const priceableHoldings = pf.holdings.filter(h => !isNoPriceAsset(h));
-      const cashHoldings = pf.holdings.filter(h => isNoPriceAsset(h)).map(h => {
+      const priceableHoldings = activePf.holdings.filter(h => !isNoPriceAsset(h));
+      const cashHoldings = activePf.holdings.filter(h => isNoPriceAsset(h)).map(h => {
         if (isCashName(h.name)) return { ...h, current_price: 1, change_pct: 0 };
         return { ...h, current_price: h.current_price || h.avg_price, change_pct: h.change_pct ?? null };
       });
@@ -2692,8 +2697,15 @@ function Portfolio() {
       }
 
       const allPricedHoldings = [...pricedKRW, ...pricedForeign, ...cashHoldings];
+      // onlyMissing이면 업데이트된 종목만 전체 포폴에 병합
+      const mergedHoldings = onlyMissing
+        ? fullHoldings.map(h => {
+            const updated = allPricedHoldings.find(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account);
+            return updated || h;
+          })
+        : allPricedHoldings;
       const successCount = allPricedHoldings.filter(h => h.current_price && h.current_price > 0).length;
-      const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: allPricedHoldings };
+      const updated = { ...pf, updatedAt: new Date().toISOString(), holdings: mergedHoldings };
       savePortfolio(updated); setPortfolio(updated); saveAllHistoryPoints(updated);
       setUploadMsg(`✅ ${successCount}개 종목 현재가 업데이트 완료`);
       setTimeout(() => setUploadMsg(""), 4000);
@@ -2891,6 +2903,7 @@ function Portfolio() {
           onClose={() => setShowManual(false)}
           onAdd={h => { addManualHolding(h); setShowManual(false); }}
           existingAccounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
+          defaultAccount={viewMode !== "all" ? viewMode : ""}
         />
       )}
       {showTradeModal && (
