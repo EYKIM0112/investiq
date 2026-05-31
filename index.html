@@ -1601,7 +1601,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
         // 2차: Naver AC 직접
         if(results.length===0){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const r=await fetch(acUrl,{signal:ctrl.signal});clearTimeout(t);if(r.ok){const d=await r.json();if((d.items||[]).length>0)results=parseAC(d.items);}}catch(e){}}
         // 3차: /api/naver 프록시
-        if(results.length===0){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),6000);const res=await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`,{signal:ctrl.signal});clearTimeout(t);if(res.ok){const d=await res.json();results=(d.quotes||[]).filter(r=>["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));}}catch(e){}}
+        if(results.length===0){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),18000);const res=await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`,{signal:ctrl.signal});clearTimeout(t);if(res.ok){const d=await res.json();results=(d.quotes||[]).filter(r=>["ETF","EQUITY","MUTUALFUND"].includes(r.quoteType));}}catch(e){}}
         // 4차: Yahoo KR 로케일 검색 — lang=ko-KR&region=KR 파라미터로 한국어명 직접 반환
         if(results.length===0){
           const krBase=`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(qTrimmed)}&lang=ko-KR&region=KR&quotesCount=10&newsCount=0`;
@@ -1906,7 +1906,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
         if (results.length === 0) {
           try {
             const ctrl = new AbortController();
-            const t = setTimeout(() => ctrl.abort(), 6000);
+            const t = setTimeout(() => ctrl.abort(), 18000);
             const res = await fetch(`/api/naver?type=search&q=${encodeURIComponent(qTrimmed)}`, { signal: ctrl.signal });
             clearTimeout(t);
             if (res.ok) {
