@@ -1950,7 +1950,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [] }) {
     if (!avgPrice || !shares) { alert("평균단가와 수량을 입력해주세요."); return; }
     if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
     onAdd({
-      ticker: selected?.ticker || searchQ.trim(),
+      ticker: (selected?.ticker || searchQ.trim()).replace(/\.(KS|KQ)$/, ""),
       yahoo_ticker: selected?.ticker || null,
       name: selected?.name || searchQ.trim(),
       avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
@@ -2593,14 +2593,16 @@ function Portfolio() {
       if (krwHoldings.length > 0) {
         // 6자리 ticker 있는 것 → 네이버
         const KR_CODE = /^\d{6}$/;
-        const withCode    = krwHoldings.filter(h => KR_CODE.test(h.ticker));
-        const withoutCode = krwHoldings.filter(h => !KR_CODE.test(h.ticker));
+        const KR_CODE_EXT = /^(\d{6})\.(KS|KQ)$/; // 000660.KS 형태도 허용
+        const getKrCode = (t) => { const m=String(t||'').match(/^(\d{6})(?:\.(KS|KQ))?$/); return m?m[1]:null; };
+        const withCode    = krwHoldings.filter(h => getKrCode(h.ticker));
+        const withoutCode = krwHoldings.filter(h => !getKrCode(h.ticker));
 
         let naverPrices = {};
         if (withCode.length > 0) {
           setUploadMsg(`📡 네이버 금융 조회 중 (${withCode.length}개)...`);
           try {
-            const codes = withCode.map(h => h.ticker).join(",");
+            const codes = withCode.map(h => getKrCode(h.ticker)).join(",");
             const nr = await fetch(`/api/naver?codes=${codes}`);
             if (nr.ok) {
               const nd = await nr.json();
@@ -2611,7 +2613,7 @@ function Portfolio() {
 
         // 네이버 성공 종목 처리
         const afterNaver = withCode.map(h => {
-          const np = naverPrices[h.ticker];
+          const np = naverPrices[getKrCode(h.ticker)];
           return (np && np.currentPrice > 0)
             ? { ...h, current_price: np.currentPrice, change_pct: np.changeRate || 0 }
             : { ...h };
