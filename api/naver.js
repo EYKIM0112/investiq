@@ -148,33 +148,71 @@ export default async function handler(req, res) {
   }
 
   // ── 한국어 종목명 조회 (type=names) ─────────────────────────
-  // Yahoo 검색 결과의 코드로 Naver에서 한국어명만 가져옴
-  // m.stock.naver.com/api/stock/{code}/basic 은 현재가 조회에서 이미 동작 확인됨
   if (type === "names") {
     if (!codes) return res.status(400).json({ error: "codes required" });
     const codeList = codes.split(",").map(c => c.trim()).filter(c => /^\d{6}$/.test(c)).slice(0, 10);
     const names = {};
 
     await Promise.allSettled(codeList.map(async (code) => {
+      // [1차] finance.naver.com HTML title 파싱 — 가장 확실한 방법
+      // <title>KODEX 소비재 주식 - 네이버 금융</title> 형식이 일관되게 보장됨
+      try {
+        const r = await fetch(`https://finance.naver.com/item/main.naver?code=${code}`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer":    "https://finance.naver.com/",
+            "Accept":     "text/html,application/xhtml+xml",
+            "Accept-Language": "ko-KR,ko;q=0.9",
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (r.ok) {
+          const html = await r.text();
+          // format: "KODEX 소비재 주식 - 네이버 금융"
+          const m = html.match(/<title[^>]*>([^<]+?)\s+주식/);
+          if (m?.[1]?.trim()) {
+            console.log(`[names] ${code} ✅ HTML title → "${m[1].trim()}"`);
+            names[code] = m[1].trim();
+            return;
+          }
+          console.warn(`[names] ${code} HTML ok but no title match. snippet: ${html.slice(0, 200)}`);
+        } else {
+          console.warn(`[names] ${code} HTML status: ${r.status}`);
+        }
+      } catch (e) {
+        console.warn(`[names] ${code} HTML failed: ${e.message}`);
+      }
+
+      // [2차] m.stock.naver.com/api/stock/{code}/basic — 작동 확인된 도메인
+      // 실제 응답 필드명 확인용 로그 포함
       try {
         const r = await fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, {
           headers: {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Referer": "https://m.stock.naver.com/",
-            "Accept": "application/json",
+            "Referer":    "https://m.stock.naver.com/",
+            "Accept":     "application/json",
           },
+          signal: AbortSignal.timeout(4000),
         });
         if (r.ok) {
           const d = await r.json();
-          // stockName, itemName, name 순으로 시도
-          const name = d.stockName || d.itemName || d.name
-            || d.stockItemTotalInfos?.find(x => x.key === "종목명")?.value
-            || null;
-          if (name) names[code] = name;
+          // 필드 목록 로그 → Vercel 로그에서 실제 응답 구조 확인 가능
+          console.log(`[names] ${code} basic keys: [${Object.keys(d).join(", ")}]`);
+          // 가능한 이름 필드 전부 시도
+          const direct = d.stockName || d.itemName || d.name || d.nameKo || d.korName || d.hname;
+          if (direct) { names[code] = direct; return; }
+          // stockItemTotalInfos 배열에서 "명" 포함 키 탐색
+          const infos = d.stockItemTotalInfos || [];
+          console.log(`[names] ${code} infos keys: [${infos.map(i => i.key).join(", ")}]`);
+          const nameEntry = infos.find(x => x.key && x.key.includes("명"));
+          if (nameEntry?.value) { names[code] = nameEntry.value; return; }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn(`[names] ${code} basic failed: ${e.message}`);
+      }
     }));
 
+    console.log(`[type=names] 결과: ${JSON.stringify(names)}`);
     return res.status(200).json({ names });
   }
 
