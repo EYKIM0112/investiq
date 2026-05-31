@@ -192,6 +192,58 @@ export default async function handler(req, res) {
       console.warn(`[search] naver-ac 실패: ${e.message}`);
     }
 
+    // 최후 수단: Gemini + Google Search
+    // process.env.GEMINI_API_KEY는 이미 Vercel에 설정됨
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      try {
+        const prompt = `한국 주식시장 종목 검색: "${q}"\n이 검색어와 일치하는 KRX(한국거래소) 상장 종목을 찾아줘.\n반드시 JSON 배열만 출력 (다른 텍스트, 마크다운 없이):\n[{"code":"6자리종목코드","name":"정확한한국어종목명","market":"KOSPI 또는 KOSDAQ"}]\n최대 6개.`;
+        const gRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              tools: [{ googleSearch: {} }],
+              generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
+            }),
+            signal: AbortSignal.timeout(12000),
+          }
+        );
+        if (gRes.ok) {
+          const gd = await gRes.json();
+          const text = gd.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+          const jsonMatch = text.match(/\[[\s\S]*?\]/);
+          if (jsonMatch) {
+            const items = JSON.parse(jsonMatch[0]);
+            const quotes = items
+              .filter(i => i.code && /^\d{6}$/.test(String(i.code)))
+              .map(i => {
+                const isKosdaq = String(i.market || "").includes("KOSDAQ");
+                return {
+                  symbol:    String(i.code) + (isKosdaq ? ".KQ" : ".KS"),
+                  longname:  i.name || "",
+                  shortname: i.name || "",
+                  quoteType: isETF(i.name || "") ? "ETF" : "EQUITY",
+                  exchDisp:  isKosdaq ? "KOSDAQ" : "KOSPI",
+                  exchange:  isKosdaq ? "KQ" : "KS",
+                };
+              });
+            if (quotes.length > 0) {
+              console.warn(`[search] gemini 성공: ${quotes.length}건`);
+              return res.status(200).json({ quotes, source: "gemini" });
+            }
+          }
+          console.warn(`[search] gemini 응답 파싱 실패. text=${text.slice(0,200)}`);
+        } else {
+          console.warn(`[search] gemini HTTP ${gRes.status}`);
+        }
+      } catch (e) {
+        console.warn(`[search] gemini 실패: ${e.message}`);
+      }
+    }
+
     console.warn(`[search] 전체 실패 — quotes:[]`);
     return res.status(200).json({ quotes: [] });
   }
