@@ -205,7 +205,7 @@ export default async function handler(req, res) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              tools: [{ googleSearch: {} }],
+              tools: [{ "google_search": {} }],
               generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
             }),
             signal: AbortSignal.timeout(12000),
@@ -232,6 +232,7 @@ export default async function handler(req, res) {
               });
             if (quotes.length > 0) {
               console.warn(`[search] gemini 성공: ${quotes.length}건`);
+              res.setHeader("Cache-Control", "no-store");
               return res.status(200).json({ quotes, source: "gemini" });
             }
           }
@@ -245,6 +246,7 @@ export default async function handler(req, res) {
     }
 
     console.warn(`[search] 전체 실패 — quotes:[]`);
+    res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({ quotes: [] });
   }
 
