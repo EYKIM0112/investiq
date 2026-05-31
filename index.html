@@ -3216,8 +3216,8 @@ function Portfolio() {
                         <div style={{ fontSize: 10, color: "#64748b", background:"#1e293b", padding:"2px 6px", borderRadius:4 }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.indexOf(h) })} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.indexOf(h))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 16, cursor: "pointer", padding: "2px 3px", lineHeight: 1 }}>×</button>
+                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account) })} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 16, cursor: "pointer", padding: "2px 3px", lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
