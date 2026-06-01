@@ -2871,30 +2871,8 @@ function Portfolio() {
       } catch(e) {}
     }));
 
-    // Yahoo 검색 실패한 종목만 Gemini로 보완
-    const stillMissing = needTicker.filter(h => !tickerMap[h.name]);
-    if (stillMissing.length > 0) {
-      try {
-        const names = stillMissing.map(h => h.name).join(", ");
-        const body = {
-          contents: [{ role: "user", parts: [{ text: `다음 한국 ETF/주식 종목들의 Yahoo Finance 티커 코드를 JSON으로만 반환. 마크다운 없이.
-한국 코스피 종목은 숫자코드.KS, 코스닥은 숫자코드.KQ 형식.
-예시: {"tickers":[{"name":"TIGER 미국S&P500","yahoo_ticker":"360750.KS"},{"name":"삼성전자","yahoo_ticker":"005930.KS"}]}
-대상: ${names}` }] }],
-          generationConfig: { maxOutputTokens: 800, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
-        };
-        const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.candidates?.[0]?.content?.parts?.map(p => p.text||"").join("") || "";
-          const match = text.replace(/```json|```/g,"").trim().match(/\{[\s\S]*\}/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            parsed.tickers?.forEach(t => { if (t.name && t.yahoo_ticker) tickerMap[t.name] = t.yahoo_ticker; });
-          }
-        }
-      } catch(e) { console.warn("Gemini 티커 보완 실패:", e.message); }
-    }
+    // Yahoo 미발견 종목은 ticker 없이 둠 — updatePrices에서 이름 기반 Gemini Search로 가격 조회
+    // Gemini 배치 ticker 보완은 신생 ETF 코드 환각 문제가 있어 제거
 
     return holdings.map(h => ({ ...h, yahoo_ticker: h.yahoo_ticker || tickerMap[h.name] || null }));
   };
@@ -3888,16 +3866,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.1.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.1.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.1.0 변경사항</div>
-            <div>· 종목 수정 모달 — 종목명·티커 변경, 현재가 입력</div>
-            <div>· 종목 추가 — 직접입력 모드 (TDF·펀드)</div>
-            <div>· 스크린샷 인식 개선 (누락 감지, 명칭 자동 교정)</div>
-            <div>· TDF avg_price 1000배 버그 수정</div>
-            <div>· 소수점 저장 버그 수정</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.1.1 변경사항</div>
+            <div>· resolveTickerCodes Gemini 배치 제거 (신생 ETF 코드 환각 → 가격 오류 버그 수정)</div>
+            <div>· 스크린샷 인식 프롬프트 안정화 (원본 복원)</div>
+            <div>· avg_price KRW 소수점 제거 (Math.round)</div>
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
