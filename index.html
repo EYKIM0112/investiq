@@ -1152,7 +1152,7 @@ function guessRegion(name) {
   const n = name.toUpperCase();
   if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("우주테크")||n.includes("배당다우")||n.includes("테크TOP")||n.includes("서학개미")) return "미국";
   if (n.includes("차이나")||n.includes("중국")) return "중국";
-  if (n.includes("인도")||n.includes("빌리언")) return "인도 인도";
+  if (n.includes("인도")||n.includes("빌리언")) return "인도";
   if (n.includes("글로벌")||n.includes("TOP4")||n.includes("원자력")||n.includes("K방산")||n.includes("조선")) return "글로벌";
   return "한국";
 }
@@ -1402,6 +1402,130 @@ function ReturnHistoryChart({ portfolio, viewMode = "all" }) {
   );
 }
 
+// ---------- 종목 검색 공통 컴포넌트 ----------
+function StockSearchRow({ country = "KR", onSelect }) {
+  const [q, setQ]             = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [directMode, setDirectMode] = useState(false);
+  const [directName, setDirectName] = useState("");
+
+  const doSearch = async () => {
+    const query = q.trim();
+    if (!query) return;
+    setSearching(true); setResults([]);
+    const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
+    let found = [];
+    try {
+      if (country === "KR") {
+        const parseAC = items => (items||[]).slice(0,8).map(item => {
+          const nm=item[0]||"", code=item[1]||"", mkt=item[2]==="2"?"KOSDAQ":"KOSPI";
+          return { symbol: code+(mkt==="KOSDAQ"?".KQ":".KS"), longname:nm, shortname:nm,
+                   quoteType: ETF_BRANDS.some(b=>nm.toUpperCase().startsWith(b))?"ETF":"EQUITY", exchDisp:mkt };
+        }).filter(x=>x.symbol.length>3);
+
+        const acUrl = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(query)}&q_enc=UTF-8&t_koreng=1&st=111&r_lt=111&r_format=json`;
+        // 1차: CORS 프록시
+        if (!found.length) {
+          const pj = await Promise.any([
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(acUrl)}`,
+            `https://corsproxy.io/?${encodeURIComponent(acUrl)}`,
+          ].map(async p => {
+            const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),6000);
+            const r=await fetch(p,{signal:ctrl.signal}); clearTimeout(t);
+            if(!r.ok) throw new Error();
+            const d=await r.json();
+            if(!(d.items||[]).length) throw new Error();
+            return d;
+          })).catch(()=>null);
+          if (pj) found = parseAC(pj.items);
+        }
+        // 2차: 서버 프록시 (Gemini fallback 포함)
+        if (!found.length) {
+          try {
+            const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),18000);
+            const res=await fetch(`/api/naver?type=search&q=${encodeURIComponent(query)}`,{signal:ctrl.signal}); clearTimeout(t);
+            if(res.ok){const d=await res.json(); found=(d.quotes||[]).filter(x=>["ETF","EQUITY","MUTUALFUND"].includes(x.quoteType));}
+          } catch(e){}
+        }
+        // 3차: Yahoo KR
+        if (!found.length) {
+          try {
+            const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),8000);
+            const res=await fetch(`/api/yahoo?type=search&q=${encodeURIComponent(query)}&region=KR`,{signal:ctrl.signal}); clearTimeout(t);
+            if(res.ok){const d=await res.json(); found=(d.quotes||[]).filter(x=>["ETF","EQUITY"].includes(x.quoteType)&&(x.symbol?.endsWith(".KS")||x.symbol?.endsWith(".KQ")));}
+          } catch(e){}
+        }
+        // 한국어명 보완
+        if (found.length && !found.some(r=>/[가-힣]/.test(r.longname||""))) {
+          try {
+            const codes=found.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>/^\d{6}$/.test(c)).join(",");
+            if(codes){
+              const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),5000);
+              const nr=await fetch(`/api/naver?type=names&codes=${codes}`,{signal:ctrl.signal}); clearTimeout(t);
+              if(nr.ok){const nd=await nr.json(); if(nd.names) found=found.map(r=>{const c=(r.symbol||"").replace(/\.(KS|KQ)$/,"");const ko=nd.names[c];return ko?{...r,longname:ko,shortname:ko}:r;});}
+            }
+          } catch(e){}
+        }
+      } else {
+        try {
+          const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),8000);
+          const res=await fetch(`/api/yahoo?type=search&q=${encodeURIComponent(query)}`,{signal:ctrl.signal}); clearTimeout(t);
+          if(res.ok){const d=await res.json(); found=(d.quotes||[]).filter(x=>["ETF","EQUITY"].includes(x.quoteType));}
+        } catch(e){}
+      }
+    } catch(e){ console.warn("StockSearch 오류:", e); }
+    setResults(found.slice(0,6)); setSearching(false);
+  };
+
+  const inputS = {flex:1,background:"#020617",border:"1px solid #334155",borderRadius:8,padding:"11px 12px",color:"#e2e8f0",fontSize:14,outline:"none"};
+
+  if (directMode) return (
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:6}}>
+        <input value={directName} onChange={e=>setDirectName(e.target.value)}
+          onKeyDown={e=>{ if(e.key==="Enter"&&directName.trim()){onSelect({name:directName.trim(),ticker:"",yahoo_ticker:null});setDirectMode(false);setDirectName("");} }}
+          placeholder="TDF·펀드 등 종목명 직접 입력" autoFocus style={{...inputS,border:"1px solid #0ea5e9"}}/>
+        <button onClick={()=>{ if(directName.trim()){onSelect({name:directName.trim(),ticker:"",yahoo_ticker:null});setDirectMode(false);setDirectName("");} }}
+          style={{padding:"0 14px",borderRadius:8,background:"#0ea5e9",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>확인</button>
+      </div>
+      <button onClick={()=>setDirectMode(false)} style={{fontSize:12,color:"#4f6ef7",background:"none",border:"none",cursor:"pointer",padding:0}}>← 검색으로</button>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:4}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()}
+          placeholder="종목명 또는 티커 검색..." style={inputS}/>
+        <button onClick={doSearch} disabled={searching}
+          style={{padding:"0 12px",borderRadius:8,background:"#a8b4f822",border:"1px solid #a8b4f844",color:"#a8b4f8",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>
+          {searching?"…":"검색"}</button>
+        <button onClick={()=>setDirectMode(true)}
+          style={{padding:"0 10px",borderRadius:8,background:"#16162a",border:"1px solid #334155",color:"#64748b",fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>직접입력</button>
+      </div>
+      {searching && <div style={{fontSize:12,color:"#a8b4f8",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}><Spinner size={11}/>검색 중...</div>}
+      {results.length>0 && (
+        <div style={{background:"#0f0f18",border:"1px solid #334155",borderRadius:8,overflow:"hidden",marginTop:2}}>
+          {results.map((r,i)=>(
+            <button key={i} onClick={()=>{
+              const nm=r.longname||r.shortname||r.symbol;
+              onSelect({name:nm,ticker:r.symbol,yahoo_ticker:r.symbol,exchange:r.exchDisp||r.exchange||""});
+              setQ(nm); setResults([]);
+            }} style={{width:"100%",padding:"9px 12px",background:"transparent",border:"none",borderBottom:i<results.length-1?"1px solid #1e293b":"none",color:"#f0f0ff",fontSize:13,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:600}}>{r.longname||r.shortname||r.symbol}</div>
+                <div style={{fontSize:11,color:"#64748b"}}>{r.symbol} · {r.exchDisp||r.exchange}</div>
+              </div>
+              <div style={{fontSize:10,color:"#8a8ab8",background:"#16162a",padding:"2px 6px",borderRadius:4}}>{r.quoteType}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- 직접입력 모달 ----------
 const ACCOUNTS = ["국내계좌", "해외계좌", "ISA", "연금저축", "IRP", "기타"];
 const SECTORS  = ["기술","반도체","AI","에너지","금융","헬스케어","소비재","방산","부동산","기타"];
@@ -1410,14 +1534,30 @@ const SECTORS  = ["기술","반도체","AI","에너지","금융","헬스케어",
 function EditHoldingModal({ holding, onClose, onSave }) {
   const [mode, setMode] = useState("edit");
   const [shares, setShares] = useState(String(holding.shares || ""));
-  const [avgPrice, setAvgPrice] = useState(String(holding.avg_price || ""));
+  const [avgPrice, setAvgPrice] = useState(String(Math.round(holding.avg_price || 0))); // #6 소수점 수정
   const [addShares, setAddShares] = useState("");
   const [addPrice, setAddPrice] = useState("");
   const [sellShares, setSellShares] = useState("");
+  const [stockOverride, setStockOverride] = useState(null); // 종목명/티커 변경 시
+  const [showNameEdit, setShowNameEdit] = useState(!holding.ticker); // ticker 없으면 바로 열기
+  const [showPriceInput, setShowPriceInput] = useState(false);
+  const [currentPriceInput, setCurrentPriceInput] = useState(holding.current_price > 0 ? String(holding.current_price) : "");
+  const [priceUnit, setPriceUnit] = useState(holding.currency === "USD" ? "USD" : "KRW"); // 향후 외화 확장 대비
+  const [fetchingPrice, setFetchingPrice] = useState(false);
 
   const handleSave = () => {
     if (mode === "edit") {
-      onSave({ ...holding, shares: parseFloat(shares)||0, avg_price: parseFloat(String(avgPrice).replace(/,/g,""))||0 });
+      const base = { ...holding, shares: parseFloat(shares)||0, avg_price: parseFloat(String(avgPrice).replace(/,/g,""))||0 };
+      if (stockOverride) {
+        base.name = stockOverride.name;
+        if (stockOverride.ticker) {
+          base.ticker = stockOverride.ticker.replace(/\.(KS|KQ)$/, "");
+          base.yahoo_ticker = stockOverride.yahoo_ticker || stockOverride.ticker;
+        }
+      }
+      const cp = parseFloat(String(currentPriceInput).replace(/,/g,""));
+      if (showPriceInput && cp > 0) base.current_price = cp;
+      onSave(base);
     } else if (mode === "buy") {
       const addSh = parseFloat(addShares)||0;
       const addPr = parseFloat(String(addPrice).replace(/,/g,""))||0;
@@ -1430,6 +1570,46 @@ function EditHoldingModal({ holding, onClose, onSave }) {
       if (newShares <= 0) { onSave(null); return; }
       onSave({ ...holding, shares: newShares });
     }
+  };
+
+  const fetchCurrentPrice = async () => {
+    const code = (stockOverride?.ticker || holding.ticker || "").replace(/\.(KS|KQ)$/, "");
+    const yTicker = stockOverride?.yahoo_ticker || holding.yahoo_ticker || (code ? code + ".KS" : null);
+    const name = stockOverride?.name || holding.name || "";
+    setFetchingPrice(true); setShowPriceInput(true);
+    try {
+      // 1. Naver (KRW 6자리 코드)
+      if (/^\d{6}$/.test(code)) {
+        const res = await fetch(`/api/naver?codes=${code}`);
+        if (res.ok) {
+          const d = await res.json();
+          const r = d.results?.[code];
+          if (r?.currentPrice > 0) { setCurrentPriceInput(String(r.currentPrice)); setFetchingPrice(false); return; }
+        }
+      }
+      // 2. Yahoo Finance
+      if (yTicker) {
+        const res = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(yTicker)}`);
+        if (res.ok) {
+          const d = await res.json();
+          const price = d.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price > 0) { setCurrentPriceInput(String(Math.round(price))); setFetchingPrice(false); return; }
+        }
+      }
+      // 3. Gemini Search
+      if (name) {
+        const body = { contents:[{role:"user",parts:[{text:`${name} 현재 주가(${priceUnit==="USD"?"달러":"원화"})를 검색해서 숫자만 반환`}]}], tools:[{googleSearch:{}}], generationConfig:{maxOutputTokens:100,temperature:0,thinkingConfig:{thinkingBudget:0}} };
+        const res = await fetch(GEMINI_PROXY, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"gemini-2.5-flash-lite",body,stream:false})});
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+          const num = parseFloat(text.replace(/[^0-9.]/g,""));
+          if (num > 0) { setCurrentPriceInput(String(priceUnit==="KRW"?Math.round(num):num)); setFetchingPrice(false); return; }
+        }
+      }
+      alert("현재가를 자동으로 가져올 수 없습니다.\n직접 입력해주세요.");
+    } catch(e) { console.warn("현재가 조회 실패:", e); }
+    setFetchingPrice(false);
   };
 
   const tabBtn = (t, label) => (
@@ -1451,8 +1631,8 @@ function EditHoldingModal({ holding, onClose, onSave }) {
       <div style={{ width:"100%", maxWidth:480, margin:"0 auto", background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"88vh", overflowY:"auto", border:"1px solid #1e293b" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
           <div>
-            <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{holding.name}</div>
-            <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
+            <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{stockOverride?.name || holding.name}</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>현재 {holding.shares}주 · 평단 {Math.round(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:22, cursor:"pointer" }}>x</button>
         </div>
@@ -1463,12 +1643,70 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         </div>
         {mode==="edit" && (
           <>
+            {/* 종목명/티커 변경 */}
+            <div style={{ background:"#0a0a14", border:"1px solid #1e293b", borderRadius:10, padding:"12px 14px", marginBottom:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: showNameEdit ? 12 : 0 }}>
+                <div style={{ fontSize:13, color:"#64748b", fontWeight:600 }}>
+                  종목명
+                  {stockOverride && (
+                    <span style={{ color:"#22d3a0", marginLeft:8, fontWeight:400 }}>
+                      → {stockOverride.name}{stockOverride.ticker ? ` (${stockOverride.ticker.replace(/\.(KS|KQ)$/,"")})` : " (직접입력)"}
+                    </span>
+                  )}
+                  {!stockOverride && !holding.ticker && (
+                    <span style={{ color:"#f59e0b", marginLeft:8, fontSize:11, fontWeight:400 }}>티커 없음 · 검색으로 연결 가능</span>
+                  )}
+                </div>
+                <button onClick={()=>{ setShowNameEdit(!showNameEdit); if(showNameEdit) setStockOverride(null); }}
+                  style={{ fontSize:12, color:showNameEdit?"#ef4444":"#4f6ef7", background:"none", border:"none", cursor:"pointer" }}>
+                  {showNameEdit ? "닫기" : "변경"}
+                </button>
+              </div>
+              {showNameEdit && (
+                <StockSearchRow
+                  country={holding.currency==="USD"?"US":"KR"}
+                  onSelect={s=>{ setStockOverride(s); setShowNameEdit(false); }}
+                />
+              )}
+            </div>
             <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>보유 수량</div>
             <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
             <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>평균단가</div>
             <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            {/* 현재가 */}
+            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:8, fontWeight:600 }}>
+              현재가 <span style={{ fontSize:11, color:"#475569", fontWeight:400 }}>(선택 · 미입력 시 기존값 유지)</span>
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom: showPriceInput ? 8 : 0 }}>
+              <button onClick={fetchCurrentPrice} disabled={fetchingPrice} style={{
+                flex:1, padding:"10px", borderRadius:8, border:"1px solid #22d3a044",
+                background: fetchingPrice ? "#22d3a011" : "#22d3a022",
+                color:"#22d3a0", fontWeight:700, fontSize:13, cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              }}>
+                {fetchingPrice ? <><Spinner size={13}/>조회 중</> : "📡 자동 반영"}
+              </button>
+              <button onClick={()=>{ setShowPriceInput(true); }} style={{
+                flex:1, padding:"10px", borderRadius:8,
+                border:`1px solid ${showPriceInput&&!fetchingPrice?"#4f6ef7":"#334155"}`,
+                background: showPriceInput&&!fetchingPrice ? "#4f6ef722" : "#16162a",
+                color: showPriceInput&&!fetchingPrice ? "#a8b4f8" : "#64748b",
+                fontWeight:700, fontSize:13, cursor:"pointer",
+              }}>✎ 직접 입력</button>
+            </div>
+            {showPriceInput && (
+              <div style={{ display:"flex", gap:8, marginBottom:4 }}>
+                <input value={currentPriceInput} onChange={e=>setCurrentPriceInput(e.target.value)}
+                  inputMode="decimal" placeholder="현재가 입력"
+                  style={{ flex:1, background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
+                {/* 통화 - 현재 KRW 고정, 향후 USD 등 select로 확장 예정 */}
+                <div style={{ padding:"0 14px", borderRadius:8, background:"#16162a", border:"1px solid #334155", color:"#94a3b8", fontSize:13, display:"flex", alignItems:"center", minWidth:60, justifyContent:"center" }}>
+                  {priceUnit}
+                </div>
+              </div>
+            )}
           </>
         )}
         {mode==="buy" && (
@@ -1812,6 +2050,12 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
   const [shares, setShares]           = useState("");
   const [currency, setCurrency]       = useState("KRW");
   const [sector, setSector]           = useState("기타");
+  const [directMode, setDirectMode]   = useState(false); // 직접입력 모드
+  const [directName, setDirectName]   = useState("");
+  const [showPriceInput, setShowPriceInput] = useState(false);
+  const [currentPriceInput, setCurrentPriceInput] = useState("");
+  const [priceUnit, setPriceUnit]     = useState("KRW"); // 향후 USD 등 외화 확장 대비
+  const [fetchingPrice, setFetchingPrice] = useState(false);
   const searchTimer = React.useRef(null);
 
   const COUNTRIES = [
@@ -1945,7 +2189,55 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
   };
   const handleSearchSubmit = () => { if (searchQ.trim()) doSearch(searchQ, country); };
 
+  const fetchCurrentPriceForAdd = async () => {
+    const ticker = (selected?.ticker || "").replace(/\.(KS|KQ)$/, "");
+    const yTicker = selected?.ticker;
+    const name = selected?.name || (directMode ? directName.trim() : searchQ.trim());
+    setFetchingPrice(true); setShowPriceInput(true);
+    try {
+      if (/^\d{6}$/.test(ticker)) {
+        const res = await fetch(`/api/naver?codes=${ticker}`);
+        if (res.ok) {
+          const d = await res.json();
+          const r = d.results?.[ticker];
+          if (r?.currentPrice > 0) { setCurrentPriceInput(String(r.currentPrice)); setFetchingPrice(false); return; }
+        }
+      }
+      if (yTicker) {
+        const res = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(yTicker)}`);
+        if (res.ok) {
+          const d = await res.json();
+          const price = d.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price > 0) { setCurrentPriceInput(String(Math.round(price))); setFetchingPrice(false); return; }
+        }
+      }
+      if (name) {
+        const body = { contents:[{role:"user",parts:[{text:`${name} 현재 주가(${priceUnit==="USD"?"달러":"원화"})를 검색해서 숫자만 반환`}]}], tools:[{googleSearch:{}}], generationConfig:{maxOutputTokens:100,temperature:0,thinkingConfig:{thinkingBudget:0}} };
+        const res = await fetch(GEMINI_PROXY, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"gemini-2.5-flash-lite",body,stream:false})});
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
+          const num = parseFloat(text.replace(/[^0-9.]/g,""));
+          if (num > 0) { setCurrentPriceInput(String(priceUnit==="KRW"?Math.round(num):num)); setFetchingPrice(false); return; }
+        }
+      }
+      alert("현재가를 자동으로 가져올 수 없습니다.\n직접 입력해주세요.");
+    } catch(e) { console.warn("현재가 조회 실패:", e); }
+    setFetchingPrice(false);
+  };
+
   const handleAdd = () => {
+    const cp = parseFloat(String(currentPriceInput).replace(/,/g,""));
+    const finalCurrentPrice = (showPriceInput && cp > 0) ? cp : null;
+    if (directMode) {
+      if (!directName.trim()) { alert("종목명을 입력해주세요."); return; }
+      if (!avgPrice || !shares) { alert("평균단가와 수량을 입력해주세요."); return; }
+      if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
+      onAdd({ ticker: "", yahoo_ticker: null, name: directName.trim(),
+        avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
+        shares: parseFloat(shares) || 0, currency, sector, account: finalAccount, current_price: finalCurrentPrice });
+      return;
+    }
     if (!selected && !searchQ.trim()) { alert("종목을 검색해서 선택해주세요."); return; }
     if (!avgPrice || !shares) { alert("평균단가와 수량을 입력해주세요."); return; }
     if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
@@ -1957,7 +2249,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
       shares: parseFloat(shares) || 0,
       currency, sector,
       account: finalAccount,
-      current_price: null,
+      current_price: finalCurrentPrice,
     });
   };
 
@@ -2008,39 +2300,56 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
 
         {/* 종목 검색 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>종목 검색</div>
-          <div style={{ display:"flex", gap:8, marginBottom:4 }}>
-            <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&handleSearchSubmit()}
-              placeholder="종목명 또는 티커..."
-              style={{ flex:1, background:"#16162a", border:`1px solid ${selected?"#a8b4f8":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
-            <button onClick={handleSearchSubmit} disabled={searching} style={{ padding:"0 14px", borderRadius:8, background:"#a8b4f822", border:"1px solid #a8b4f844", color:"#a8b4f8", fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap" }}>
-              {searching ? "..." : "검색"}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>종목 {directMode?"직접입력":"검색"}</div>
+            <button onClick={()=>{ setDirectMode(!directMode); setSelected(null); setSearchResults([]); setDirectName(""); setSearchQ(""); }}
+              style={{ fontSize:11, color:directMode?"#4f6ef7":"#64748b", background:"none", border:"1px solid #334155", borderRadius:6, padding:"2px 8px", cursor:"pointer" }}>
+              {directMode ? "🔍 검색으로" : "✎ 직접입력 (TDF·펀드)"}
             </button>
           </div>
-          {selected && <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:4 }}>✓ {selected.name} ({selected.ticker}) · {selected.exchange}</div>}
-          {searching && <div style={{ fontSize:12, color:"#a8b4f8", padding:"6px 4px", display:"flex", alignItems:"center", gap:6 }}><Spinner size={11}/> 검색 중...</div>}
-          {searchResults.length>0 && !selected && (
-            <div style={{ background:"#22223a", borderRadius:8, overflow:"hidden", border:"1px solid #3a3a6a" }}>
-              {searchResults.map((q,i) => (
-                <button key={i} onClick={()=>{
-                  setSelected({name:q.longname||q.shortname||q.symbol, ticker:q.symbol, exchange:q.exchDisp||q.exchange||""});
-                  setSearchQ(q.longname||q.shortname||q.symbol);
-                  setSearchResults([]);
-                }} style={{
-                  width:"100%", padding:"10px 12px", background:"transparent",
-                  border:"none", borderBottom:i<searchResults.length-1?"1px solid #2a2a4a":"none",
-                  color:"#f0f0ff", fontSize:13, cursor:"pointer", textAlign:"left",
-                  display:"flex", justifyContent:"space-between", alignItems:"center",
-                }}>
-                  <div>
-                    <div style={{ fontWeight:600 }}>{q.longname||q.shortname||q.symbol}</div>
-                    <div style={{ fontSize:11, color:"#6a6a9a" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
-                  </div>
-                  <div style={{ fontSize:10, color:"#8a8ab8", background:"#16162a", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
-                </button>
-              ))}
+          {directMode ? (
+            <div>
+              <input value={directName} onChange={e=>setDirectName(e.target.value)}
+                placeholder="종목명 직접 입력 (검색 안되는 TDF·펀드 등)"
+                style={{ width:"100%", background:"#16162a", border:"1px solid #0ea5e966", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+              {directName.trim() && <div style={{ fontSize:11, color:"#0ea5e9", marginTop:4 }}>✓ {directName.trim()} (티커 없이 추가 · 자동 가격조회 제한)</div>}
             </div>
+          ) : (
+            <>
+              <div style={{ display:"flex", gap:8, marginBottom:4 }}>
+                <input value={searchQ} onChange={e=>handleSearchChange(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&handleSearchSubmit()}
+                  placeholder="종목명 또는 티커 검색..."
+                  style={{ flex:1, background:"#16162a", border:`1px solid ${selected?"#a8b4f8":"#1e1e35"}`, borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+                <button onClick={handleSearchSubmit} disabled={searching} style={{ padding:"0 14px", borderRadius:8, background:"#a8b4f822", border:"1px solid #a8b4f844", color:"#a8b4f8", fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap" }}>
+                  {searching ? "..." : "검색"}
+                </button>
+              </div>
+              {selected && <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:4 }}>✓ {selected.name} ({selected.ticker}) · {selected.exchange}</div>}
+              {searching && <div style={{ fontSize:12, color:"#a8b4f8", padding:"6px 4px", display:"flex", alignItems:"center", gap:6 }}><Spinner size={11}/> 검색 중...</div>}
+              {searchResults.length>0 && !selected && (
+                <div style={{ background:"#22223a", borderRadius:8, overflow:"hidden", border:"1px solid #3a3a6a" }}>
+                  {searchResults.map((q,i) => (
+                    <button key={i} onClick={()=>{
+                      setSelected({name:q.longname||q.shortname||q.symbol, ticker:q.symbol, exchange:q.exchDisp||q.exchange||""});
+                      setSearchQ(q.longname||q.shortname||q.symbol);
+                      setSearchResults([]);
+                    }} style={{
+                      width:"100%", padding:"10px 12px", background:"transparent",
+                      border:"none", borderBottom:i<searchResults.length-1?"1px solid #2a2a4a":"none",
+                      color:"#f0f0ff", fontSize:13, cursor:"pointer", textAlign:"left",
+                      display:"flex", justifyContent:"space-between", alignItems:"center",
+                    }}>
+                      <div>
+                        <div style={{ fontWeight:600 }}>{q.longname||q.shortname||q.symbol}</div>
+                        <div style={{ fontSize:11, color:"#6a6a9a" }}>{q.symbol} · {q.exchDisp||q.exchange||""}</div>
+                      </div>
+                      <div style={{ fontSize:10, color:"#8a8ab8", background:"#16162a", padding:"2px 6px", borderRadius:4 }}>{q.quoteType}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -2076,6 +2385,41 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
               {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+        </div>
+
+        {/* 현재가 (선택) */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:8, fontWeight:600 }}>
+            현재가 <span style={{ fontSize:11, color:"#475569", fontWeight:400 }}>(선택 · 미입력 시 자동조회로 나중에 반영 가능)</span>
+          </div>
+          <div style={{ display:"flex", gap:8, marginBottom: showPriceInput ? 8 : 0 }}>
+            <button onClick={fetchCurrentPriceForAdd} disabled={fetchingPrice} style={{
+              flex:1, padding:"10px", borderRadius:8, border:"1px solid #22d3a044",
+              background: fetchingPrice ? "#22d3a011" : "#22d3a022",
+              color:"#22d3a0", fontWeight:700, fontSize:13, cursor:"pointer",
+              display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+            }}>
+              {fetchingPrice ? <><Spinner size={13}/>조회 중</> : "📡 자동 반영"}
+            </button>
+            <button onClick={()=>setShowPriceInput(true)} style={{
+              flex:1, padding:"10px", borderRadius:8,
+              border:`1px solid ${showPriceInput&&!fetchingPrice?"#4f6ef7":"#1e1e35"}`,
+              background: showPriceInput&&!fetchingPrice ? "#4f6ef722" : "#16162a",
+              color: showPriceInput&&!fetchingPrice ? "#a8b4f8" : "#64748b",
+              fontWeight:700, fontSize:13, cursor:"pointer",
+            }}>✎ 직접 입력</button>
+          </div>
+          {showPriceInput && (
+            <div style={{ display:"flex", gap:8 }}>
+              <input value={currentPriceInput} onChange={e=>setCurrentPriceInput(e.target.value)}
+                inputMode="decimal" placeholder="현재가 입력"
+                style={{ flex:1, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+              {/* 통화 - 현재 KRW 고정, 향후 USD 등 select로 확장 예정 */}
+              <div style={{ padding:"0 14px", borderRadius:8, background:"#16162a", border:"1px solid #1e1e35", color:"#64748b", fontSize:13, display:"flex", alignItems:"center", minWidth:60, justifyContent:"center" }}>
+                {priceUnit}
+              </div>
+            </div>
+          )}
         </div>
 
         <button onClick={handleAdd} style={{
@@ -2234,7 +2578,7 @@ function Portfolio() {
 [중요 규칙]
 - 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함 (예: "TIGER 미국우주테크")
 - shares(보유수량): 화면에 표시된 실제 보유 주수/좌수
-- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/펀드는 1좌당 1,000~2,000원 수준이고 수량이 수십만~백만 좌일 수 있음. 매입금액이 수백만~수십억 단위인데 수량이 수십만 이상이면 avg_price는 반드시 매입금액÷수량으로 계산 (매입금액 자체를 avg_price로 쓰지 말 것)
+- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/자산배분 펀드의 실제 1좌당 단가는 1~3원 수준 (화면에 표시되는 기준가는 원/1,000좌 단위라 1,000~3,000원처럼 보임). 수량이 수만~백만 좌인 TDF/펀드는 화면의 기준가를 avg_price로 쓰지 말고 반드시 매입금액÷수량으로 계산 (예: 매입금액 1,411,160원 ÷ 1,109,908좌 = 1.27원). 일반 주식도 매입금액이 수백억 이상이면 의심 → 매입금액÷수량으로 재계산
 - 현금성자산 처리: "현금성자산", "미래에셋증권현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 shares=평가금액(원 단위 숫자), avg_price=1, current_price=1 로 처리. 절대 평가금액을 avg_price로 쓰지 말 것
 - current_price: 화면에 현재가/현재값이 보이면 숫자로 추출. 없으면 null
 - change_pct: 화면에 등락률(%)이 보이면 숫자로 추출 (예: +2.34 또는 -1.5). 없으면 null
@@ -2303,7 +2647,7 @@ function Portfolio() {
         detectedAccount = rawAccount + ` -${dupCount + 1}`;
       }
 
-      const newHoldings = parsed.holdings.map(h => {
+      let newHoldings = parsed.holdings.map(h => {
         const name = (h.name || "").toLowerCase();
         const shares = parseFloat(h.shares) || 0;
         let avgPrice = parseFloat(h.avg_price) || 0;
@@ -2316,13 +2660,21 @@ function Portfolio() {
           currentPrice = 1;
         }
 
-        // 비정상 avg_price 검증: Gemini가 매입금액 전체를 avg_price로 잘못 읽는 경우 처리
-        // 예: TDF 1,109,908좌 × avg_price=1,411,160 → 1.5조 비정상
         if (!isCashAsset && shares > 0 && avgPrice > 0) {
-          const impliedTotal = shares * avgPrice;
-          // 100억 초과면 의심 - avg_price가 매입금액 자체일 가능성
-          if (impliedTotal > 10000000000 && avgPrice > shares && avgPrice > 100000) {
-            avgPrice = Math.round(avgPrice / shares); // 매입금액 ÷ 수량으로 재계산
+          // [1] TDF/자산배분 펀드: 기준가(원/1,000좌) 오인 보정
+          // 예: 1,109,908좌 × 기준가 1,271.79원 → 14.1억으로 오계산 → 실제 141만원 → ÷1000
+          const isTdfFund = shares > 100000 && (
+            name.includes("tdf") || name.includes("로자산배분") || name.includes("자산배분") || name.includes("생애주기")
+          );
+          if (isTdfFund && avgPrice > 100 && shares * avgPrice > 100000000) {
+            avgPrice = parseFloat((avgPrice / 1000).toFixed(4));
+          }
+          // [2] 일반 종목: avg_price가 매입금액 전체인 경우 (100억 초과)
+          else {
+            const impliedTotal = shares * avgPrice;
+            if (impliedTotal > 10000000000 && avgPrice > shares && avgPrice > 100000) {
+              avgPrice = Math.round(avgPrice / shares);
+            }
           }
         }
 
@@ -2336,6 +2688,23 @@ function Portfolio() {
           account: h.account || detectedAccount,
         };
       }).filter(h => h.shares > 0 && h.avg_price >= 0); // 수량 0이면 제외
+
+      // ── 종목명 자동 교정: 6자리 ticker → 네이버 한국어 정식명으로 교체 ──
+      // 스크린샷에서 잘린 이름도 ticker로 검색 후 정식명 복원
+      try {
+        const correctCodes = newHoldings.filter(h => /^\d{6}$/.test(h.ticker)).map(h => h.ticker);
+        if (correctCodes.length > 0) {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const nr = await fetch(`/api/naver?type=names&codes=${correctCodes.join(",")}`, { signal: ctrl.signal });
+          clearTimeout(t);
+          if (nr.ok) {
+            const { names } = await nr.json();
+            if (Object.keys(names || {}).length > 0)
+              newHoldings = newHoldings.map(h => names[h.ticker] ? { ...h, name: names[h.ticker] } : h);
+          }
+        }
+      } catch(e) { console.warn("종목명 교정 실패:", e); }
 
       // 기존 같은 계좌가 있는지 확인 → 교체 or 추가
       const sameAccount = existingAccounts.find(a => a === detectedAccount);
@@ -2714,7 +3083,7 @@ function Portfolio() {
       setTimeout(() => setUploadMsg(""), 5000);
     }
     setUpdating(false);
-  };;
+  };
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [viewMode, setViewMode] = useState("all");
