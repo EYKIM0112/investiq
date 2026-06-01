@@ -2604,15 +2604,13 @@ function Portfolio() {
 
 [중요 규칙]
 - 브랜드명(KODEX/TIGER/ACE/RISE/PLUS/TIME 등)은 종목명 앞에 포함 (예: "TIGER 미국우주테크")
-- 종목명이 화면에서 잘린 경우 (...이나 줄바꿈 등): 아는 전체 이름으로 복원할 것. 복원 불가능하면 partial_fail에 넣을 것
 - shares(보유수량): 화면에 표시된 실제 보유 주수/좌수
-- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/자산배분 펀드의 실제 1좌당 단가는 1~3원 수준 (화면에 표시되는 기준가는 원/1,000좌 단위라 1,000~3,000원처럼 보임). 수량이 수만~백만 좌인 TDF/펀드는 화면의 기준가를 avg_price로 쓰지 말고 반드시 매입금액÷수량으로 계산 (예: 매입금액 1,411,160원 ÷ 1,109,908좌 = 1.27원). 일반 주식도 매입금액이 수백억 이상이면 의심 → 매입금액÷수량으로 재계산
-- 현금성자산 처리: "현금성자산", "미래에셋증권현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 shares=평가금액(원 단위 숫자), avg_price=1, current_price=1 로 처리. 절대 평가금액을 avg_price로 쓰지 말 것. 데이터가 불분명하면 partial_fail로 보낼 것
-- TDF/펀드: avg_price 계산이 불확실하거나 1좌당 가격이 이상하면 partial_fail로 보낼 것 (억지로 넣는 것보다 실패 안내가 낫다)
+- avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/펀드는 1좌당 1,000~2,000원 수준이고 수량이 수십만~백만 좌일 수 있음. 매입금액이 수백만~수십억 단위인데 수량이 수십만 이상이면 avg_price는 반드시 매입금액÷수량으로 계산 (매입금액 자체를 avg_price로 쓰지 말 것)
+- 현금성자산 처리: "현금성자산", "미래에셋증권현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 shares=평가금액(원 단위 숫자), avg_price=1, current_price=1 로 처리. 절대 평가금액을 avg_price로 쓰지 말 것
 - current_price: 화면에 현재가/현재값이 보이면 숫자로 추출. 없으면 null
 - change_pct: 화면에 등락률(%)이 보이면 숫자로 추출 (예: +2.34 또는 -1.5). 없으면 null
 - TDF/MMF 등 현재가 조회가 어려운 종목도 화면에 표시된 값 그대로 추출
-- ticker: 한국 ETF/주식의 6자리 종목코드. 화면에 보이면 추출, 보이지 않아도 확실히 아는 경우만 채울 것. 불확실하면 반드시 빈 문자열로 둘 것 (틀린 코드 넣는 것보다 빈 것이 나음)
+- ticker: 화면에 보이면 추출, 보이지 않으면 빈 문자열 (앱이 자동 조회)
 - yahoo_ticker: 한국 코스피는 숫자코드.KS, 코스닥은 숫자코드.KQ (모르면 null)
 - account: 아래 규칙을 반드시 따를 것
   * 계좌명이 있으면 → 계좌명만 사용 (계좌번호, 계좌주 이름 모두 제외)
@@ -2628,10 +2626,9 @@ function Portfolio() {
 1. 종목명에 "..." 또는 "…"이 포함된 경우 (예: "KODEX 코리아밸...", "TIGER 미국우주테크...") → 이름이 완전하지 않으므로 무조건 partial_fail. 설령 수량과 금액이 읽혀도 절대 holdings에 넣지 말 것.
 2. 화면 하단에서 행 전체가 잘려서 수량/금액 중 하나라도 없는 경우
 3. 숫자가 흐리거나 가려져 정확히 읽을 수 없는 경우
-→ partial_fail에 넣을 때는 화면에서 읽은 텍스트 그대로 기록 (예: "KODEX 코리아밸...")
-- 반드시 화면에 보이는 모든 종목을 빠짐없이 추출할 것. 한 종목도 누락하지 말 것.
+→ partial_fail에 넣을 때는 화면에서 읽은 텍스트 그대로 기록
 
-{"holdings":[{"ticker":"종목코드6자리또는빈문자열","yahoo_ticker":"133690.KQ","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"current_price":현재가또는null,"change_pct":당일등락률숫자또는null,"currency":"KRW","sector":"섹터","account":"화면에보이는계좌명또는번호"}],"account_type":"국내/해외/혼합","account":"화면에보이는계좌명또는번호","cash":예수금,"partial_fail":["잘린종목명또는식별텍스트"],"total_count":화면상단에표시된종목수또는null}`,
+{"holdings":[{"ticker":"종목코드또는빈문자열","yahoo_ticker":"133690.KQ또는null","name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"current_price":현재가또는null,"change_pct":등락률또는null,"currency":"KRW","sector":"섹터","account":"계좌명"}],"account_type":"국내/해외/혼합","account":"계좌명","cash":예수금,"partial_fail":["잘린종목명"],"total_count":화면상단종목수또는null}`,
           imageBase64: base64,
           mediaType,
           user: "이 계좌 스크린샷에서 모든 보유 종목과 계좌 정보를 추출해줘. JSON만.",
@@ -2696,33 +2693,23 @@ function Portfolio() {
         let avgPrice = parseFloat(h.avg_price) || 0;
         let currentPrice = (h.current_price && h.current_price > 0) ? parseFloat(h.current_price) : null;
 
-        // 현금성자산 처리 (1좌=1원) - avg_price 무조건 1로 강제
+        // 현금성자산 처리 (1좌=1원)
         const isCashAsset = name.includes("현금") || name.includes("mmf") || name.includes("머니마켓") || name.includes("cma") || name.includes("현금성");
-        if (isCashAsset) {
-          avgPrice = 1;
-          currentPrice = 1;
+        if (isCashAsset) { avgPrice = 1; currentPrice = 1; }
+
+        // 비정상 avg_price 보정: 매입금액 전체가 avg_price로 들어온 경우 (100억 초과)
+        if (!isCashAsset && shares > 0 && avgPrice > 0) {
+          const impliedTotal = shares * avgPrice;
+          if (impliedTotal > 10000000000 && avgPrice > shares && avgPrice > 100000) {
+            avgPrice = Math.round(avgPrice / shares);
+          }
         }
 
-        if (!isCashAsset && shares > 0 && avgPrice > 0) {
-          // [1] TDF/자산배분 펀드: 기준가(원/1,000좌) 오인 보정
-          // 예: 1,109,908좌 × 기준가 1,271.79원 → 14.1억으로 오계산 → 실제 141만원 → ÷1000
-          const isTdfFund = shares > 100000 && (
-            name.includes("tdf") || name.includes("로자산배분") || name.includes("자산배분") || name.includes("생애주기")
-          );
-          if (isTdfFund && avgPrice > 100 && shares * avgPrice > 100000000) {
-            avgPrice = parseFloat((avgPrice / 1000).toFixed(4));
-          }
-          // [2] 일반 종목: avg_price가 매입금액 전체인 경우 (100억 초과)
-          else {
-            const impliedTotal = shares * avgPrice;
-            if (impliedTotal > 10000000000 && avgPrice > shares && avgPrice > 100000) {
-              avgPrice = Math.round(avgPrice / shares);
-            }
-          }
-        }
+        // KRW avg_price 소수점 제거
+        if (!h.currency || h.currency === "KRW") avgPrice = Math.round(avgPrice);
 
         return {
-          ...h,
+          ...h,                              // ticker, yahoo_ticker 그대로 유지 (Gemini 값)
           shares,
           avg_price: avgPrice,
           yahoo_ticker: h.yahoo_ticker || null,
@@ -2730,44 +2717,23 @@ function Portfolio() {
           change_pct: h.change_pct ?? null,
           account: h.account || detectedAccount,
         };
-      }).filter(h => h.shares > 0 && h.avg_price >= 0); // 수량 0이면 제외
+      }).filter(h => h.shares > 0 && h.avg_price >= 0);
 
-      // ── 종목명 자동 교정: 6자리 ticker → 네이버 한국어 정식명으로 교체 ──
-      // 스크린샷에서 잘린 이름도 ticker로 검색 후 정식명 복원
-      try {
-        const correctCodes = newHoldings.filter(h => /^\d{6}$/.test(h.ticker)).map(h => h.ticker);
-        if (correctCodes.length > 0) {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
-          const nr = await fetch(`/api/naver?type=names&codes=${correctCodes.join(",")}`, { signal: ctrl.signal });
-          clearTimeout(t);
-          if (nr.ok) {
-            const { names } = await nr.json();
-            if (Object.keys(names || {}).length > 0)
-              newHoldings = newHoldings.map(h => names[h.ticker] ? { ...h, name: names[h.ticker] } : h);
-          }
-        }
-      } catch(e) { console.warn("종목명 교정 실패:", e); }
-
-      // ── ticker 역조회: ticker 없는 KRW 종목 → resolveTickerCodes로 yahoo_ticker·ticker 채우기 ──
-      const noTickerKRW = newHoldings.filter(h => (!h.ticker || !h.yahoo_ticker) && (!h.currency || h.currency === "KRW"));
+      // ticker 없는 KRW 종목만 resolveTickerCodes로 보완 (CMA 등 코드 안 보이는 포맷)
+      const noTickerKRW = newHoldings.filter(h => !h.yahoo_ticker && (!h.currency || h.currency === "KRW"));
       if (noTickerKRW.length > 0) {
         setUploadMsg(`📡 종목코드 조회 중 (${noTickerKRW.length}개)...`);
         try {
           const resolved = await resolveTickerCodes(noTickerKRW);
           const resolvedMap = {};
-          resolved.forEach(h => { if (h.name) resolvedMap[h.name] = h; });
+          resolved.forEach(r => { if (r.name) resolvedMap[r.name] = r; });
           newHoldings = newHoldings.map(h => {
             const r = resolvedMap[h.name];
-            if (!r || !r.yahoo_ticker) return h;
-            const codeMatch = r.yahoo_ticker.match(/^(\d{6})\.(KS|KQ)$/);
-            return {
-              ...h,
-              yahoo_ticker: r.yahoo_ticker,
-              ticker: h.ticker || (codeMatch ? codeMatch[1] : h.ticker),
-            };
+            if (!r?.yahoo_ticker) return h;
+            const m = r.yahoo_ticker.match(/^(\d{6})\.(KS|KQ)$/);
+            return { ...h, yahoo_ticker: r.yahoo_ticker, ticker: m ? m[1] : (h.ticker || "") };
           });
-        } catch(e) { console.warn("ticker 역조회 실패:", e); }
+        } catch(e) { console.warn("ticker 보완 실패:", e); }
       }
 
       // 기존 같은 계좌가 있는지 확인 → 교체 or 추가
