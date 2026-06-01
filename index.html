@@ -2607,11 +2607,12 @@ function Portfolio() {
 - 종목명이 화면에서 잘린 경우 (...이나 줄바꿈 등): 아는 전체 이름으로 복원할 것. 복원 불가능하면 partial_fail에 넣을 것
 - shares(보유수량): 화면에 표시된 실제 보유 주수/좌수
 - avg_price(평균단가): 반드시 매입금액 ÷ shares 로 계산. TDF/자산배분 펀드의 실제 1좌당 단가는 1~3원 수준 (화면에 표시되는 기준가는 원/1,000좌 단위라 1,000~3,000원처럼 보임). 수량이 수만~백만 좌인 TDF/펀드는 화면의 기준가를 avg_price로 쓰지 말고 반드시 매입금액÷수량으로 계산 (예: 매입금액 1,411,160원 ÷ 1,109,908좌 = 1.27원). 일반 주식도 매입금액이 수백억 이상이면 의심 → 매입금액÷수량으로 재계산
-- 현금성자산 처리: "현금성자산", "미래에셋증권현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 shares=평가금액(원 단위 숫자), avg_price=1, current_price=1 로 처리. 절대 평가금액을 avg_price로 쓰지 말 것
+- 현금성자산 처리: "현금성자산", "미래에셋증권현금성자산", "MMF", "머니마켓", "CMA" 등 현금성 종목은 shares=평가금액(원 단위 숫자), avg_price=1, current_price=1 로 처리. 절대 평가금액을 avg_price로 쓰지 말 것. 데이터가 불분명하면 partial_fail로 보낼 것
+- TDF/펀드: avg_price 계산이 불확실하거나 1좌당 가격이 이상하면 partial_fail로 보낼 것 (억지로 넣는 것보다 실패 안내가 낫다)
 - current_price: 화면에 현재가/현재값이 보이면 숫자로 추출. 없으면 null
 - change_pct: 화면에 등락률(%)이 보이면 숫자로 추출 (예: +2.34 또는 -1.5). 없으면 null
 - TDF/MMF 등 현재가 조회가 어려운 종목도 화면에 표시된 값 그대로 추출
-- ticker: 한국 ETF/주식의 6자리 종목코드. 화면에 보이면 추출, 보이지 않아도 종목명으로 알 수 있으면 채울 것 (예: KODEX 코스피200→069500, TIGER 미국S&P500→360750, KODEX AI반도체TOP2플러스→314250, ACE 원자력TOP10→457690, TIGER 조선TOP10→494670, KODEX 코리아밸류업→480620, TIGER 미국우주테크→459260, KODEX 미국AI전력핵심인프라→453870, KODEX AI전력핵심설비→466940, KODEX 미국반도체→266270, TIGER 미국필라델피아반도체나스닥→381180, TIGER 구리실물→139310, TIGER 코스닥150→232080, ACE KRX금현물→411060, RISE 2차전지액티브→396510, ACE 미국빅테크TOP7 Plus→453580, KODEX 로봇액티브→381170, PLUS K방산→458730, TIME 글로벌AI인공지능액티브→449450, TIGER 미국배당다우존스→458730, TIGER 글로벌AI&로보틱스 INDXX→418720, TIGER 미국우주테크→459260, TIME K바이오액티브→411540, TIME 코스피액티브→391620, TIME 미국나스닥100액티브→395160, KODEX 증권→108590, ACE 미국S&P500→360200, RISE 미국나스닥100→133690, KODEX 미국반도체→266270). 모르면 빈 문자열
+- ticker: 한국 ETF/주식의 6자리 종목코드. 화면에 보이면 추출, 보이지 않아도 확실히 아는 경우만 채울 것. 불확실하면 반드시 빈 문자열로 둘 것 (틀린 코드 넣는 것보다 빈 것이 나음)
 - yahoo_ticker: 한국 코스피는 숫자코드.KS, 코스닥은 숫자코드.KQ (모르면 null)
 - account: 아래 규칙을 반드시 따를 것
   * 계좌명이 있으면 → 계좌명만 사용 (계좌번호, 계좌주 이름 모두 제외)
@@ -2650,21 +2651,21 @@ function Portfolio() {
         // total_count 불일치 감지: AI가 화면 종목수를 알고 있는데 파싱된 것이 적으면 경고
         const declaredTotal = parsed.total_count;
         const parsedCount = (parsed.holdings?.length || 0) + (parsed.partial_fail?.length || 0);
-        const hasCountMismatch = declaredTotal && parsedCount < declaredTotal && (parsed.partial_fail?.length || 0) === 0;
+        const hasCountMismatch = declaredTotal && parsedCount < declaredTotal;
         if (hasCountMismatch) {
           const missingCount = declaredTotal - parsedCount;
-          parsed.partial_fail = [...(parsed.partial_fail || []), ...Array(missingCount).fill("(인식 실패 - 스크린샷 스크롤 후 재업로드 권장)")];
+          parsed.partial_fail = [...(parsed.partial_fail || []), ...Array(missingCount).fill("(미확인 종목 - 스크롤 후 재업로드 권장)")];
         }
 
-        if (parsed.partial_fail?.length > 0) {
-          const realFails = parsed.partial_fail.filter(f => !f.includes("인식 실패 - "));
+        if ((parsed.partial_fail?.length || 0) > 0) {
+          const realFails = parsed.partial_fail.filter(f => !f.startsWith("(미확인"));
           const countFails = parsed.partial_fail.length - realFails.length;
-          const total = (parsed.holdings?.length || 0) + parsed.partial_fail.length;
+          const succeeded = parsed.holdings?.length || 0;
           const failCount = parsed.partial_fail.length;
-          let msg = `⚠️ ${total}개 종목 중 ${failCount}개 인식 실패\n\n`;
-          if (realFails.length > 0) msg += `실패 종목: ${realFails.join(", ")}\n`;
-          if (countFails > 0) msg += `+ ${countFails}개 미확인 (JSON 잘림 또는 AI 누락)\n`;
-          msg += `\n나머지 ${total - failCount}개 종목만 등록하시겠습니까?\n(취소 후 스크롤 내려 재업로드하면 나머지 추가 가능)`;
+          let msg = `⚠️ ${succeeded + failCount}개 종목 중 ${failCount}개 인식 실패\n\n`;
+          if (realFails.length > 0) msg += `실패 종목: ${realFails.join(", ")}\n\n`;
+          if (countFails > 0) msg += `미확인 ${countFails}개 (스크롤하여 재업로드 시 추가 가능)\n\n`;
+          msg += `나머지 ${succeeded}개 종목을 등록하시겠습니까?`;
           const proceed = window.confirm(msg);
           if (!proceed) { setUploading(false); setUploadMsg(""); return; }
         }
@@ -3891,7 +3892,13 @@ function Settings() {
           { done: true,  text: "계좌별 수익률 히스토리 분리" },
           { done: true,  text: "네이버 금융 기반 한국 ETF 현재가 조회" },
           { done: true,  text: "원/달러 환율 위젯" },
-          { done: false, text: "한국 종목 검색 시 한국어 이름 표시" },
+          { done: true,  text: "스크린샷 자동 인식 및 종목 등록" },
+          { done: true,  text: "종목 검색 (티커·한국어명 동시 지원)" },
+          { done: true,  text: "직접입력 모드 (TDF·펀드 등 검색 불가 종목)" },
+          { done: true,  text: "수정 모달 — 종목명·티커·현재가 변경 기능" },
+          { done: true,  text: "현재가 자동조회 / 직접입력 선택 기능" },
+          { done: true,  text: "TDF 1,000좌 기준가 오인식 버그 수정" },
+          { done: true,  text: "스크린샷 종목명 잘림 감지 및 partial_fail 안내" },
           { done: false, text: "배당 캘린더" },
           { done: false, text: "리밸런싱 가이드" },
           { done: false, text: "내 종목 뉴스 탭" },
@@ -3913,10 +3920,21 @@ function Settings() {
       <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 20 }}>
         <div style={{ fontSize: 13, color: "#7c3aed", fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>앱 정보</div>
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
-          <div>버전: 1.0.0</div>
-          <div>InvestIQ - AI 투자 어드바이저</div>
-          <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>
-            [!] 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+            <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.1.0</span>
+          </div>
+          <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
+          <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.1.0 변경사항</div>
+            <div>· 종목 수정 모달 — 종목명·티커 변경, 현재가 입력</div>
+            <div>· 종목 추가 — 직접입력 모드 (TDF·펀드)</div>
+            <div>· 스크린샷 인식 개선 (누락 감지, 명칭 자동 교정)</div>
+            <div>· TDF avg_price 1000배 버그 수정</div>
+            <div>· 소수점 저장 버그 수정</div>
+          </div>
+          <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
+            ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
           </div>
         </div>
       </div>
