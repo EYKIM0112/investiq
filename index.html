@@ -3866,7 +3866,7 @@ function Settings() {
           { done: true,  text: "현재가 자동조회 / 직접입력 선택 기능" },
           { done: true,  text: "TDF 1,000좌 기준가 오인식 버그 수정" },
           { done: true,  text: "스크린샷 종목명 잘림 감지 및 partial_fail 안내" },
-          { done: false, text: "배당 캘린더" },
+          { done: true,  text: "배당 캘린더 (배당 일정·예상 배당금·월별 그래프)" },
           { done: false, text: "리밸런싱 가이드" },
           { done: false, text: "내 종목 뉴스 탭" },
           { done: false, text: "해외 주식 현지통화 → KRW 자동 변환 표시" },
@@ -3889,20 +3889,325 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.1.2</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.2.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.1.2 변경사항</div>
-            <div>· 티커 오매칭 근본 수정 — 종목명 검색 후 이름 검증으로 엉뚱한 종목 차단</div>
-            <div>· 네이버 검색 우선 사용 (한국 ETF 정확도 향상, Yahoo는 백업)</div>
-            <div>· OCR 티커 무검증 신뢰 제거 (363570 국고채 오매칭 등 해결)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.2.0 변경사항</div>
+            <div>· 🆕 배당 캘린더 추가 — 보유 종목 배당 일정·예상 배당금</div>
+            <div>· 월별 배당 막대그래프 / 월별·종목별 집계</div>
+            <div>· Yahoo 과거 분배금 이력 기반 + Gemini 검색 폴백</div>
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- 배당 캘린더 ----------
+// 데이터: Yahoo 과거 분배금 이력(events=div) → 주기 판별 + 최근12개월 주당배당 → 미래 12개월 추정
+// 폴백: Yahoo 이력 없으면 Gemini Search로 연 배당수익률 조회
+const MONTH_LABELS = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+
+// 분배금 이력으로 배당 주기 판별
+function detectDividendFrequency(divs) {
+  if (!divs || divs.length < 2) return divs?.length === 1 ? "연 1회 추정" : "미확인";
+  // 최근 2년 내 지급 횟수로 판별
+  const now = Date.now() / 1000;
+  const recent = divs.filter(d => d.date > now - 2 * 365 * 86400);
+  if (recent.length < 2) return "연 1회 추정";
+  // 연평균 지급 횟수
+  const spanYears = (recent[recent.length - 1].date - recent[0].date) / (365 * 86400);
+  const perYear = spanYears > 0 ? recent.length / spanYears : recent.length;
+  if (perYear >= 10) return "월배당";
+  if (perYear >= 3.5) return "분기배당";
+  if (perYear >= 1.5) return "반기배당";
+  return "연배당";
+}
+
+// 주기별 연간 지급 횟수
+function freqToCount(freq) {
+  if (freq === "월배당") return 12;
+  if (freq === "분기배당") return 4;
+  if (freq === "반기배당") return 2;
+  return 1;
+}
+
+// 과거 지급월 패턴 추출 (미래 예측용)
+function getPaymentMonths(divs, freq) {
+  const count = freqToCount(freq);
+  if (!divs || divs.length === 0) {
+    // 이력 없음: 주기별 통상 지급월 가정
+    if (count === 12) return [0,1,2,3,4,5,6,7,8,9,10,11];
+    if (count === 4) return [0,3,6,9];     // 1·4·7·10월
+    if (count === 2) return [5,11];        // 6·12월
+    return [11];                            // 12월
+  }
+  // 최근 1년 지급월 수집
+  const now = Date.now() / 1000;
+  const lastYear = divs.filter(d => d.date > now - 400 * 86400);
+  const months = [...new Set(lastYear.map(d => new Date(d.date * 1000).getMonth()))].sort((a,b)=>a-b);
+  if (months.length >= count - 1) return months;
+  // 부족하면 전체 이력에서 보충
+  const allMonths = [...new Set(divs.map(d => new Date(d.date * 1000).getMonth()))].sort((a,b)=>a-b);
+  return allMonths.length > 0 ? allMonths : getPaymentMonths(null, freq);
+}
+
+function DividendCalendar() {
+  const [portfolio] = useState(() => loadPortfolio());
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [stockData, setStockData] = useState(null); // [{name, shares, freq, annualPerShare, annualTotal, months, source, currency}]
+  const [error, setError] = useState("");
+  const [viewMode, setViewMode] = useState("chart"); // chart | monthly | yearly | stocks
+
+  // 보유 종목 집계 (같은 종목 여러 계좌 → 수량 합산, 현금성 제외)
+  const holdings = React.useMemo(() => {
+    if (!portfolio?.holdings) return [];
+    const map = {};
+    portfolio.holdings.forEach(h => {
+      const nm = (h.name || "").toLowerCase();
+      if (["현금","mmf","머니마켓","cma","현금성"].some(k => nm.includes(k))) return;
+      if (!h.shares || h.shares <= 0) return;
+      if (!map[h.name]) {
+        map[h.name] = { name: h.name, shares: 0, yahoo_ticker: h.yahoo_ticker, ticker: h.ticker, currency: h.currency || "KRW", current_price: h.current_price };
+      }
+      map[h.name].shares += h.shares;
+      if (!map[h.name].yahoo_ticker && h.yahoo_ticker) map[h.name].yahoo_ticker = h.yahoo_ticker;
+      if (!map[h.name].current_price && h.current_price) map[h.name].current_price = h.current_price;
+    });
+    return Object.values(map);
+  }, [portfolio]);
+
+  const fetchDividends = async () => {
+    if (holdings.length === 0) { setError("보유 종목이 없습니다. 먼저 포트폴리오에 종목을 추가하세요."); return; }
+    setLoading(true); setError(""); setStockData(null);
+    const results = [];
+
+    for (let i = 0; i < holdings.length; i++) {
+      const h = holdings[i];
+      setProgress(`${i+1}/${holdings.length} · ${h.name}`);
+      let entry = null;
+
+      // 1차: Yahoo 과거 분배금 이력
+      const yTicker = h.yahoo_ticker || (/^\d{6}$/.test(h.ticker) ? h.ticker + ".KS" : null);
+      if (yTicker) {
+        try {
+          const res = await fetch(`/api/yahoo?type=dividends&ticker=${encodeURIComponent(yTicker)}&range=3y`);
+          if (res.ok) {
+            const d = await res.json();
+            if (d.dividends && d.dividends.length > 0) {
+              const freq = detectDividendFrequency(d.dividends);
+              const now = Date.now() / 1000;
+              // 최근 12개월 주당 배당 합
+              const last12 = d.dividends.filter(x => x.date > now - 365 * 86400);
+              const annualPerShare = last12.length > 0
+                ? last12.reduce((s, x) => s + x.amount, 0)
+                : d.dividends[d.dividends.length - 1].amount * freqToCount(freq); // 1년치 없으면 최근 1회 × 주기
+              const months = getPaymentMonths(d.dividends, freq);
+              entry = {
+                name: h.name, shares: h.shares, freq,
+                annualPerShare, annualTotal: annualPerShare * h.shares,
+                perPayment: annualPerShare / freqToCount(freq),
+                months, source: "Yahoo 이력", currency: d.currency || h.currency || "KRW",
+              };
+            }
+          }
+        } catch(e) {}
+      }
+
+      // 2차: Gemini Search 폴백 (Yahoo 이력 없음)
+      if (!entry) {
+        try {
+          const sys = "한국 ETF 배당 정보 전문가. 순수 JSON만 출력, 마크다운 없이.";
+          const usr = `"${h.name}" ETF의 배당 정보를 검색해서 JSON으로:\n{"yield_pct":연간배당수익률숫자또는null,"frequency":"월배당/분기배당/반기배당/연배당/무배당 중 하나","pay_months":[지급월숫자배열 예 1,4,7,10]}\n배당수익률은 최근 1년 기준 %. 무배당이면 yield_pct=0, frequency="무배당". 모르면 null.`;
+          const txt = await callGemini({ system: sys, user: usr, maxTokens: 300, useSearch: true });
+          const m = txt.replace(/```json|```/g, "").match(/\{[\s\S]*\}/);
+          if (m) {
+            const g = JSON.parse(m[0]);
+            if (g.frequency === "무배당" || g.yield_pct === 0) {
+              entry = { name: h.name, shares: h.shares, freq: "무배당", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "검색", currency: h.currency || "KRW" };
+            } else if (g.yield_pct > 0 && h.current_price > 0) {
+              const annualPerShare = h.current_price * (g.yield_pct / 100);
+              const freq = g.frequency || "연배당";
+              const months = (g.pay_months && g.pay_months.length) ? g.pay_months.map(x => x - 1) : getPaymentMonths(null, freq);
+              entry = {
+                name: h.name, shares: h.shares, freq,
+                annualPerShare, annualTotal: annualPerShare * h.shares,
+                perPayment: annualPerShare / freqToCount(freq),
+                months, source: "검색·추정", currency: h.currency || "KRW",
+                yieldPct: g.yield_pct,
+              };
+            }
+          }
+        } catch(e) {}
+      }
+
+      // 둘 다 실패
+      if (!entry) {
+        entry = { name: h.name, shares: h.shares, freq: "미확인", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "조회실패", currency: h.currency || "KRW" };
+      }
+      results.push(entry);
+    }
+
+    setStockData(results);
+    setProgress("");
+    setLoading(false);
+  };
+
+  // 월별 예상 배당금 집계 (KRW 기준, 외화는 환산 생략하고 별도 표기)
+  const monthlyTotals = React.useMemo(() => {
+    if (!stockData) return null;
+    const totals = Array(12).fill(0);
+    stockData.forEach(s => {
+      if (s.annualTotal <= 0 || !s.months.length) return;
+      const perMonth = s.annualTotal / s.months.length;
+      s.months.forEach(m => { if (m >= 0 && m < 12) totals[m] += perMonth; });
+    });
+    return totals;
+  }, [stockData]);
+
+  const annualTotal = React.useMemo(() => {
+    if (!stockData) return 0;
+    return stockData.reduce((sum, s) => sum + (s.annualTotal > 0 ? s.annualTotal : 0), 0);
+  }, [stockData]);
+
+  const fmt = (n) => Math.round(n).toLocaleString();
+  const fmtMan = (n) => n >= 10000 ? `${(n/10000).toFixed(1)}만` : fmt(n);
+
+  return (
+    <div className="card">
+      {/* 헤더 + 조회 버튼 */}
+      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f1f1a)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff" }}>💰 배당 캘린더</div>
+          <button onClick={fetchDividends} disabled={loading} style={{
+            background: loading ? "#22d3a011" : "#22d3a022", border: "1px solid #22d3a044",
+            color: "#22d3a0", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+            cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6,
+          }}>
+            {loading ? <><Spinner size={12}/>조회 중</> : stockData ? "🔄 다시 조회" : "📡 배당 조회"}
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+          보유 종목의 과거 분배금 이력으로 향후 1년 배당을 추정합니다.
+        </div>
+        {loading && progress && (
+          <div style={{ fontSize: 11, color: "#22d3a0", marginTop: 8 }}>{progress}</div>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>
+          {error}
+        </div>
+      )}
+
+      {!stockData && !loading && !error && (
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📅</div>
+          <div style={{ fontSize: 14, color: "#64748b" }}>위 "배당 조회" 버튼을 눌러<br/>보유 종목의 배당 일정을 확인하세요</div>
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 10 }}>보유 종목 {holdings.length}개</div>
+        </div>
+      )}
+
+      {stockData && (
+        <>
+          {/* 연간 예상 요약 */}
+          <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 18, marginBottom: 14, textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>연간 예상 배당금 (세전·추정)</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: "#22d3a0" }}>{fmt(annualTotal)}<span style={{ fontSize: 16, color: "#64748b" }}>원</span></div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>월 평균 {fmt(annualTotal/12)}원</div>
+          </div>
+
+          {/* 뷰 전환 탭 */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 14, background: "#0f0f18", borderRadius: 10, padding: 4 }}>
+            {[["chart","📊 월별그래프"],["monthly","📋 월별"],["stocks","📑 종목별"]].map(([id,label]) => (
+              <button key={id} onClick={() => setViewMode(id)} style={{
+                flex: 1, padding: "8px 4px", border: "none", borderRadius: 7,
+                background: viewMode === id ? "#22d3a022" : "transparent",
+                color: viewMode === id ? "#22d3a0" : "#64748b",
+                fontSize: 12, fontWeight: viewMode === id ? 700 : 500, cursor: "pointer",
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* 월별 막대그래프 */}
+          {viewMode === "chart" && monthlyTotals && (
+            <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "18px 14px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 16 }}>월별 예상 배당금</div>
+              {(() => {
+                const maxVal = Math.max(...monthlyTotals, 1);
+                return (
+                  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", height: 160, gap: 3 }}>
+                    {monthlyTotals.map((v, i) => {
+                      const h = v > 0 ? Math.max((v / maxVal) * 130, 4) : 0;
+                      const isMax = v === maxVal && v > 0;
+                      return (
+                        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
+                          {v > 0 && <div style={{ fontSize: 8, color: "#64748b", marginBottom: 3, whiteSpace: "nowrap" }}>{fmtMan(v)}</div>}
+                          <div style={{
+                            width: "100%", height: h, borderRadius: "3px 3px 0 0",
+                            background: isMax ? "linear-gradient(180deg,#22d3a0,#16a37e)" : "linear-gradient(180deg,#22d3a088,#22d3a044)",
+                            transition: "height 0.3s",
+                          }} />
+                          <div style={{ fontSize: 9, color: "#64748b", marginTop: 4 }}>{i+1}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 12, textAlign: "center" }}>단위: 원 · 과거 지급월 패턴 기반 분산 추정</div>
+            </div>
+          )}
+
+          {/* 월별 리스트 */}
+          {viewMode === "monthly" && monthlyTotals && (
+            <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 14 }}>
+              {monthlyTotals.map((v, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 4px", borderBottom: i < 11 ? "1px solid #1a1a2e" : "none" }}>
+                  <span style={{ fontSize: 13, color: v > 0 ? "#e2e8f0" : "#475569", fontWeight: 600 }}>{MONTH_LABELS[i]}</span>
+                  <span style={{ fontSize: 14, color: v > 0 ? "#22d3a0" : "#475569", fontWeight: v > 0 ? 700 : 400 }}>
+                    {v > 0 ? fmt(v) + "원" : "-"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 종목별 상세 */}
+          {viewMode === "stocks" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[...stockData].sort((a,b) => b.annualTotal - a.annualTotal).map((s, i) => (
+                <div key={i} style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", flex: 1, marginRight: 8 }}>{s.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: s.annualTotal > 0 ? "#22d3a0" : "#475569", whiteSpace: "nowrap" }}>
+                      {s.annualTotal > 0 ? "연 " + fmt(s.annualTotal) + "원" : s.freq}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#64748b" }}>
+                    <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>{s.freq}</span>
+                    {s.annualPerShare > 0 && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>주당 {fmt(s.annualPerShare)}원/년</span>}
+                    {s.yieldPct && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>수익률 {s.yieldPct}%</span>}
+                    <span style={{ background: s.source === "Yahoo 이력" ? "#22d3a015" : "#f59e0b15", color: s.source === "Yahoo 이력" ? "#22d3a0" : "#f59e0b", padding: "2px 7px", borderRadius: 5 }}>{s.source}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 추정 안내 */}
+          <div style={{ marginTop: 14, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+            ⚠️ <b style={{ color: "#94a3b8" }}>추정치 안내</b><br/>
+            한국 ETF는 미래 분배금이 사전 확정되지 않아, 과거 지급 이력과 배당수익률로 추정한 값입니다. 실제 배당은 시장 상황·운용 결과에 따라 달라집니다. 외화 종목은 현지통화 기준이며 환율 미반영입니다.
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -4133,8 +4438,9 @@ function IndexWidget() {
 function App() {
   const [tab, setTab] = useState("market");
   const tabs = [
-    { id: "market",    label: "시장 인사이트", icon: "" },
+    { id: "market",    label: "인사이트",     icon: "" },
     { id: "portfolio", label: "포트폴리오",    icon: "" },
+    { id: "dividend",  label: "배당",          icon: "" },
     { id: "advisor",   label: "AI 조언",       icon: "" },
     { id: "settings",  label: "설정",          icon: "" },
   ];
@@ -4202,6 +4508,7 @@ function App() {
       <div style={{ padding: "12px 14px 60px" }}>
         <div style={{ display: tab === "market"    ? "block" : "none" }}><MarketInsight /></div>
         <div style={{ display: tab === "portfolio" ? "block" : "none" }}><Portfolio /></div>
+        <div style={{ display: tab === "dividend"  ? "block" : "none" }}>{tab === "dividend" && <DividendCalendar />}</div>
         <div style={{ display: tab === "advisor"   ? "block" : "none" }}><Advisor /></div>
         <div style={{ display: tab === "settings"  ? "block" : "none" }}><Settings /></div>
       </div>
