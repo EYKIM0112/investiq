@@ -3656,11 +3656,28 @@ function Portfolio() {
 }
 
 // ---------- AI 조언 탭 ----------
+const ADV_CACHE_KEY = "investiq_advisor_chat_v1";
+
 function Advisor() {
   const [loading, setLoading]       = useState(false);
   const [question, setQuestion]     = useState("");
-  const [chatHistory, setChatHistory] = useState([]);
+  // localStorage 캐시 초기 로드 ('내용 삭제' 전까진 유지, 토큰 절약)
+  const [chatHistory, setChatHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(ADV_CACHE_KEY) || "[]"); } catch { return []; }
+  });
   const portfolio = loadPortfolio();
+
+  // chatHistory 변경 시 localStorage 저장 (스트리밍 도중 응답도 보존)
+  React.useEffect(() => {
+    try {
+      if (chatHistory.length) localStorage.setItem(ADV_CACHE_KEY, JSON.stringify(chatHistory));
+      else localStorage.removeItem(ADV_CACHE_KEY);
+    } catch(e) {}
+  }, [chatHistory]);
+
+  const clearChat = () => {
+    if (window.confirm("AI 조언 대화 내용을 모두 지울까요?")) setChatHistory([]);
+  };
 
   const getAdvice = async (q, isRetry = false) => {
     if (!q) return;
@@ -3768,6 +3785,16 @@ function Advisor() {
           {loading ? <Spinner size={16} /> : "전송"}
         </button>
       </div>
+
+      {chatHistory.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <button onClick={clearChat} disabled={loading} style={{
+            background: "#16162a", border: "1px solid #334155", color: "#94a3b8",
+            borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.5 : 1,
+          }}>🗑 내용 삭제</button>
+        </div>
+      )}
 
       {chatHistory.length === 0 && !loading && (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#64748b" }}>
@@ -3901,14 +3928,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.2.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.3.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.2.0 변경사항</div>
-            <div>· 🆕 배당 캘린더 추가 — 보유 종목 배당 일정·예상 배당금</div>
-            <div>· 월별 배당 막대그래프 / 월별·종목별 집계</div>
-            <div>· Yahoo 과거 분배금 이력 기반 + Gemini 검색 폴백</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.3.0 변경사항</div>
+            <div>· 🆕 배당 캘린더 달력 뷰 — 월별 리스트에서 월 터치 시 날짜별 배당 일정</div>
+            <div>· 종목별 지급일 표시 (예: 매월 25일경 / 3·6·9·12월)</div>
+            <div>· 배당 조회 결과 localStorage 캐싱 — 새로고침해도 유지, 토큰 절약</div>
+            <div>· AI 조언 대화 보존 + '내용 삭제' 버튼</div>
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
@@ -3968,13 +3996,136 @@ function getPaymentMonths(divs, freq) {
   return allMonths.length > 0 ? allMonths : getPaymentMonths(null, freq);
 }
 
+// 과거 분배락일에서 대표 지급일(일자) 추출 — 최근 이력의 일(day) 중앙값
+function getPayDay(divs) {
+  if (!divs || divs.length === 0) return null;
+  const now = Date.now() / 1000;
+  const recent = divs.filter(d => d.date > now - 400 * 86400);
+  const pool = recent.length >= 1 ? recent : divs.slice(-6);
+  const days = pool.map(d => new Date(d.date * 1000).getDate()).sort((a, b) => a - b);
+  if (!days.length) return null;
+  return days[Math.floor(days.length / 2)]; // 중앙값
+}
+
+// 종목별 지급 일정 라벨 (예: "매월 25일경", "3·6·9·12월 15일경")
+function scheduleLabel(s) {
+  if (!s.months || !s.months.length || s.annualTotal <= 0) return null;
+  const dayStr = s.payDay ? `${s.payDay}일경` : "";
+  if (s.freq === "월배당") return dayStr ? `매월 ${dayStr}` : "매월";
+  const monthsStr = [...s.months].sort((a, b) => a - b).map(m => m + 1).join("·") + "월";
+  return dayStr ? `${monthsStr} ${dayStr}` : monthsStr;
+}
+
+// ---------- 월 캘린더 (특정 월의 배당 일정 표시) ----------
+// events: [{ name, amount, day(or null), freq }]
+function MonthCalendar({ month, events, onClose }) {
+  const [selDay, setSelDay] = useState(null);
+  const year = new Date().getFullYear(); // 요일 배치는 올해 기준
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startDow = new Date(year, month, 1).getDay(); // 0=일
+
+  // 날짜별 그룹 + 날짜 미정 분리
+  const byDay = {};
+  const undated = [];
+  (events || []).forEach(e => {
+    if (e.day && e.day >= 1 && e.day <= daysInMonth) {
+      (byDay[e.day] = byDay[e.day] || []).push(e);
+    } else {
+      undated.push(e);
+    }
+  });
+
+  const fmt = (n) => Math.round(n).toLocaleString();
+  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const selEvents = selDay ? (byDay[selDay] || []) : [];
+
+  return (
+    <div style={{ background: "#0f0f18", border: "1px solid #22d3a044", borderRadius: 14, padding: 14, marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "#22d3a0" }}>📅 {MONTH_LABELS[month]} 배당 일정</div>
+        <button onClick={onClose} style={{ background: "none", border: "1px solid #334155", color: "#64748b", borderRadius: 8, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>닫기 ✕</button>
+      </div>
+
+      {/* 요일 헤더 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 4 }}>
+        {DOW.map((d, i) => (
+          <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: i === 0 ? "#f87171" : i === 6 ? "#60a5fa" : "#64748b", padding: "2px 0" }}>{d}</div>
+        ))}
+      </div>
+
+      {/* 날짜 그리드 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`e${i}`} />;
+          const has = !!byDay[d];
+          const isSel = selDay === d;
+          return (
+            <button key={d} onClick={() => has && setSelDay(isSel ? null : d)} disabled={!has} style={{
+              aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              border: isSel ? "1px solid #22d3a0" : has ? "1px solid #22d3a044" : "1px solid transparent",
+              background: isSel ? "#22d3a022" : has ? "#22d3a00d" : "transparent",
+              borderRadius: 8, cursor: has ? "pointer" : "default", padding: 0,
+            }}>
+              <span style={{ fontSize: 12, fontWeight: has ? 700 : 400, color: has ? "#e2e8f0" : "#475569" }}>{d}</span>
+              {has && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#22d3a0", marginTop: 2 }} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 선택한 날짜 상세 */}
+      {selDay && selEvents.length > 0 && (
+        <div style={{ marginTop: 12, background: "#16162a", borderRadius: 10, padding: "10px 12px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#22d3a0", marginBottom: 6 }}>{month + 1}월 {selDay}일경 지급 예정</div>
+          {selEvents.map((e, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: i < selEvents.length - 1 ? "1px solid #1e293b" : "none" }}>
+              <span style={{ fontSize: 12, color: "#cbd5e1", flex: 1, marginRight: 8 }}>{e.name}</span>
+              <span style={{ fontSize: 13, color: "#22d3a0", fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(e.amount)}원</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 날짜 미정 (검색·추정 종목) */}
+      {undated.length > 0 && (
+        <div style={{ marginTop: 12, background: "#16162a", borderRadius: 10, padding: "10px 12px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 6 }}>📌 날짜 미정 (월 중 지급 추정)</div>
+          {undated.map((e, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: i < undated.length - 1 ? "1px solid #1e293b" : "none" }}>
+              <span style={{ fontSize: 12, color: "#cbd5e1", flex: 1, marginRight: 8 }}>{e.name}</span>
+              <span style={{ fontSize: 13, color: "#94a3b8", fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(e.amount)}원</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize: 10, color: "#475569", marginTop: 10, lineHeight: 1.5 }}>
+        * 날짜에 표시된 점을 터치하면 상세가 나옵니다. 지급일은 과거 분배락일 기준 추정이며, 요일 배치는 {year}년 기준입니다.
+      </div>
+    </div>
+  );
+}
+
+const DIV_CACHE_KEY = "investiq_dividend_cache_v1";
+
 function DividendCalendar() {
   const [portfolio] = useState(() => loadPortfolio());
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
-  const [stockData, setStockData] = useState(null); // [{name, shares, freq, annualPerShare, annualTotal, months, source, currency}]
+  // localStorage 캐시 초기 로드 (F5/새로고침해도 유지, '다시 조회' 눌러야만 갱신)
+  const [stockData, setStockData] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DIV_CACHE_KEY) || "null")?.data || null; } catch { return null; }
+  });
+  const [updatedAt, setUpdatedAt] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DIV_CACHE_KEY) || "null")?.ts || null; } catch { return null; }
+  });
   const [error, setError] = useState("");
-  const [viewMode, setViewMode] = useState("chart"); // chart | monthly | yearly | stocks
+  const [viewMode, setViewMode] = useState("chart"); // chart | monthly | stocks
+  const [calMonth, setCalMonth] = useState(null);     // 달력 펼친 월 (0~11) | null
 
   // 보유 종목 집계 (같은 종목 여러 계좌 → 수량 합산, 현금성 제외)
   const holdings = React.useMemo(() => {
@@ -3996,7 +4147,7 @@ function DividendCalendar() {
 
   const fetchDividends = async () => {
     if (holdings.length === 0) { setError("보유 종목이 없습니다. 먼저 포트폴리오에 종목을 추가하세요."); return; }
-    setLoading(true); setError(""); setStockData(null);
+    setLoading(true); setError(""); // 조회 중에도 기존 결과 유지
     const results = [];
 
     for (let i = 0; i < holdings.length; i++) {
@@ -4025,6 +4176,7 @@ function DividendCalendar() {
                 annualPerShare, annualTotal: annualPerShare * h.shares,
                 perPayment: annualPerShare / freqToCount(freq),
                 months, source: "Yahoo 이력", currency: d.currency || h.currency || "KRW",
+                payDay: getPayDay(d.dividends),
               };
             }
           }
@@ -4041,7 +4193,7 @@ function DividendCalendar() {
           if (m) {
             const g = JSON.parse(m[0]);
             if (g.frequency === "무배당" || g.yield_pct === 0) {
-              entry = { name: h.name, shares: h.shares, freq: "무배당", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "검색", currency: h.currency || "KRW" };
+              entry = { name: h.name, shares: h.shares, freq: "무배당", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "검색", currency: h.currency || "KRW", payDay: null };
             } else if (g.yield_pct > 0 && h.current_price > 0) {
               const annualPerShare = h.current_price * (g.yield_pct / 100);
               const freq = g.frequency || "연배당";
@@ -4051,7 +4203,7 @@ function DividendCalendar() {
                 annualPerShare, annualTotal: annualPerShare * h.shares,
                 perPayment: annualPerShare / freqToCount(freq),
                 months, source: "검색·추정", currency: h.currency || "KRW",
-                yieldPct: g.yield_pct,
+                yieldPct: g.yield_pct, payDay: null,
               };
             }
           }
@@ -4060,12 +4212,15 @@ function DividendCalendar() {
 
       // 둘 다 실패
       if (!entry) {
-        entry = { name: h.name, shares: h.shares, freq: "미확인", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "조회실패", currency: h.currency || "KRW" };
+        entry = { name: h.name, shares: h.shares, freq: "미확인", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "조회실패", currency: h.currency || "KRW", payDay: null };
       }
       results.push(entry);
     }
 
+    const ts = Date.now();
     setStockData(results);
+    setUpdatedAt(ts);
+    try { localStorage.setItem(DIV_CACHE_KEY, JSON.stringify({ data: results, ts })); } catch(e) {}
     setProgress("");
     setLoading(false);
   };
@@ -4087,6 +4242,37 @@ function DividendCalendar() {
     return stockData.reduce((sum, s) => sum + (s.annualTotal > 0 ? s.annualTotal : 0), 0);
   }, [stockData]);
 
+  // 달력용: 월(0~11) → [{name, amount, day, freq}]
+  const calendarEvents = React.useMemo(() => {
+    if (!stockData) return null;
+    const byMonth = {};
+    for (let m = 0; m < 12; m++) byMonth[m] = [];
+    stockData.forEach(s => {
+      if (s.annualTotal <= 0 || !s.months || !s.months.length) return;
+      const amt = s.annualTotal / s.months.length;
+      s.months.forEach(m => {
+        if (m >= 0 && m < 12) byMonth[m].push({ name: s.name, amount: amt, day: s.payDay || null, freq: s.freq });
+      });
+    });
+    return byMonth;
+  }, [stockData]);
+
+  // 캐시된 데이터와 현재 보유 종목이 다른지 (다시 조회 권장 힌트)
+  const holdingsChanged = React.useMemo(() => {
+    if (!stockData) return false;
+    const cached = new Set(stockData.map(s => s.name));
+    const cur = new Set(holdings.map(h => h.name));
+    if (cached.size !== cur.size) return true;
+    for (const n of cur) if (!cached.has(n)) return true;
+    return false;
+  }, [stockData, holdings]);
+
+  const lastUpdatedStr = React.useMemo(() => {
+    if (!updatedAt) return "";
+    const d = new Date(updatedAt);
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }, [updatedAt]);
+
   const fmt = (n) => Math.round(n).toLocaleString();
   const fmtMan = (n) => n >= 10000 ? `${(n/10000).toFixed(1)}만` : fmt(n);
 
@@ -4107,6 +4293,12 @@ function DividendCalendar() {
         <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
           보유 종목의 과거 분배금 이력으로 향후 1년 배당을 추정합니다.
         </div>
+        {!loading && updatedAt && (
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>마지막 조회: {lastUpdatedStr}</div>
+        )}
+        {!loading && holdingsChanged && (
+          <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 6 }}>⚠️ 보유 종목이 변경됐어요. "다시 조회"를 권장합니다.</div>
+        )}
         {loading && progress && (
           <div style={{ fontSize: 11, color: "#22d3a0", marginTop: 8 }}>{progress}</div>
         )}
@@ -4177,18 +4369,36 @@ function DividendCalendar() {
             </div>
           )}
 
-          {/* 월별 리스트 */}
+          {/* 월별 리스트 (월 터치 → 달력) */}
           {viewMode === "monthly" && monthlyTotals && (
-            <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 14 }}>
-              {monthlyTotals.map((v, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 4px", borderBottom: i < 11 ? "1px solid #1a1a2e" : "none" }}>
-                  <span style={{ fontSize: 13, color: v > 0 ? "#e2e8f0" : "#475569", fontWeight: 600 }}>{MONTH_LABELS[i]}</span>
-                  <span style={{ fontSize: 14, color: v > 0 ? "#22d3a0" : "#475569", fontWeight: v > 0 ? 700 : 400 }}>
-                    {v > 0 ? fmt(v) + "원" : "-"}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: 14 }}>
+                {monthlyTotals.map((v, i) => {
+                  const clickable = v > 0;
+                  const isOpen = calMonth === i;
+                  return (
+                    <div key={i} onClick={() => clickable && setCalMonth(isOpen ? null : i)} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 4px",
+                      borderBottom: i < 11 ? "1px solid #1a1a2e" : "none",
+                      cursor: clickable ? "pointer" : "default",
+                      background: isOpen ? "#22d3a00d" : "transparent", borderRadius: 8,
+                    }}>
+                      <span style={{ fontSize: 13, color: v > 0 ? "#e2e8f0" : "#475569", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                        {MONTH_LABELS[i]}
+                        {clickable && <span style={{ fontSize: 11, color: isOpen ? "#22d3a0" : "#475569" }}>📅</span>}
+                      </span>
+                      <span style={{ fontSize: 14, color: v > 0 ? "#22d3a0" : "#475569", fontWeight: v > 0 ? 700 : 400 }}>
+                        {v > 0 ? fmt(v) + "원" : "-"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 8, textAlign: "center" }}>배당이 있는 월을 터치하면 달력으로 날짜별 일정을 볼 수 있어요</div>
+              {calMonth !== null && calendarEvents && (
+                <MonthCalendar month={calMonth} events={calendarEvents[calMonth]} onClose={() => setCalMonth(null)} />
+              )}
+            </>
           )}
 
           {/* 종목별 상세 */}
@@ -4204,6 +4414,7 @@ function DividendCalendar() {
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#64748b" }}>
                     <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>{s.freq}</span>
+                    {scheduleLabel(s) && <span style={{ background: "#22d3a015", color: "#22d3a0", padding: "2px 7px", borderRadius: 5 }}>📅 {scheduleLabel(s)}</span>}
                     {s.annualPerShare > 0 && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>주당 {fmt(s.annualPerShare)}원/년</span>}
                     {s.yieldPct && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>수익률 {s.yieldPct}%</span>}
                     <span style={{ background: s.source === "Yahoo 이력" ? "#22d3a015" : "#f59e0b15", color: s.source === "Yahoo 이력" ? "#22d3a0" : "#f59e0b", padding: "2px 7px", borderRadius: 5 }}>{s.source}</span>
