@@ -2625,6 +2625,7 @@ function Portfolio() {
 1. 종목명에 "..." 또는 "…"이 포함된 경우 (예: "KODEX 코리아밸...", "TIGER 미국우주테크...") → 이름이 완전하지 않으므로 무조건 partial_fail. 설령 수량과 금액이 읽혀도 절대 holdings에 넣지 말 것.
 2. 화면 하단에서 행 전체가 잘려서 수량/금액 중 하나라도 없는 경우
 3. 숫자가 흐리거나 가려져 정확히 읽을 수 없는 경우
+4. 보유수량이 0이거나 평가금액이 0인 경우 (전량 매도된 종목) → holdings에 넣지 말고 partial_fail로
 → partial_fail에 넣을 때는 화면에서 읽은 텍스트 그대로 기록
 
 {"holdings":[{"ticker":"","yahoo_ticker":null,"name":"브랜드포함종목명","shares":수량,"avg_price":평균단가,"current_price":현재가또는null,"change_pct":등락률또는null,"currency":"KRW","sector":"섹터","account":"계좌명"}],"account_type":"국내/해외/혼합","account":"계좌명","cash":예수금,"partial_fail":["잘린종목명"],"total_count":화면상단종목수또는null}`,
@@ -2643,6 +2644,17 @@ function Portfolio() {
           }
         }
 
+        // 수량/단가 없는 종목 → 해당 종목만 partial_fail로 분리 (전량 매도 후 0으로 남은 종목 등)
+        // 현금성자산(avg_price=1이 정상)은 제외하고 판단
+        if (parsed?.holdings) {
+          const isCash = (nm) => ["현금","mmf","머니마켓","cma","현금성"].some(k => (nm||"").toLowerCase().includes(k));
+          const missingData = parsed.holdings.filter(h => !isCash(h.name) && (!h.shares || h.shares <= 0 || !h.avg_price || h.avg_price <= 0));
+          if (missingData.length > 0) {
+            parsed.holdings = parsed.holdings.filter(h => isCash(h.name) || (h.shares > 0 && h.avg_price > 0));
+            parsed.partial_fail = [...(parsed.partial_fail || []), ...missingData.map(h => `${h.name} (수량/단가 없음)`)];
+          }
+        }
+
         // 부분 인식 실패 안내
         // total_count 불일치 감지: AI가 화면 종목수를 알고 있는데 파싱된 것이 적으면 경고
         const declaredTotal = parsed.total_count;
@@ -2652,6 +2664,8 @@ function Portfolio() {
           const missingCount = declaredTotal - parsedCount;
           parsed.partial_fail = [...(parsed.partial_fail || []), ...Array(missingCount).fill("(미확인 종목 - 스크롤 후 재업로드 권장)")];
         }
+
+        if (!parsed?.holdings?.length && !(parsed.partial_fail?.length)) throw new Error("종목을 인식할 수 없습니다.\n계좌 잔고 화면의 스크린샷을 올려주세요.");
 
         if ((parsed.partial_fail?.length || 0) > 0) {
           const realFails = parsed.partial_fail.filter(f => !f.startsWith("(미확인"));
@@ -2665,9 +2679,7 @@ function Portfolio() {
           const proceed = window.confirm(msg);
           if (!proceed) { setUploading(false); setUploadMsg(""); return; }
         }
-        if (!parsed?.holdings?.length) throw new Error("종목을 인식할 수 없습니다.\n계좌 잔고 화면의 스크린샷을 올려주세요.");
-        const missingData = parsed.holdings.filter(h => !h.shares || !h.avg_price);
-        if (missingData.length > 0) throw new Error(`${missingData.length}개 종목의 수량/단가를 확인할 수 없습니다.\n수량과 평균단가가 보이는 화면을 올려주세요.`);
+        if (!parsed?.holdings?.length) throw new Error("등록할 수 있는 종목이 없습니다.\n수량과 평균단가가 보이는 화면을 올려주세요.");
 
       } else if (isSpreadsheet) {
         parsed = await analyzeSpreadsheet(file);
