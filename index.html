@@ -3905,11 +3905,14 @@ function Settings() {
           { done: true,  text: "현재가 자동조회 / 직접입력 선택 기능" },
           { done: true,  text: "TDF 1,000좌 기준가 오인식 버그 수정" },
           { done: true,  text: "스크린샷 종목명 잘림 감지 및 partial_fail 안내" },
-          { done: true,  text: "배당 캘린더 (배당 일정·예상 배당금·월별 그래프)" },
-          { done: false, text: "리밸런싱 가이드" },
-          { done: false, text: "내 종목 뉴스 탭" },
-          { done: false, text: "해외 주식 현지통화 → KRW 자동 변환 표시" },
-          { done: false, text: "포폴 전체를 KRW / USD 선택 통일 기능" },
+          { done: true,  text: "배당 캘린더 (일정·예상 배당금·달력 뷰)" },
+          { done: true,  text: "리밸런싱 가이드 (목표 vs 현재 비중 시각화)" },
+          { done: true,  text: "내 종목 뉴스 탭 (포폴 종목 뉴스 필터링)" },
+          { done: false, text: "🟡 수익률 벤치마크 비교 (내 포폴 vs 코스피/S&P500/코스닥)" },
+          { done: false, text: "🟡 매매 메모/일지 (종목별 매수 이유 기록)" },
+          { done: false, text: "🟡 환율 자동 반영 (USD/KRW 선택 · 실시간 환율)" },
+          { done: false, text: "🟢 위험도 점수 (변동성·집중도 점수화)" },
+          { done: false, text: "🟢 세금 계산기 (양도세·금융투자세 예상액)" },
         ].map((item, i) => (
           <div key={i} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
             <span style={{ fontSize:13, color: item.done ? "#22d3a0" : "#64748b", flexShrink:0, marginTop:1 }}>
@@ -3928,15 +3931,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.3.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.4.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.3.0 변경사항</div>
-            <div>· 🆕 배당 캘린더 달력 뷰 — 월별 리스트에서 월 터치 시 날짜별 배당 일정</div>
-            <div>· 종목별 지급일 표시 (예: 매월 25일경 / 3·6·9·12월)</div>
-            <div>· 배당 조회 결과 localStorage 캐싱 — 새로고침해도 유지, 토큰 절약</div>
-            <div>· AI 조언 대화 보존 + '내용 삭제' 버튼</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.4.0 변경사항</div>
+            <div>· 🆕 리밸런싱 가이드 — 섹터별 목표 vs 현재 비중·필요 매매금액 (로컬 계산)</div>
+            <div>· 🆕 내 종목 뉴스 탭 — 보유 종목 뉴스 1회 검색·캐싱</div>
+            <div>· 모든 API 기능 캐싱 — 다시 조회 전까지 결과 유지 (토큰 절약)</div>
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
@@ -4658,12 +4660,296 @@ function IndexWidget() {
   );
 }
 
+// ---------- 리밸런싱 가이드 (로컬 계산, 토큰 사용 없음) ----------
+const REBAL_TARGET_KEY = "investiq_rebalance_targets_v1";
+
+function RebalanceGuide() {
+  const [portfolio] = useState(() => loadPortfolio());
+  const [targets, setTargets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(REBAL_TARGET_KEY) || "{}"); } catch { return {}; }
+  });
+
+  // 섹터별 현재 평가액 (현금 포함)
+  const { sectorValues, grand, hasUSD } = React.useMemo(() => {
+    const map = {}; let usd = false;
+    (portfolio?.holdings || []).forEach(h => {
+      if (!h.shares || h.shares <= 0) return;
+      if (h.currency === "USD") usd = true;
+      const v = h.shares * (h.current_price || h.avg_price || 0);
+      const sk = getSectorLabel(h.sector, h.name);
+      map[sk] = (map[sk] || 0) + v;
+    });
+    const cash = portfolio?.cash || 0;
+    if (cash > 0) map["현금"] = (map["현금"] || 0) + cash;
+    const g = Object.values(map).reduce((s, v) => s + v, 0);
+    return { sectorValues: map, grand: g, hasUSD: usd };
+  }, [portfolio]);
+
+  const sectors = React.useMemo(() => {
+    const set = new Set([...Object.keys(sectorValues), ...Object.keys(targets)]);
+    return [...set].sort((a, b) => (sectorValues[b] || 0) - (sectorValues[a] || 0));
+  }, [sectorValues, targets]);
+
+  const targetSum = Object.values(targets).reduce((s, v) => s + (Number(v) || 0), 0);
+
+  const persist = (next) => {
+    setTargets(next);
+    try {
+      if (Object.keys(next).length) localStorage.setItem(REBAL_TARGET_KEY, JSON.stringify(next));
+      else localStorage.removeItem(REBAL_TARGET_KEY);
+    } catch(e) {}
+  };
+  const setTarget = (sector, val) => {
+    const next = { ...targets };
+    if (val === "" || val === null) delete next[sector];
+    else next[sector] = Math.max(0, Math.min(100, Number(val) || 0));
+    persist(next);
+  };
+  const fillCurrent = () => {
+    const next = {};
+    sectors.forEach(s => { if (grand > 0 && sectorValues[s]) next[s] = Math.round((sectorValues[s] / grand) * 1000) / 10; });
+    persist(next);
+  };
+  const resetTargets = () => { if (window.confirm("목표 비중을 모두 지울까요?")) persist({}); };
+
+  const fmt = (n) => Math.round(n).toLocaleString();
+  const fmtMan = (n) => Math.abs(n) >= 10000 ? `${Math.round(n/10000).toLocaleString()}만` : fmt(n);
+
+  const rows = sectors.map(s => {
+    const curV = sectorValues[s] || 0;
+    const curPct = grand > 0 ? curV / grand * 100 : 0;
+    const hasTgt = targets[s] !== undefined && targets[s] !== "";
+    const tgtPct = Number(targets[s]) || 0;
+    const tgtV = grand * tgtPct / 100;
+    const diffV = tgtV - curV;
+    const diffPct = tgtPct - curPct;
+    return { sector: s, curV, curPct, hasTgt, tgtPct, diffV, diffPct };
+  });
+
+  const TH = 1.0; // 허용 오차 %p
+  const sumOk = Math.abs(targetSum - 100) < 0.5;
+
+  return (
+    <div className="card">
+      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#1a0f2e)", border: "1px solid #2a2a48", borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff", marginBottom: 6 }}>⚖️ 리밸런싱 가이드</div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>섹터별 목표 비중을 설정하면 현재 비중과의 차이·필요 매매금액을 계산합니다. (실시간 계산 · API 사용 없음)</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: "#94a3b8" }}>총 평가액 <b style={{ color: "#e2e8f0" }}>{fmt(grand)}원</b></div>
+          <div style={{ fontSize: 12, color: sumOk ? "#22d3a0" : "#f59e0b", fontWeight: 700 }}>목표 합계 {targetSum.toFixed(1)}%{!sumOk && " (100% 권장)"}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <button onClick={fillCurrent} style={{ flex: 1, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a8b4f8", borderRadius: 8, padding: "9px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>현재 비중으로 채우기</button>
+        <button onClick={resetTargets} style={{ background: "#16162a", border: "1px solid #334155", color: "#94a3b8", borderRadius: 8, padding: "9px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>초기화</button>
+      </div>
+
+      {grand <= 0 && (
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>⚖️</div>
+          <div style={{ fontSize: 14, color: "#64748b" }}>포트폴리오에 종목을 먼저 등록하세요</div>
+        </div>
+      )}
+
+      {grand > 0 && rows.map((r, i) => {
+        const isBuy = r.hasTgt && r.diffPct > TH;
+        const isSell = r.hasTgt && r.diffPct < -TH;
+        const barColor = isBuy ? "#22d3a0" : isSell ? "#ef4444" : "#64748b";
+        return (
+          <div key={i} style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>{r.sector}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                <span style={{ color: "#94a3b8" }}>현재 <b style={{ color: "#e2e8f0" }}>{r.curPct.toFixed(1)}%</b></span>
+                <span style={{ color: "#475569" }}>→</span>
+                <span style={{ color: "#94a3b8" }}>목표</span>
+                <input
+                  value={targets[r.sector] ?? ""}
+                  onChange={e => setTarget(r.sector, e.target.value.replace(/[^0-9.]/g, ""))}
+                  inputMode="decimal" placeholder="-"
+                  style={{ width: 46, background: "#16162a", border: "1px solid #334155", borderRadius: 6, color: "#22d3a0", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "4px 2px", outline: "none" }}
+                />
+                <span style={{ color: "#64748b" }}>%</span>
+              </div>
+            </div>
+
+            {/* 비중 바 (현재 채움 + 목표 마커) */}
+            <div style={{ position: "relative", height: 8, background: "#16162a", borderRadius: 4, marginTop: 10 }}>
+              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.min(r.curPct, 100)}%`, background: barColor, borderRadius: 4, transition: "width 0.3s" }} />
+              {r.hasTgt && (
+                <div style={{ position: "absolute", left: `${Math.min(r.tgtPct, 100)}%`, top: -3, width: 2, height: 14, background: "#f1f5f9", transform: "translateX(-1px)" }} />
+              )}
+            </div>
+
+            {/* 액션 */}
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              {!r.hasTgt && <span style={{ color: "#475569" }}>목표 미설정</span>}
+              {isBuy && <span style={{ color: "#22d3a0", fontWeight: 700 }}>▲ {r.diffPct.toFixed(1)}%p 부족 · 약 {fmtMan(r.diffV)}원 매수</span>}
+              {isSell && <span style={{ color: "#ef4444", fontWeight: 700 }}>▼ {Math.abs(r.diffPct).toFixed(1)}%p 초과 · 약 {fmtMan(Math.abs(r.diffV))}원 매도</span>}
+              {r.hasTgt && !isBuy && !isSell && <span style={{ color: "#64748b" }}>✓ 목표 근접</span>}
+            </div>
+          </div>
+        );
+      })}
+
+      {grand > 0 && (
+        <div style={{ marginTop: 14, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+          ⚠️ <b style={{ color: "#94a3b8" }}>참고</b> · 흰색 세로선은 목표 비중 위치, 막대는 현재 비중입니다. 매수/매도 금액은 목표 도달에 필요한 추정액입니다.
+          {hasUSD && " 외화(USD) 종목은 환율 미반영(현지통화 기준)이라 실제 비중과 차이가 있을 수 있습니다."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- 종목 뉴스 (Gemini 검색 1회 · 캐싱) ----------
+const NEWS_CACHE_KEY = "investiq_news_cache_v1";
+
+function StockNews() {
+  const [portfolio] = useState(() => loadPortfolio());
+  const [loading, setLoading] = useState(false);
+  const [newsData, setNewsData] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(NEWS_CACHE_KEY) || "null")?.data || null; } catch { return null; }
+  });
+  const [updatedAt, setUpdatedAt] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(NEWS_CACHE_KEY) || "null")?.ts || null; } catch { return null; }
+  });
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState({});
+
+  const stocks = React.useMemo(() => {
+    const names = new Set();
+    (portfolio?.holdings || []).forEach(h => {
+      const nm = (h.name || "").trim();
+      if (!nm || !h.shares || h.shares <= 0) return;
+      const low = nm.toLowerCase();
+      if (["현금","mmf","머니마켓","cma","현금성"].some(k => low.includes(k))) return;
+      names.add(nm);
+    });
+    return [...names];
+  }, [portfolio]);
+
+  const fetchNews = async () => {
+    if (stocks.length === 0) { setError("보유 종목이 없습니다. 먼저 포트폴리오에 종목을 추가하세요."); return; }
+    setLoading(true); setError("");
+    try {
+      const sys = "한국 증시·ETF 뉴스 큐레이터. 순수 JSON 배열만 출력, 마크다운/설명 없이.";
+      const list = stocks.map((s, i) => `${i+1}. ${s}`).join("\n");
+      const usr = `아래 보유 종목들에 대해 최근 7일 이내 관련 뉴스를 웹 검색해서 종목별로 정리해줘.
+
+[종목 목록]
+${list}
+
+[규칙]
+- 종목당 최신 뉴스 최대 2건
+- 관련 뉴스가 없는 종목은 결과에서 제외
+- summary는 35자 이내 핵심만, 추측 금지
+- date는 가능하면 YYYY-MM-DD
+- 출력 형식(JSON 배열만):
+[{"stock":"종목명","items":[{"title":"제목","source":"매체명","date":"2026-06-01","summary":"한줄요약"}]}]`;
+      const txt = await callGemini({ system: sys, user: usr, maxTokens: 4000, useSearch: true });
+      const parsed = safeParseJSON(txt);
+      const arr = Array.isArray(parsed) ? parsed : (parsed.news || parsed.data || parsed.results || []);
+      const clean = (arr || []).filter(x => x && x.stock && Array.isArray(x.items) && x.items.length > 0);
+      const ts = Date.now();
+      setNewsData(clean);
+      setUpdatedAt(ts);
+      try { localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify({ data: clean, ts })); } catch(e) {}
+    } catch (e) {
+      setError("뉴스 조회 실패: " + e.message);
+    }
+    setLoading(false);
+  };
+
+  const totalCount = (newsData || []).reduce((s, x) => s + (x.items?.length || 0), 0);
+  const lastUpdatedStr = React.useMemo(() => {
+    if (!updatedAt) return "";
+    const d = new Date(updatedAt);
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }, [updatedAt]);
+
+  return (
+    <div className="card">
+      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f1a2e)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff" }}>📰 내 종목 뉴스</div>
+          <button onClick={fetchNews} disabled={loading} style={{
+            background: loading ? "#0ea5e911" : "#0ea5e922", border: "1px solid #0ea5e944",
+            color: "#38bdf8", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700,
+            cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6,
+          }}>
+            {loading ? <><Spinner size={12}/>조회 중</> : newsData ? "🔄 다시 조회" : "📡 뉴스 조회"}
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>보유 종목 관련 최근 뉴스를 한 번에 검색합니다. (조회 결과는 다시 조회 전까지 유지)</div>
+        {!loading && updatedAt && (
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>마지막 조회: {lastUpdatedStr} · 종목 {stocks.length}개 · 기사 {totalCount}건</div>
+        )}
+        {loading && <div style={{ fontSize: 11, color: "#38bdf8", marginTop: 8 }}>{stocks.length}개 종목 뉴스 검색 중...</div>}
+      </div>
+
+      {error && (
+        <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>
+      )}
+
+      {!newsData && !loading && !error && (
+        <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📰</div>
+          <div style={{ fontSize: 14, color: "#64748b" }}>위 "뉴스 조회" 버튼을 눌러<br/>보유 종목 관련 뉴스를 확인하세요</div>
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 10 }}>보유 종목 {stocks.length}개</div>
+        </div>
+      )}
+
+      {newsData && newsData.length === 0 && !loading && (
+        <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b", fontSize: 14 }}>최근 7일 내 관련 뉴스를 찾지 못했어요.</div>
+      )}
+
+      {newsData && newsData.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {newsData.map((grp, i) => {
+            const open = expanded[grp.stock] !== false; // 기본 펼침
+            return (
+              <div key={i} style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden" }}>
+                <div onClick={() => setExpanded(p => ({ ...p, [grp.stock]: !open }))} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", cursor: "pointer" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", flex: 1, marginRight: 8 }}>{grp.stock}</span>
+                  <span style={{ fontSize: 11, color: "#38bdf8", background: "#0ea5e915", padding: "2px 8px", borderRadius: 10, marginRight: 6 }}>{grp.items.length}건</span>
+                  <span style={{ fontSize: 11, color: "#475569" }}>{open ? "▲" : "▼"}</span>
+                </div>
+                {open && (
+                  <div style={{ padding: "0 14px 12px" }}>
+                    {grp.items.map((it, j) => (
+                      <div key={j} style={{ padding: "10px 0", borderTop: "1px solid #1a1a2e" }}>
+                        <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>{it.title}</div>
+                        {it.summary && <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 4 }}>{it.summary}</div>}
+                        <div style={{ fontSize: 11, color: "#475569", display: "flex", gap: 8 }}>
+                          {it.source && <span>{it.source}</span>}
+                          {it.date && <span>· {it.date}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ marginTop: 6, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+            ⚠️ 뉴스는 AI 웹 검색 기반이라 일부 누락·시점 오차가 있을 수 있습니다. 투자 판단 전 원문 확인을 권장합니다.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("market");
   const tabs = [
     { id: "market",    label: "인사이트",     icon: "" },
     { id: "portfolio", label: "포트폴리오",    icon: "" },
     { id: "dividend",  label: "배당",          icon: "" },
+    { id: "rebalance", label: "리밸런싱",      icon: "" },
+    { id: "news",      label: "뉴스",          icon: "" },
     { id: "advisor",   label: "AI 조언",       icon: "" },
     { id: "settings",  label: "설정",          icon: "" },
   ];
@@ -4732,6 +5018,8 @@ function App() {
         <div style={{ display: tab === "market"    ? "block" : "none" }}><MarketInsight /></div>
         <div style={{ display: tab === "portfolio" ? "block" : "none" }}><Portfolio /></div>
         <div style={{ display: tab === "dividend"  ? "block" : "none" }}>{tab === "dividend" && <DividendCalendar />}</div>
+        <div style={{ display: tab === "rebalance" ? "block" : "none" }}>{tab === "rebalance" && <RebalanceGuide />}</div>
+        <div style={{ display: tab === "news"      ? "block" : "none" }}>{tab === "news" && <StockNews />}</div>
         <div style={{ display: tab === "advisor"   ? "block" : "none" }}><Advisor /></div>
         <div style={{ display: tab === "settings"  ? "block" : "none" }}><Settings /></div>
       </div>
