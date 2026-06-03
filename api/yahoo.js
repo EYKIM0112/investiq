@@ -21,12 +21,16 @@ export default async function handler(req, res) {
     if (type === "chart") {
       if (!ticker) return res.status(400).json({ error: "ticker required" });
 
+      // 기본 10d/1d, 필요 시 range/interval 지정 가능 (벤치마크 등 장기 조회용)
+      const chartRange = req.query.range || "10d";
+      const chartInterval = req.query.interval || "1d";
+
       // query1, query2 순서로 시도
       const hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
       let data = null;
       for (const host of hosts) {
         try {
-          const url = `https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=10d`;
+          const url = `https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${encodeURIComponent(chartInterval)}&range=${encodeURIComponent(chartRange)}`;
           const r = await fetch(url, { headers: HEADERS });
           if (r.ok) { data = await r.json(); break; }
         } catch(e) {}
