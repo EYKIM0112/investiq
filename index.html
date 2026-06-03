@@ -3419,6 +3419,12 @@ function Portfolio() {
             >
               ✎ 직접 입력
             </button>
+            <div style={{ marginTop: 12, padding: "11px 12px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 10, fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>
+              <div style={{ color: "#0ea5e9", fontWeight: 700, marginBottom: 5 }}>📷 스크린샷 인식 팁</div>
+              <div>· 여러 계좌는 한 번에 올리지 말고 <b style={{color:"#cbd5e1"}}>계좌별로 나눠서</b> 올려주세요.</div>
+              <div>· 가장 정확: <b style={{color:"#cbd5e1"}}>종목명 + 매수평단가 + 보유수량</b>. 평단가가 없어도 <b style={{color:"#cbd5e1"}}>종목명 + 보유수량 + 매수금액</b>이면 평단가를 자동 계산합니다.</div>
+              <div>· 종목명이 잘리거나(…) 보유수량이 안 보이면 그 종목은 인식되지 않습니다.</div>
+            </div>
             {addToExisting && (
               <button onClick={() => setShowAddPanel(false)} style={{ width: "100%", marginTop: 8, padding: "10px", background: "none", border: "none", color: "#94a3b8", fontSize: 15, cursor: "pointer" }}>
                 취소
@@ -3674,7 +3680,7 @@ function Portfolio() {
           <div style={{ marginBottom: 12 }}>
             <input ref={imgInputRef} id="input-img-upload" type="file" accept="image/*" multiple
               style={{display:"none"}}
-              onChange={async e=>{ const files = Array.from(e.target.files || []); e.target.value = ""; for (const file of files) { await processFile(file, true); } }}/>
+              onChange={e=>onFileChange(e, true)}/>
             <input ref={xlsInputRef} id="input-xls-upload" type="file" accept=".xlsx,.xls,.csv"
               style={{display:"none"}}
               onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) processFile(f, true); }}/>
@@ -3691,6 +3697,12 @@ function Portfolio() {
               <button onClick={()=>setShowTradeModal("sell")} style={{ padding:"11px 6px", borderRadius:12, background:"#1a0a0a", border:"1px solid #3a1a1a", color:"#f87171", fontWeight:700, fontSize:13, cursor:"pointer" }}>▼ 매도</button>
             </div>
             <label htmlFor="input-order-upload" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#16162a",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13,boxSizing:"border-box"}}>주문체결/실현손익 캡처</label>
+            <div style={{ marginTop:10, padding:"11px 12px", background:"#0a0a14", border:"1px solid #1e293b", borderRadius:10, fontSize:11, color:"#94a3b8", lineHeight:1.6 }}>
+              <div style={{ color:"#22d3a0", fontWeight:700, marginBottom:5 }}>📷 스크린샷 인식 팁</div>
+              <div>· 여러 계좌는 한 번에 올리지 말고 <b style={{color:"#cbd5e1"}}>계좌별로 나눠서</b> 올려주세요.</div>
+              <div>· 가장 정확: <b style={{color:"#cbd5e1"}}>종목명 + 매수평단가 + 보유수량</b>. 평단가가 없어도 <b style={{color:"#cbd5e1"}}>종목명 + 보유수량 + 매수금액</b>이면 평단가를 자동 계산합니다.</div>
+              <div>· 종목명이 잘리거나(…) 보유수량이 안 보이면 그 종목은 인식되지 않습니다.</div>
+            </div>
           </div>
 
           {/* 원형 그래프 */}
