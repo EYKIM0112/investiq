@@ -2505,19 +2505,24 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
 
 
 // ---------- 포트폴리오 탭 ----------
-// ---------- 인앱 이미지 미리보기 (핀치 줌 + 다중 한 장씩 확인) ----------
+// ---------- 인앱 이미지 미리보기 (캐러셀 슬라이드 + 핀치 줌) ----------
 function ImageZoomPreview({ items, onConfirm, onCancel }) {
   const [idx, setIdx] = useState(0);
   const [removed, setRemoved] = useState({});
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const viewRef = useRef(view); viewRef.current = view;
+  const idxRef = useRef(idx); idxRef.current = idx;
+  const dragXRef = useRef(dragX); dragXRef.current = dragX;
   const boxRef = useRef(null);
-  const g = useRef({ mode: null, d0: 0, s0: 1, x0: 0, y0: 0, sx: 0, sy: 0, lastTap: 0, lastDx: 0, lastDy: 0 }).current;
+  const g = useRef({ mode: null, d0: 0, s0: 1, x0: 0, y0: 0, sx: 0, sy: 0, lastTap: 0, w: 0 }).current;
 
   const total = items.length;
   const clamp = (s) => Math.max(1, Math.min(6, s));
-  const reset = () => setView({ s: 1, x: 0, y: 0 });
-  const go = (d) => { setIdx(i => Math.max(0, Math.min(total - 1, i + d))); reset(); };
+  const resetZoom = () => setView({ s: 1, x: 0, y: 0 });
+  const goTo = (n) => { const m = Math.max(0, Math.min(total - 1, n)); setIdx(m); resetZoom(); };
+  const go = (d) => goTo(idxRef.current + d);
   const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
 
   React.useEffect(() => {
@@ -2528,9 +2533,10 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       else if (t.length === 1) {
         const now = Date.now();
         if (now - g.lastTap < 280) { g.lastTap = 0; g.mode = null; const v = viewRef.current; setView(v.s > 1 ? { s: 1, x: 0, y: 0 } : { s: 2.5, x: 0, y: 0 }); return; }
-        g.lastTap = now;
-        g.mode = viewRef.current.s > 1 ? "pan" : "swipe";
-        g.sx = t[0].clientX; g.sy = t[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; g.lastDx = 0; g.lastDy = 0;
+        g.lastTap = now; g.w = el.offsetWidth || window.innerWidth;
+        g.sx = t[0].clientX; g.sy = t[0].clientY;
+        if (viewRef.current.s > 1) { g.mode = "pan"; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; }
+        else { g.mode = "swipe"; setDragging(true); }
       }
     };
     const onMove = (e) => {
@@ -2538,28 +2544,37 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       if (g.mode === "pinch" && t.length === 2) { e.preventDefault(); setView(v => ({ ...v, s: clamp(g.s0 * (dist(t) / g.d0)) })); }
       else if (g.mode === "pan" && t.length === 1 && viewRef.current.s > 1) { e.preventDefault(); setView(v => ({ ...v, x: g.x0 + (t[0].clientX - g.sx), y: g.y0 + (t[0].clientY - g.sy) })); }
       else if (g.mode === "swipe" && t.length === 1 && total > 1) {
-        const dx = t[0].clientX - g.sx, dy = t[0].clientY - g.sy;
-        g.lastDx = dx; g.lastDy = dy;
-        if (Math.abs(dx) > Math.abs(dy)) { e.preventDefault(); setView({ s: 1, x: Math.max(-160, Math.min(160, dx)), y: 0 }); } // 슬라이드 피드백
+        let dx = t[0].clientX - g.sx; const dy = t[0].clientY - g.sy;
+        if (Math.abs(dx) < Math.abs(dy)) return; // 세로 제스처 무시
+        e.preventDefault();
+        if ((idxRef.current === 0 && dx > 0) || (idxRef.current === total - 1 && dx < 0)) dx *= 0.35; // 양 끝 저항
+        setDragX(dx);
       }
     };
     const onEnd = (e) => {
       if (g.mode === "swipe" && e.touches.length === 0) {
-        const dx = g.lastDx || 0, dy = g.lastDy || 0;
-        if (total > 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? go(1) : go(-1); }
-        else setView({ s: 1, x: 0, y: 0 }); // 스냅백
-        g.mode = null; g.lastDx = 0; g.lastDy = 0; return;
+        const w = g.w || el.offsetWidth || 320;
+        const dx = dragXRef.current;
+        const th = Math.max(48, w * 0.2);
+        g.mode = null; setDragging(false);
+        if (total > 1 && Math.abs(dx) > th) go(dx < 0 ? 1 : -1);
+        setDragX(0);
+        return;
       }
       if (e.touches.length === 0) g.mode = null;
-      else if (e.touches.length === 1) { g.mode = viewRef.current.s > 1 ? "pan" : "swipe"; g.sx = e.touches[0].clientX; g.sy = e.touches[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; g.lastDx = 0; g.lastDy = 0; }
+      else if (e.touches.length === 1) {
+        g.sx = e.touches[0].clientX; g.sy = e.touches[0].clientY;
+        if (viewRef.current.s > 1) { g.mode = "pan"; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; }
+        else { g.mode = "swipe"; }
+      }
     };
     el.addEventListener("touchstart", onStart, { passive: false });
     el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd);
     return () => { el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd); };
-  }, [idx]);
+  }, [total]);
 
-  const zoomBtn = (d) => setView(v => ({ ...v, s: clamp(v.s + d), x: v.s + d <= 1 ? 0 : v.x, y: v.s + d <= 1 ? 0 : v.y }));
+  const zoomBtn = (d) => setView(v => { const ns = clamp(v.s + d); return ns <= 1 ? { s: 1, x: 0, y: 0 } : { ...v, s: ns }; });
   const keptFiles = items.filter((_, i) => !removed[i]).map(it => it.file);
   const curRemoved = !!removed[idx];
   const btn = { background: "#16162a", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "9px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
@@ -2570,24 +2585,43 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", flexShrink: 0, background: "#0a0a14", borderBottom: "1px solid #1e293b" }}>
         <button onClick={onCancel} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>✕ 취소</button>
         <span style={{ color: "#22d3a0", fontSize: 14, fontWeight: 800 }}>📷 InvestIQ 미리보기{total > 1 ? ` ${idx + 1}/${total}` : ""}</span>
-        <button onClick={reset} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, cursor: "pointer" }}>원래대로</button>
+        <button onClick={() => { resetZoom(); setDragX(0); }} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, cursor: "pointer" }}>원래대로</button>
       </div>
 
-      {/* 이미지 영역 */}
-      <div ref={boxRef} style={{ flex: 1, overflow: "hidden", position: "relative", touchAction: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <img
-          src={items[idx]?.url} alt="preview" draggable={false}
-          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`, transition: g.mode ? "none" : "transform 0.15s", userSelect: "none", opacity: curRemoved ? 0.3 : 1 }}
-        />
+      {/* 이미지 트랙(캐러셀) */}
+      <div ref={boxRef} style={{ flex: 1, overflow: "hidden", position: "relative", touchAction: "none" }}>
+        <div style={{
+          display: "flex", height: "100%", width: `${total * 100}%`,
+          transform: `translateX(calc(${-idx * (100 / total)}% + ${dragX}px))`,
+          transition: dragging ? "none" : "transform 0.3s cubic-bezier(0.22,0.61,0.36,1)",
+        }}>
+          {items.map((it, i) => (
+            <div key={i} style={{ width: `${100 / total}%`, height: "100%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              <img src={it.url} alt="preview" draggable={false} style={{
+                maxWidth: "100%", maxHeight: "100%", objectFit: "contain", userSelect: "none",
+                transform: i === idx ? `translate(${view.x}px, ${view.y}px) scale(${view.s})` : "none",
+                transition: (i === idx && !g.mode) ? "transform 0.15s" : "none",
+                opacity: removed[i] ? 0.3 : 1,
+              }} />
+            </div>
+          ))}
+        </div>
         {curRemoved && (
-          <div style={{ position: "absolute", color: "#ef4444", fontSize: 16, fontWeight: 800, background: "#0008", padding: "8px 16px", borderRadius: 10 }}>분석에서 제외됨</div>
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", color: "#ef4444", fontSize: 16, fontWeight: 800, background: "#0008", padding: "8px 16px", borderRadius: 10 }}>분석에서 제외됨</div>
         )}
-        {/* 좌우 네비게이션 */}
         {total > 1 && idx > 0 && (
           <button onClick={() => go(-1)} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "#000a", border: "1px solid #ffffff22", color: "#fff", width: 48, height: 48, borderRadius: 24, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>‹</button>
         )}
         {total > 1 && idx < total - 1 && (
           <button onClick={() => go(1)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "#000a", border: "1px solid #ffffff22", color: "#fff", width: 48, height: 48, borderRadius: 24, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>›</button>
+        )}
+        {/* 하단 점 인디케이터 */}
+        {total > 1 && (
+          <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6 }}>
+            {items.map((_, i) => (
+              <span key={i} style={{ width: i === idx ? 16 : 6, height: 6, borderRadius: 3, background: i === idx ? "#22d3a0" : "#ffffff44", transition: "all 0.2s" }} />
+            ))}
+          </div>
         )}
       </div>
 
@@ -2604,9 +2638,7 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       {/* 하단 액션 */}
       <div style={{ padding: "10px 16px 18px", flexShrink: 0 }}>
         <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 10 }}>두 손가락 확대 · 더블탭 · 확대 후 한 손가락 이동{total > 1 ? " · 좌우로 휙 넘기기" : ""}</div>
-        <button
-          onClick={() => keptFiles.length && onConfirm(keptFiles)}
-          disabled={keptFiles.length === 0}
+        <button onClick={() => keptFiles.length && onConfirm(keptFiles)} disabled={keptFiles.length === 0}
           style={{ width: "100%", background: keptFiles.length ? "#22d3a0" : "#16162a", color: keptFiles.length ? "#0a0a14" : "#475569", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 800, cursor: keptFiles.length ? "pointer" : "default" }}>
           {keptFiles.length ? `📊 ${keptFiles.length}장 분석 시작` : "분석할 이미지 없음"}
         </button>
@@ -4118,12 +4150,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.2</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.3</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.2 변경사항</div>
-            <div>· 미리보기 — 좌우 스와이프로 이미지 넘기기 추가, 넘김 버튼 확대</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.3 변경사항</div>
+            <div>· 미리보기 스와이프를 캐러셀 방식으로 — 트랙이 옆으로 미끄러지며 전환</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.2</div>
+            <div>· 미리보기 좌우 스와이프 추가, 넘김 버튼 확대</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.1 변경사항</div>
             <div>· 벤치마크 비교 — 내 수익률은 저장값 즉시 표시, 벤치마크는 버튼 누를 때만 조회</div>
             <div>· 스크린샷 업로드 → 인앱 확대 미리보기 연결(메인 버튼)</div>
