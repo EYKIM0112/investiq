@@ -344,6 +344,47 @@ function savePortfolio(p) {
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
 }
 
+// ---------- USD/KRW 환율 (캐싱, 1시간 TTL) ----------
+const FX_CACHE_KEY = "investiq_usdkrw_v1";
+const FX_FALLBACK  = 1380; // 조회 실패 시 폴백
+
+function getUsdKrw() {
+  try {
+    const c = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || "null");
+    if (c && c.rate > 0) return c.rate;
+  } catch {}
+  return FX_FALLBACK;
+}
+async function refreshUsdKrw() {
+  try {
+    // 1시간 이내 캐시면 재조회 생략 (토큰/요청 절약)
+    const c = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || "null");
+    if (c && c.rate > 0 && Date.now() - (c.ts || 0) < 3600 * 1000) return c.rate;
+  } catch {}
+  try {
+    const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent("USDKRW=X")}`);
+    if (r.ok) {
+      const d = await r.json();
+      const rate = d.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (rate > 0) {
+        try { localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ rate, ts: Date.now() })); } catch {}
+        return rate;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+// 보유 종목 평가액/매입액을 KRW로 환산 (USD 종목은 환율 곱)
+function holdingValueKRW(h, fx) {
+  const v = (h.shares || 0) * (h.current_price || h.avg_price || 0);
+  return h.currency === "USD" ? v * (fx || getUsdKrw()) : v;
+}
+function holdingCostKRW(h, fx) {
+  const v = (h.shares || 0) * (h.avg_price || 0);
+  return h.currency === "USD" ? v * (fx || getUsdKrw()) : v;
+}
+
 
 // ---------- UI 공통 ----------
 function Spinner({ size = 20 }) {
@@ -1283,12 +1324,13 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
   const merged = Array.from(mergedMap.values());
 
   const cash = portfolio.cash || 0;
-  const totalValue = merged.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const fx = getUsdKrw();
+  const totalValue = merged.reduce((s,h)=>s+holdingValueKRW(h,fx),0);
   const grand = totalValue + cash;
 
   const sectorMap={}, regionMap={};
   merged.forEach(h=>{
-    const sv=(h.shares||0)*(h.current_price||h.avg_price||0);
+    const sv=holdingValueKRW(h,fx);
     const sk=getSectorLabel(h.sector,h.name);
     sectorMap[sk]=(sectorMap[sk]||0)+sv;
     const rk=guessRegion(h.name);
@@ -1322,8 +1364,9 @@ function addHistoryPoint(portfolio, filterAccount = null) {
       : portfolio.holdings;
     const pricedHoldings = holdings.filter(h => h.current_price && h.current_price > 0);
     if (pricedHoldings.length === 0) return;
-    const tc = pricedHoldings.reduce((s,h) => s+(h.shares||0)*(h.avg_price||0), 0);
-    const tv = pricedHoldings.reduce((s,h) => s+(h.shares||0)*h.current_price, 0);
+    const fx = getUsdKrw();
+    const tc = pricedHoldings.reduce((s,h) => s+holdingCostKRW(h,fx), 0);
+    const tv = pricedHoldings.reduce((s,h) => s+holdingValueKRW(h,fx), 0);
     if (tc <= 0 || tv <= 0) return;
     const ret = ((tv-tc)/tc*100);
     if (Math.abs(ret) > 1000) return;
@@ -1366,8 +1409,9 @@ function ReturnHistoryChart({ portfolio, viewMode = "all" }) {
   const filteredHoldings = viewMode === "all"
     ? portfolio.holdings
     : portfolio.holdings.filter(h => h.account === viewMode);
-  const tc = filteredHoldings.reduce((s,h)=>s+(h.shares||0)*(h.avg_price||0),0);
-  const tv = filteredHoldings.reduce((s,h)=>s+(h.shares||0)*(h.current_price||h.avg_price||0),0);
+  const fxR = getUsdKrw();
+  const tc = filteredHoldings.reduce((s,h)=>s+holdingCostKRW(h,fxR),0);
+  const tv = filteredHoldings.reduce((s,h)=>s+holdingValueKRW(h,fxR),0);
   const curRet = tc>0 ? ((tv-tc)/tc*100).toFixed(2) : 0;
 
   const periods=[{id:"daily",label:"일별"},{id:"weekly",label:"주별"},{id:"monthly",label:"월별"},{id:"yearly",label:"연별"}];
@@ -2461,6 +2505,100 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
 
 
 // ---------- 포트폴리오 탭 ----------
+// ---------- 인앱 이미지 미리보기 (핀치 줌 + 다중 한 장씩 확인) ----------
+function ImageZoomPreview({ items, onConfirm, onCancel }) {
+  const [idx, setIdx] = useState(0);
+  const [removed, setRemoved] = useState({});
+  const [view, setView] = useState({ s: 1, x: 0, y: 0 });
+  const viewRef = useRef(view); viewRef.current = view;
+  const boxRef = useRef(null);
+  const g = useRef({ mode: null, d0: 0, s0: 1, x0: 0, y0: 0, sx: 0, sy: 0, lastTap: 0 }).current;
+
+  const total = items.length;
+  const clamp = (s) => Math.max(1, Math.min(6, s));
+  const reset = () => setView({ s: 1, x: 0, y: 0 });
+  const go = (d) => { setIdx(i => Math.max(0, Math.min(total - 1, i + d))); reset(); };
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+  React.useEffect(() => {
+    const el = boxRef.current; if (!el) return;
+    const onStart = (e) => {
+      const t = e.touches;
+      if (t.length === 2) { g.mode = "pinch"; g.d0 = dist(t) || 1; g.s0 = viewRef.current.s; }
+      else if (t.length === 1) {
+        const now = Date.now();
+        if (now - g.lastTap < 280) { g.lastTap = 0; g.mode = null; const v = viewRef.current; setView(v.s > 1 ? { s: 1, x: 0, y: 0 } : { s: 2.5, x: 0, y: 0 }); return; }
+        g.lastTap = now; g.mode = "pan"; g.sx = t[0].clientX; g.sy = t[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y;
+      }
+    };
+    const onMove = (e) => {
+      const t = e.touches;
+      if (g.mode === "pinch" && t.length === 2) { e.preventDefault(); setView(v => ({ ...v, s: clamp(g.s0 * (dist(t) / g.d0)) })); }
+      else if (g.mode === "pan" && t.length === 1 && viewRef.current.s > 1) { e.preventDefault(); setView(v => ({ ...v, x: g.x0 + (t[0].clientX - g.sx), y: g.y0 + (t[0].clientY - g.sy) })); }
+    };
+    const onEnd = (e) => { if (e.touches.length === 0) g.mode = null; else if (e.touches.length === 1) { g.mode = "pan"; g.sx = e.touches[0].clientX; g.sy = e.touches[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; } };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    return () => { el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd); };
+  }, [idx]);
+
+  const zoomBtn = (d) => setView(v => ({ ...v, s: clamp(v.s + d), x: v.s + d <= 1 ? 0 : v.x, y: v.s + d <= 1 ? 0 : v.y }));
+  const keptFiles = items.filter((_, i) => !removed[i]).map(it => it.file);
+  const curRemoved = !!removed[idx];
+  const btn = { background: "#16162a", border: "1px solid #334155", color: "#e2e8f0", borderRadius: 8, padding: "9px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.96)", display: "flex", flexDirection: "column" }}>
+      {/* 상단 바 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", flexShrink: 0 }}>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>✕ 취소</button>
+        <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>{total > 1 ? `${idx + 1} / ${total}` : "미리보기"}</span>
+        <button onClick={reset} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, cursor: "pointer" }}>원래대로</button>
+      </div>
+
+      {/* 이미지 영역 */}
+      <div ref={boxRef} style={{ flex: 1, overflow: "hidden", position: "relative", touchAction: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <img
+          src={items[idx]?.url} alt="preview" draggable={false}
+          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`, transition: g.mode ? "none" : "transform 0.15s", userSelect: "none", opacity: curRemoved ? 0.3 : 1 }}
+        />
+        {curRemoved && (
+          <div style={{ position: "absolute", color: "#ef4444", fontSize: 16, fontWeight: 800, background: "#0008", padding: "8px 16px", borderRadius: 10 }}>분석에서 제외됨</div>
+        )}
+        {/* 좌우 네비게이션 */}
+        {total > 1 && idx > 0 && (
+          <button onClick={() => go(-1)} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "#0009", border: "none", color: "#fff", width: 40, height: 40, borderRadius: 20, fontSize: 20, cursor: "pointer" }}>‹</button>
+        )}
+        {total > 1 && idx < total - 1 && (
+          <button onClick={() => go(1)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "#0009", border: "none", color: "#fff", width: 40, height: 40, borderRadius: 20, fontSize: 20, cursor: "pointer" }}>›</button>
+        )}
+      </div>
+
+      {/* 줌 컨트롤 */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, padding: "8px 0", flexShrink: 0 }}>
+        <button onClick={() => zoomBtn(-0.5)} style={{ ...btn, width: 44 }}>−</button>
+        <span style={{ color: "#94a3b8", fontSize: 12, minWidth: 48, textAlign: "center" }}>{Math.round(view.s * 100)}%</span>
+        <button onClick={() => zoomBtn(0.5)} style={{ ...btn, width: 44 }}>+</button>
+        <button onClick={() => setRemoved(r => ({ ...r, [idx]: !r[idx] }))} style={{ ...btn, color: curRemoved ? "#22d3a0" : "#f87171", border: `1px solid ${curRemoved ? "#22d3a0" : "#7f1d1d"}` }}>
+          {curRemoved ? "되돌리기" : "이 장 제외"}
+        </button>
+      </div>
+
+      {/* 하단 액션 */}
+      <div style={{ padding: "10px 16px 18px", flexShrink: 0 }}>
+        <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 10 }}>두 손가락으로 확대 · 더블탭 · 한 손가락으로 이동{total > 1 ? " · 좌우로 넘기기" : ""}</div>
+        <button
+          onClick={() => keptFiles.length && onConfirm(keptFiles)}
+          disabled={keptFiles.length === 0}
+          style={{ width: "100%", background: keptFiles.length ? "#22d3a0" : "#16162a", color: keptFiles.length ? "#0a0a14" : "#475569", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 800, cursor: keptFiles.length ? "pointer" : "default" }}>
+          {keptFiles.length ? `📊 ${keptFiles.length}장 분석 시작` : "분석할 이미지 없음"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Portfolio() {
   const [portfolio, setPortfolio] = useState(loadPortfolio);
   const [uploading, setUploading]   = useState(false);
@@ -2472,6 +2610,7 @@ function Portfolio() {
   const [editTarget, setEditTarget] = useState(null);
   const [autoUpdated, setAutoUpdated] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(null); // "buy" | "sell" | null
+  const [imgPreview, setImgPreview] = useState(null); // { file, url, addToExisting } | null
 
   const imgInputRef      = useRef(null);
   const xlsInputRef      = useRef(null);
@@ -2785,8 +2924,15 @@ function Portfolio() {
     const files = Array.from(e.target.files || []);
     e.target.value = "";          // 같은 파일 재선택 허용
     if (!files.length) return;
-    for (const file of files) {
-      await processFile(file, addToExisting);
+    const isImg = (f) => (f.type || "").startsWith("image/") || ["jpg","jpeg","png","webp","gif","heic","heif","bmp"].includes((f.name.split(".").pop() || "").toLowerCase());
+    const images = files.filter(isImg);
+    const others = files.filter(f => !isImg(f));
+    // 스프레드시트 등 비이미지: 즉시 처리
+    for (const file of others) await processFile(file, addToExisting);
+    // 이미지: 다중 선택분을 미리보기로 모아서 한 장씩 확인(줌) 후 분석
+    if (images.length) {
+      const items = images.map(f => ({ file: f, url: URL.createObjectURL(f) }));
+      setImgPreview({ items, addToExisting });
     }
   };
 
@@ -3188,8 +3334,9 @@ function Portfolio() {
   });
 
   const cash = portfolio?.cash || 0;
-  const totalCost  = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.avg_price||0), 0);
-  const totalValue = visibleHoldings.reduce((s, h) => s + (h.shares||0)*(h.current_price||h.avg_price||0), 0) + cash;
+  const fxMain = getUsdKrw();
+  const totalCost  = visibleHoldings.reduce((s, h) => s + holdingCostKRW(h, fxMain), 0);
+  const totalValue = visibleHoldings.reduce((s, h) => s + holdingValueKRW(h, fxMain), 0) + cash;
   const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
 
   // 업로드 패널 - label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
@@ -3316,6 +3463,18 @@ function Portfolio() {
           onAdd={h => { addManualHolding(h); setShowManual(false); }}
           existingAccounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
           defaultAccount={viewMode !== "all" ? viewMode : ""}
+        />
+      )}
+      {imgPreview && (
+        <ImageZoomPreview
+          items={imgPreview.items}
+          onCancel={() => { imgPreview.items.forEach(it => { try { URL.revokeObjectURL(it.url); } catch {} }); setImgPreview(null); }}
+          onConfirm={(files) => {
+            const { items, addToExisting } = imgPreview;
+            setImgPreview(null);
+            items.forEach(it => { try { URL.revokeObjectURL(it.url); } catch {} });
+            (async () => { for (const f of files) await processFile(f, addToExisting); })();
+          }}
         />
       )}
       {showTradeModal && (
@@ -3906,11 +4065,11 @@ function Settings() {
           { done: true,  text: "TDF 1,000좌 기준가 오인식 버그 수정" },
           { done: true,  text: "스크린샷 종목명 잘림 감지 및 partial_fail 안내" },
           { done: true,  text: "배당 캘린더 (일정·예상 배당금·달력 뷰)" },
-          { done: true,  text: "리밸런싱 가이드 (목표 vs 현재 비중 시각화)" },
-          { done: true,  text: "내 종목 뉴스 탭 (포폴 종목 뉴스 필터링)" },
-          { done: false, text: "🟡 수익률 벤치마크 비교 (내 포폴 vs 코스피/S&P500/코스닥)" },
+          { done: true,  text: "리밸런싱 가이드 + AI 추천 비중" },
+          { done: true,  text: "수익률 벤치마크 비교 (코스피·코스닥·S&P500)" },
+          { done: true,  text: "환율 반영 (USD→KRW 환산)" },
+          { done: true,  text: "이미지 다중선택 + 인앱 확대 미리보기" },
           { done: false, text: "🟡 매매 메모/일지 (종목별 매수 이유 기록)" },
-          { done: false, text: "🟡 환율 자동 반영 (USD/KRW 선택 · 실시간 환율)" },
           { done: false, text: "🟢 위험도 점수 (변동성·집중도 점수화)" },
           { done: false, text: "🟢 세금 계산기 (양도세·금융투자세 예상액)" },
         ].map((item, i) => (
@@ -3931,14 +4090,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.4.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.4.0 변경사항</div>
-            <div>· 🆕 리밸런싱 가이드 — 섹터별 목표 vs 현재 비중·필요 매매금액 (로컬 계산)</div>
-            <div>· 🆕 내 종목 뉴스 탭 — 보유 종목 뉴스 1회 검색·캐싱</div>
-            <div>· 모든 API 기능 캐싱 — 다시 조회 전까지 결과 유지 (토큰 절약)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.0 변경사항</div>
+            <div>· 🆕 수익률 벤치마크 비교 (코스피·코스닥·S&P500 동일 구간)</div>
+            <div>· 🆕 리밸런싱 AI 추천 비중 (0% 제안 포함)</div>
+            <div>· 🆕 이미지 다중선택 + 인앱 확대(핀치 줌) 미리보기</div>
+            <div>· 환율 반영 — USD 종목 KRW 환산 (평가액·비중·배당)</div>
+            <div>· 종목 뉴스 탭 제거 (효용 대비 토큰 과다)</div>
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
@@ -4151,6 +4312,7 @@ function DividendCalendar() {
     if (holdings.length === 0) { setError("보유 종목이 없습니다. 먼저 포트폴리오에 종목을 추가하세요."); return; }
     setLoading(true); setError(""); // 조회 중에도 기존 결과 유지
     const results = [];
+    const fx = getUsdKrw(); // USD ETF → KRW 환산용
 
     for (let i = 0; i < holdings.length; i++) {
       const h = holdings[i];
@@ -4173,11 +4335,12 @@ function DividendCalendar() {
                 ? last12.reduce((s, x) => s + x.amount, 0)
                 : d.dividends[d.dividends.length - 1].amount * freqToCount(freq); // 1년치 없으면 최근 1회 × 주기
               const months = getPaymentMonths(d.dividends, freq);
+              const cur = d.currency || h.currency || "KRW";
               entry = {
                 name: h.name, shares: h.shares, freq,
-                annualPerShare, annualTotal: annualPerShare * h.shares,
+                annualPerShare, annualTotal: annualPerShare * h.shares * (cur === "USD" ? fx : 1),
                 perPayment: annualPerShare / freqToCount(freq),
-                months, source: "Yahoo 이력", currency: d.currency || h.currency || "KRW",
+                months, source: "Yahoo 이력", currency: cur,
                 payDay: getPayDay(d.dividends),
               };
             }
@@ -4202,7 +4365,7 @@ function DividendCalendar() {
               const months = (g.pay_months && g.pay_months.length) ? g.pay_months.map(x => x - 1) : getPaymentMonths(null, freq);
               entry = {
                 name: h.name, shares: h.shares, freq,
-                annualPerShare, annualTotal: annualPerShare * h.shares,
+                annualPerShare, annualTotal: annualPerShare * h.shares * (h.currency === "USD" ? fx : 1),
                 perPayment: annualPerShare / freqToCount(freq),
                 months, source: "검색·추정", currency: h.currency || "KRW",
                 yieldPct: g.yield_pct, payDay: null,
@@ -4417,7 +4580,7 @@ function DividendCalendar() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#64748b" }}>
                     <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>{s.freq}</span>
                     {scheduleLabel(s) && <span style={{ background: "#22d3a015", color: "#22d3a0", padding: "2px 7px", borderRadius: 5 }}>📅 {scheduleLabel(s)}</span>}
-                    {s.annualPerShare > 0 && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>주당 {fmt(s.annualPerShare)}원/년</span>}
+                    {s.annualPerShare > 0 && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>주당 {s.currency === "USD" ? "$" + s.annualPerShare.toFixed(2) : fmt(s.annualPerShare) + "원"}/년</span>}
                     {s.yieldPct && <span style={{ background: "#16162a", padding: "2px 7px", borderRadius: 5 }}>수익률 {s.yieldPct}%</span>}
                     <span style={{ background: s.source === "Yahoo 이력" ? "#22d3a015" : "#f59e0b15", color: s.source === "Yahoo 이력" ? "#22d3a0" : "#f59e0b", padding: "2px 7px", borderRadius: 5 }}>{s.source}</span>
                   </div>
@@ -4429,7 +4592,7 @@ function DividendCalendar() {
           {/* 추정 안내 */}
           <div style={{ marginTop: 14, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
             ⚠️ <b style={{ color: "#94a3b8" }}>추정치 안내</b><br/>
-            한국 ETF는 미래 분배금이 사전 확정되지 않아, 과거 지급 이력과 배당수익률로 추정한 값입니다. 실제 배당은 시장 상황·운용 결과에 따라 달라집니다. 외화 종목은 현지통화 기준이며 환율 미반영입니다.
+            한국 ETF는 미래 분배금이 사전 확정되지 않아, 과거 지급 이력과 배당수익률로 추정한 값입니다. 실제 배당은 시장 상황·운용 결과에 따라 달라집니다. 외화(USD) 종목은 환율 {getUsdKrw().toLocaleString()}원 기준으로 KRW 환산했습니다.
           </div>
         </>
       )}
@@ -4662,20 +4825,31 @@ function IndexWidget() {
 
 // ---------- 리밸런싱 가이드 (로컬 계산, 토큰 사용 없음) ----------
 const REBAL_TARGET_KEY = "investiq_rebalance_targets_v1";
+const REBAL_AI_KEY = "investiq_rebalance_ai_v1";
 
 function RebalanceGuide() {
   const [portfolio] = useState(() => loadPortfolio());
   const [targets, setTargets] = useState(() => {
     try { return JSON.parse(localStorage.getItem(REBAL_TARGET_KEY) || "{}"); } catch { return {}; }
   });
+  // AI 추천 비중 (캐싱 · 다시 조회 전까지 유지)
+  const [aiRec, setAiRec] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(REBAL_AI_KEY) || "null")?.data || null; } catch { return null; }
+  });
+  const [aiTs, setAiTs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(REBAL_AI_KEY) || "null")?.ts || null; } catch { return null; }
+  });
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   // 섹터별 현재 평가액 (현금 포함)
   const { sectorValues, grand, hasUSD } = React.useMemo(() => {
     const map = {}; let usd = false;
+    const fx = getUsdKrw();
     (portfolio?.holdings || []).forEach(h => {
       if (!h.shares || h.shares <= 0) return;
       if (h.currency === "USD") usd = true;
-      const v = h.shares * (h.current_price || h.avg_price || 0);
+      const v = holdingValueKRW(h, fx);
       const sk = getSectorLabel(h.sector, h.name);
       map[sk] = (map[sk] || 0) + v;
     });
@@ -4712,6 +4886,62 @@ function RebalanceGuide() {
   };
   const resetTargets = () => { if (window.confirm("목표 비중을 모두 지울까요?")) persist({}); };
 
+  // 현재 섹터 비중 스냅샷
+  const curSectorPct = {};
+  Object.keys(sectorValues).forEach(s => { curSectorPct[s] = grand > 0 ? Math.round(sectorValues[s] / grand * 1000) / 10 : 0; });
+
+  const fetchAiRec = async () => {
+    if (grand <= 0) { setAiError("포트폴리오가 비어 있습니다."); return; }
+    setAiLoading(true); setAiError("");
+    try {
+      const holdingsList = (portfolio?.holdings || [])
+        .filter(h => h.shares > 0)
+        .map(h => `- ${h.name} (${getSectorLabel(h.sector, h.name)}, ${(grand>0?(holdingValueKRW(h,getUsdKrw())/grand*100):0).toFixed(1)}%)`)
+        .join("\n");
+      const curList = Object.keys(curSectorPct).sort((a,b)=>curSectorPct[b]-curSectorPct[a]).map(s => `${s} ${curSectorPct[s]}%`).join(", ");
+      const sys = "한국 투자 포트폴리오 전략가. 섹터별 목표 비중을 제안. 순수 JSON만 출력(마크다운 없이). 냉정하게 평가하고, 전망이 약한 섹터는 과감히 낮은 비중이나 0%도 제안.";
+      const usr = `아래 포트폴리오의 섹터별 목표 비중을 제안해줘.
+
+[현재 섹터 비중]
+${curList}
+
+[보유 종목]
+${holdingsList}
+
+[규칙]
+- 현재 존재하는 섹터 각각에 목표 비중(%) 제시, 합계 100%
+- 전망이 약하거나 집중 위험이면 비중 축소·0%도 제시
+- 신규 섹터 제안 금지(현재 보유 섹터 내에서만 재배분)
+- reason은 25자 이내 핵심 근거
+- 출력(JSON):
+{"recommendations":[{"sector":"섹터명","target_pct":30,"reason":"근거"}],"summary":"전체 한줄평(40자 이내)"}`;
+      const txt = await callGemini({ system: sys, user: usr, maxTokens: 1500 });
+      const parsed = safeParseJSON(txt);
+      const data = {
+        recommendations: Array.isArray(parsed?.recommendations) ? parsed.recommendations.filter(r => r && r.sector) : [],
+        summary: parsed?.summary || "",
+      };
+      if (!data.recommendations.length) throw new Error("추천 결과를 해석하지 못했습니다.");
+      const ts = Date.now();
+      setAiRec(data); setAiTs(ts);
+      try { localStorage.setItem(REBAL_AI_KEY, JSON.stringify({ data, ts })); } catch(e) {}
+    } catch (e) {
+      setAiError("AI 추천 실패: " + e.message);
+    }
+    setAiLoading(false);
+  };
+
+  const applyAiRec = () => {
+    if (!aiRec?.recommendations?.length) return;
+    const next = {};
+    aiRec.recommendations.forEach(r => { const v = Number(r.target_pct); if (!isNaN(v)) next[r.sector] = Math.max(0, Math.min(100, v)); });
+    persist(next);
+  };
+  const aiTsStr = React.useMemo(() => {
+    if (!aiTs) return "";
+    const d = new Date(aiTs); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }, [aiTs]);
+
   const fmt = (n) => Math.round(n).toLocaleString();
   const fmtMan = (n) => Math.abs(n) >= 10000 ? `${Math.round(n/10000).toLocaleString()}만` : fmt(n);
 
@@ -4744,6 +4974,52 @@ function RebalanceGuide() {
         <button onClick={fillCurrent} style={{ flex: 1, background: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a8b4f8", borderRadius: 8, padding: "9px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>현재 비중으로 채우기</button>
         <button onClick={resetTargets} style={{ background: "#16162a", border: "1px solid #334155", color: "#94a3b8", borderRadius: 8, padding: "9px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>초기화</button>
       </div>
+
+      {/* AI 추천 비중 */}
+      {grand > 0 && (
+        <div style={{ background: "#0f0f18", border: "1px solid #7c3aed33", borderRadius: 14, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#a8b4f8" }}>🤖 AI 추천 비중</div>
+            <button onClick={fetchAiRec} disabled={aiLoading} style={{
+              background: aiLoading ? "#7c3aed11" : "#7c3aed22", border: "1px solid #7c3aed44", color: "#a8b4f8",
+              borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: aiLoading ? "default" : "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>{aiLoading ? <><Spinner size={12}/>분석 중</> : aiRec ? "🔄 다시 추천" : "✨ 추천받기"}</button>
+          </div>
+
+          {aiError && <div style={{ fontSize: 12, color: "#fca5a5", marginTop: 10 }}>{aiError}</div>}
+
+          {aiRec && !aiLoading && (
+            <div style={{ marginTop: 12 }}>
+              {aiRec.summary && <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.5, marginBottom: 10, padding: "8px 10px", background: "#16162a", borderRadius: 8 }}>💬 {aiRec.summary}</div>}
+              {aiRec.recommendations.map((r, i) => {
+                const cur = curSectorPct[r.sector] ?? 0;
+                const diff = (Number(r.target_pct) || 0) - cur;
+                return (
+                  <div key={i} style={{ padding: "8px 0", borderBottom: i < aiRec.recommendations.length - 1 ? "1px solid #1a1a2e" : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{r.sector}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>
+                        <span style={{ color: "#64748b" }}>{cur}% → </span>
+                        <span style={{ color: Number(r.target_pct) === 0 ? "#ef4444" : "#a8b4f8" }}>{r.target_pct}%</span>
+                        <span style={{ color: diff > 0.5 ? "#22d3a0" : diff < -0.5 ? "#ef4444" : "#64748b", fontSize: 11, marginLeft: 6 }}>
+                          {diff > 0.5 ? `▲${diff.toFixed(0)}` : diff < -0.5 ? `▼${Math.abs(diff).toFixed(0)}` : "="}
+                        </span>
+                      </span>
+                    </div>
+                    {r.reason && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>{r.reason}</div>}
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
+                <button onClick={applyAiRec} style={{ flex: 1, background: "#22d3a0", color: "#0a0a14", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>추천대로 목표 적용</button>
+                {aiTsStr && <span style={{ fontSize: 10, color: "#475569" }}>{aiTsStr}</span>}
+              </div>
+              <div style={{ fontSize: 10, color: "#475569", marginTop: 8, lineHeight: 1.5 }}>* AI 추천은 참고용 의견입니다. 투자 판단과 책임은 본인에게 있습니다.</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {grand <= 0 && (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
@@ -4796,147 +5072,150 @@ function RebalanceGuide() {
       {grand > 0 && (
         <div style={{ marginTop: 14, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
           ⚠️ <b style={{ color: "#94a3b8" }}>참고</b> · 흰색 세로선은 목표 비중 위치, 막대는 현재 비중입니다. 매수/매도 금액은 목표 도달에 필요한 추정액입니다.
-          {hasUSD && " 외화(USD) 종목은 환율 미반영(현지통화 기준)이라 실제 비중과 차이가 있을 수 있습니다."}
+          {hasUSD && ` 외화(USD) 종목은 환율 ${getUsdKrw().toLocaleString()}원 기준으로 KRW 환산했습니다.`}
         </div>
       )}
     </div>
   );
 }
 
-// ---------- 종목 뉴스 (Gemini 검색 1회 · 캐싱) ----------
-const NEWS_CACHE_KEY = "investiq_news_cache_v1";
+// ---------- 수익률 벤치마크 비교 (Yahoo 시세 · 토큰 없음) ----------
+const BENCH_RESULT_KEY = "investiq_bench_result_v1";
+const BENCH_DATA_PREFIX = "investiq_bench_";
+const BENCHMARKS = [
+  { name: "코스피",  ticker: "^KS11", color: "#3b82f6" },
+  { name: "코스닥",  ticker: "^KQ11", color: "#a855f7" },
+  { name: "S&P500", ticker: "^GSPC", color: "#f59e0b" },
+];
+const BENCH_PERIODS = [
+  { id: "1mo", label: "1개월", days: 31 },
+  { id: "3mo", label: "3개월", days: 93 },
+  { id: "6mo", label: "6개월", days: 186 },
+  { id: "1y",  label: "1년",   days: 372 },
+];
 
-function StockNews() {
-  const [portfolio] = useState(() => loadPortfolio());
+async function fetchIndexCloses(ticker, range) {
+  const key = BENCH_DATA_PREFIX + ticker + "_" + range;
+  try {
+    const c = JSON.parse(localStorage.getItem(key) || "null");
+    if (c && c.ts && Date.now() - c.ts < 3600 * 1000 && c.timestamps?.length) return c;
+  } catch {}
+  const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(ticker)}&range=${range}&interval=1d`);
+  if (!r.ok) throw new Error(ticker + " 조회 실패");
+  const d = await r.json();
+  const res = d.chart?.result?.[0];
+  const out = { ts: Date.now(), timestamps: res?.timestamp || [], closes: res?.indicators?.quote?.[0]?.close || [] };
+  try { localStorage.setItem(key, JSON.stringify(out)); } catch {}
+  return out;
+}
+
+function BenchmarkCompare() {
+  const [period, setPeriod] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_RESULT_KEY) || "null")?.period || "3mo"; } catch { return "3mo"; } });
   const [loading, setLoading] = useState(false);
-  const [newsData, setNewsData] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(NEWS_CACHE_KEY) || "null")?.data || null; } catch { return null; }
-  });
-  const [updatedAt, setUpdatedAt] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(NEWS_CACHE_KEY) || "null")?.ts || null; } catch { return null; }
-  });
   const [error, setError] = useState("");
-  const [expanded, setExpanded] = useState({});
+  const [result, setResult] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_RESULT_KEY) || "null"); } catch { return null; } });
 
-  const stocks = React.useMemo(() => {
-    const names = new Set();
-    (portfolio?.holdings || []).forEach(h => {
-      const nm = (h.name || "").trim();
-      if (!nm || !h.shares || h.shares <= 0) return;
-      const low = nm.toLowerCase();
-      if (["현금","mmf","머니마켓","cma","현금성"].some(k => low.includes(k))) return;
-      names.add(nm);
-    });
-    return [...names];
-  }, [portfolio]);
-
-  const fetchNews = async () => {
-    if (stocks.length === 0) { setError("보유 종목이 없습니다. 먼저 포트폴리오에 종목을 추가하세요."); return; }
-    setLoading(true); setError("");
+  const run = async (pid) => {
+    setPeriod(pid); setLoading(true); setError("");
     try {
-      const sys = "한국 증시·ETF 뉴스 큐레이터. 순수 JSON 배열만 출력, 마크다운/설명 없이.";
-      const list = stocks.map((s, i) => `${i+1}. ${s}`).join("\n");
-      const usr = `아래 보유 종목들에 대해 최근 7일 이내 관련 뉴스를 웹 검색해서 종목별로 정리해줘.
-
-[종목 목록]
-${list}
-
-[규칙]
-- 종목당 최신 뉴스 최대 2건
-- 관련 뉴스가 없는 종목은 결과에서 제외
-- summary는 35자 이내 핵심만, 추측 금지
-- date는 가능하면 YYYY-MM-DD
-- 출력 형식(JSON 배열만):
-[{"stock":"종목명","items":[{"title":"제목","source":"매체명","date":"2026-06-01","summary":"한줄요약"}]}]`;
-      const txt = await callGemini({ system: sys, user: usr, maxTokens: 4000, useSearch: true });
-      const parsed = safeParseJSON(txt);
-      const arr = Array.isArray(parsed) ? parsed : (parsed.news || parsed.data || parsed.results || []);
-      const clean = (arr || []).filter(x => x && x.stock && Array.isArray(x.items) && x.items.length > 0);
-      const ts = Date.now();
-      setNewsData(clean);
-      setUpdatedAt(ts);
-      try { localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify({ data: clean, ts })); } catch(e) {}
-    } catch (e) {
-      setError("뉴스 조회 실패: " + e.message);
-    }
+      const P = BENCH_PERIODS.find(p => p.id === pid) || BENCH_PERIODS[1];
+      let history = [];
+      try { history = JSON.parse(localStorage.getItem("portfolio_history_v1") || "[]"); } catch {}
+      history = history.filter(h => h.total_value > 0).sort((a, b) => a.timestamp - b.timestamp);
+      const now = Date.now();
+      const baseTime = now - P.days * 86400000;
+      const inWindow = history.filter(h => h.timestamp >= baseTime);
+      let myReturn = null, myBaseTime = null, myDays = null;
+      if (inWindow.length >= 2) {
+        myBaseTime = inWindow[0].timestamp;
+        const baseVal = inWindow[0].total_value, curVal = inWindow[inWindow.length - 1].total_value;
+        if (baseVal > 0) { myReturn = (curVal / baseVal - 1) * 100; myDays = Math.round((now - myBaseTime) / 86400000); }
+      }
+      const rows = [];
+      for (const b of BENCHMARKS) {
+        try {
+          const data = await fetchIndexCloses(b.ticker, pid);
+          const pairs = (data.timestamps || []).map((t, i) => ({ t, c: data.closes[i] })).filter(p => p.c != null && p.c > 0);
+          if (pairs.length < 2) { rows.push({ name: b.name, color: b.color, ret: null }); continue; }
+          let baseC = pairs[0].c;
+          if (myBaseTime) { const bt = myBaseTime / 1000; const near = pairs.find(p => p.t >= bt) || pairs[0]; baseC = near.c; }
+          const curC = pairs[pairs.length - 1].c;
+          rows.push({ name: b.name, color: b.color, ret: (curC / baseC - 1) * 100 });
+        } catch (e) { rows.push({ name: b.name, color: b.color, ret: null }); }
+      }
+      const data = { period: pid, ts: now, myReturn, myDays, baselineDate: myBaseTime ? new Date(myBaseTime).toISOString().slice(0, 10) : null, rows };
+      setResult(data);
+      try { localStorage.setItem(BENCH_RESULT_KEY, JSON.stringify(data)); } catch {}
+    } catch (e) { setError("벤치마크 조회 실패: " + e.message); }
     setLoading(false);
   };
 
-  const totalCount = (newsData || []).reduce((s, x) => s + (x.items?.length || 0), 0);
-  const lastUpdatedStr = React.useMemo(() => {
-    if (!updatedAt) return "";
-    const d = new Date(updatedAt);
-    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-  }, [updatedAt]);
+  // 표시용 행 (내 포폴 + 인덱스)
+  const allRows = result ? [{ name: "내 포트폴리오", color: "#22d3a0", ret: result.myReturn, mine: true }, ...result.rows] : [];
+  const maxAbs = Math.max(1, ...allRows.filter(r => r.ret != null).map(r => Math.abs(r.ret)));
+  const tsStr = result?.ts ? (() => { const d = new Date(result.ts); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "";
 
   return (
     <div className="card">
-      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f1a2e)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff" }}>📰 내 종목 뉴스</div>
-          <button onClick={fetchNews} disabled={loading} style={{
-            background: loading ? "#0ea5e911" : "#0ea5e922", border: "1px solid #0ea5e944",
-            color: "#38bdf8", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700,
-            cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6,
-          }}>
-            {loading ? <><Spinner size={12}/>조회 중</> : newsData ? "🔄 다시 조회" : "📡 뉴스 조회"}
-          </button>
-        </div>
-        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>보유 종목 관련 최근 뉴스를 한 번에 검색합니다. (조회 결과는 다시 조회 전까지 유지)</div>
-        {!loading && updatedAt && (
-          <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>마지막 조회: {lastUpdatedStr} · 종목 {stocks.length}개 · 기사 {totalCount}건</div>
-        )}
-        {loading && <div style={{ fontSize: 11, color: "#38bdf8", marginTop: 8 }}>{stocks.length}개 종목 뉴스 검색 중...</div>}
+      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f2e1a)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff", marginBottom: 6 }}>📊 수익률 벤치마크 비교</div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>내 포트폴리오 수익률을 코스피·코스닥·S&P500과 같은 기간으로 비교합니다. (Yahoo 시세 · 1시간 캐시)</div>
       </div>
 
-      {error && (
-        <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>
-      )}
+      {/* 기간 선택 */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {BENCH_PERIODS.map(p => (
+          <button key={p.id} onClick={() => run(p.id)} disabled={loading} style={{
+            flex: 1, padding: "9px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: loading ? "default" : "pointer",
+            background: period === p.id ? "#22d3a022" : "#16162a", border: `1px solid ${period === p.id ? "#22d3a0" : "#334155"}`,
+            color: period === p.id ? "#22d3a0" : "#94a3b8",
+          }}>{p.label}</button>
+        ))}
+      </div>
 
-      {!newsData && !loading && !error && (
+      <button onClick={() => run(period)} disabled={loading} style={{
+        width: "100%", background: loading ? "#22d3a011" : "#22d3a0", color: loading ? "#22d3a0" : "#0a0a14",
+        border: "none", borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 800, cursor: loading ? "default" : "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 14,
+      }}>{loading ? <><Spinner size={14}/>조회 중...</> : result ? "🔄 다시 조회" : "📊 비교 조회"}</button>
+
+      {error && <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>}
+
+      {!result && !loading && !error && (
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📰</div>
-          <div style={{ fontSize: 14, color: "#64748b" }}>위 "뉴스 조회" 버튼을 눌러<br/>보유 종목 관련 뉴스를 확인하세요</div>
-          <div style={{ fontSize: 11, color: "#475569", marginTop: 10 }}>보유 종목 {stocks.length}개</div>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+          <div style={{ fontSize: 14, color: "#64748b" }}>기간을 고르고 "비교 조회"를 누르세요</div>
         </div>
       )}
 
-      {newsData && newsData.length === 0 && !loading && (
-        <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b", fontSize: 14 }}>최근 7일 내 관련 뉴스를 찾지 못했어요.</div>
-      )}
-
-      {newsData && newsData.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {newsData.map((grp, i) => {
-            const open = expanded[grp.stock] !== false; // 기본 펼침
-            return (
-              <div key={i} style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 12, overflow: "hidden" }}>
-                <div onClick={() => setExpanded(p => ({ ...p, [grp.stock]: !open }))} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", cursor: "pointer" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", flex: 1, marginRight: 8 }}>{grp.stock}</span>
-                  <span style={{ fontSize: 11, color: "#38bdf8", background: "#0ea5e915", padding: "2px 8px", borderRadius: 10, marginRight: 6 }}>{grp.items.length}건</span>
-                  <span style={{ fontSize: 11, color: "#475569" }}>{open ? "▲" : "▼"}</span>
+      {result && !loading && (
+        <>
+          <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 14px" }}>
+            {allRows.map((r, i) => (
+              <div key={i} style={{ marginBottom: i < allRows.length - 1 ? 16 : 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                  <span style={{ fontSize: 13, fontWeight: r.mine ? 800 : 600, color: r.mine ? "#22d3a0" : "#cbd5e1" }}>{r.mine ? "⭐ " : ""}{r.name}</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: r.ret == null ? "#475569" : r.ret >= 0 ? "#22d3a0" : "#ef4444" }}>
+                    {r.ret == null ? "데이터 부족" : `${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(2)}%`}
+                  </span>
                 </div>
-                {open && (
-                  <div style={{ padding: "0 14px 12px" }}>
-                    {grp.items.map((it, j) => (
-                      <div key={j} style={{ padding: "10px 0", borderTop: "1px solid #1a1a2e" }}>
-                        <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>{it.title}</div>
-                        {it.summary && <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 4 }}>{it.summary}</div>}
-                        <div style={{ fontSize: 11, color: "#475569", display: "flex", gap: 8 }}>
-                          {it.source && <span>{it.source}</span>}
-                          {it.date && <span>· {it.date}</span>}
-                        </div>
-                      </div>
-                    ))}
+                {r.ret != null && (
+                  <div style={{ height: 10, background: "#16162a", borderRadius: 5, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${Math.min(100, Math.abs(r.ret) / maxAbs * 100)}%`, background: r.mine ? "#22d3a0" : r.color, borderRadius: 5, transition: "width 0.4s" }} />
                   </div>
                 )}
               </div>
-            );
-          })}
-          <div style={{ marginTop: 6, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
-            ⚠️ 뉴스는 AI 웹 검색 기반이라 일부 누락·시점 오차가 있을 수 있습니다. 투자 판단 전 원문 확인을 권장합니다.
+            ))}
           </div>
-        </div>
+
+          <div style={{ marginTop: 12, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+            {result.baselineDate
+              ? `기준일 ${result.baselineDate}부터 현재까지(약 ${result.myDays}일) 동일 구간 비교입니다.`
+              : "내 포트폴리오 누적 데이터가 부족해(2개 시점 이상 필요) 내 수익률은 표시되지 않습니다. 가격을 며칠간 갱신하면 비교가 가능해집니다."}
+            {tsStr && ` · 조회 ${tsStr}`}
+            <br/>· 인덱스는 가격지수 기준(배당 제외)이며, 내 수익률은 평가액 변동 기준입니다.
+          </div>
+        </>
       )}
     </div>
   );
@@ -4944,12 +5223,13 @@ ${list}
 
 function App() {
   const [tab, setTab] = useState("market");
+  React.useEffect(() => { refreshUsdKrw(); }, []); // 앱 시작 시 환율 1회 갱신(1시간 캐시)
   const tabs = [
     { id: "market",    label: "인사이트",     icon: "" },
     { id: "portfolio", label: "포트폴리오",    icon: "" },
     { id: "dividend",  label: "배당",          icon: "" },
     { id: "rebalance", label: "리밸런싱",      icon: "" },
-    { id: "news",      label: "뉴스",          icon: "" },
+    { id: "benchmark", label: "벤치마크",      icon: "" },
     { id: "advisor",   label: "AI 조언",       icon: "" },
     { id: "settings",  label: "설정",          icon: "" },
   ];
@@ -5019,7 +5299,7 @@ function App() {
         <div style={{ display: tab === "portfolio" ? "block" : "none" }}><Portfolio /></div>
         <div style={{ display: tab === "dividend"  ? "block" : "none" }}>{tab === "dividend" && <DividendCalendar />}</div>
         <div style={{ display: tab === "rebalance" ? "block" : "none" }}>{tab === "rebalance" && <RebalanceGuide />}</div>
-        <div style={{ display: tab === "news"      ? "block" : "none" }}>{tab === "news" && <StockNews />}</div>
+        <div style={{ display: tab === "benchmark" ? "block" : "none" }}>{tab === "benchmark" && <BenchmarkCompare />}</div>
         <div style={{ display: tab === "advisor"   ? "block" : "none" }}><Advisor /></div>
         <div style={{ display: tab === "settings"  ? "block" : "none" }}><Settings /></div>
       </div>
