@@ -2512,7 +2512,7 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const viewRef = useRef(view); viewRef.current = view;
   const boxRef = useRef(null);
-  const g = useRef({ mode: null, d0: 0, s0: 1, x0: 0, y0: 0, sx: 0, sy: 0, lastTap: 0 }).current;
+  const g = useRef({ mode: null, d0: 0, s0: 1, x0: 0, y0: 0, sx: 0, sy: 0, lastTap: 0, lastDx: 0, lastDy: 0 }).current;
 
   const total = items.length;
   const clamp = (s) => Math.max(1, Math.min(6, s));
@@ -2528,15 +2528,31 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       else if (t.length === 1) {
         const now = Date.now();
         if (now - g.lastTap < 280) { g.lastTap = 0; g.mode = null; const v = viewRef.current; setView(v.s > 1 ? { s: 1, x: 0, y: 0 } : { s: 2.5, x: 0, y: 0 }); return; }
-        g.lastTap = now; g.mode = "pan"; g.sx = t[0].clientX; g.sy = t[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y;
+        g.lastTap = now;
+        g.mode = viewRef.current.s > 1 ? "pan" : "swipe";
+        g.sx = t[0].clientX; g.sy = t[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; g.lastDx = 0; g.lastDy = 0;
       }
     };
     const onMove = (e) => {
       const t = e.touches;
       if (g.mode === "pinch" && t.length === 2) { e.preventDefault(); setView(v => ({ ...v, s: clamp(g.s0 * (dist(t) / g.d0)) })); }
       else if (g.mode === "pan" && t.length === 1 && viewRef.current.s > 1) { e.preventDefault(); setView(v => ({ ...v, x: g.x0 + (t[0].clientX - g.sx), y: g.y0 + (t[0].clientY - g.sy) })); }
+      else if (g.mode === "swipe" && t.length === 1 && total > 1) {
+        const dx = t[0].clientX - g.sx, dy = t[0].clientY - g.sy;
+        g.lastDx = dx; g.lastDy = dy;
+        if (Math.abs(dx) > Math.abs(dy)) { e.preventDefault(); setView({ s: 1, x: Math.max(-160, Math.min(160, dx)), y: 0 }); } // 슬라이드 피드백
+      }
     };
-    const onEnd = (e) => { if (e.touches.length === 0) g.mode = null; else if (e.touches.length === 1) { g.mode = "pan"; g.sx = e.touches[0].clientX; g.sy = e.touches[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; } };
+    const onEnd = (e) => {
+      if (g.mode === "swipe" && e.touches.length === 0) {
+        const dx = g.lastDx || 0, dy = g.lastDy || 0;
+        if (total > 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? go(1) : go(-1); }
+        else setView({ s: 1, x: 0, y: 0 }); // 스냅백
+        g.mode = null; g.lastDx = 0; g.lastDy = 0; return;
+      }
+      if (e.touches.length === 0) g.mode = null;
+      else if (e.touches.length === 1) { g.mode = viewRef.current.s > 1 ? "pan" : "swipe"; g.sx = e.touches[0].clientX; g.sy = e.touches[0].clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y; g.lastDx = 0; g.lastDy = 0; }
+    };
     el.addEventListener("touchstart", onStart, { passive: false });
     el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd);
@@ -2568,10 +2584,10 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
         )}
         {/* 좌우 네비게이션 */}
         {total > 1 && idx > 0 && (
-          <button onClick={() => go(-1)} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "#0009", border: "none", color: "#fff", width: 40, height: 40, borderRadius: 20, fontSize: 20, cursor: "pointer" }}>‹</button>
+          <button onClick={() => go(-1)} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "#000a", border: "1px solid #ffffff22", color: "#fff", width: 48, height: 48, borderRadius: 24, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>‹</button>
         )}
         {total > 1 && idx < total - 1 && (
-          <button onClick={() => go(1)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "#0009", border: "none", color: "#fff", width: 40, height: 40, borderRadius: 20, fontSize: 20, cursor: "pointer" }}>›</button>
+          <button onClick={() => go(1)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "#000a", border: "1px solid #ffffff22", color: "#fff", width: 48, height: 48, borderRadius: 24, fontSize: 24, cursor: "pointer", lineHeight: 1 }}>›</button>
         )}
       </div>
 
@@ -2587,7 +2603,7 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
 
       {/* 하단 액션 */}
       <div style={{ padding: "10px 16px 18px", flexShrink: 0 }}>
-        <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 10 }}>두 손가락으로 확대 · 더블탭 · 한 손가락으로 이동{total > 1 ? " · 좌우로 넘기기" : ""}</div>
+        <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 10 }}>두 손가락 확대 · 더블탭 · 확대 후 한 손가락 이동{total > 1 ? " · 좌우로 휙 넘기기" : ""}</div>
         <button
           onClick={() => keptFiles.length && onConfirm(keptFiles)}
           disabled={keptFiles.length === 0}
@@ -4102,11 +4118,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.2</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.1 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.2 변경사항</div>
+            <div>· 미리보기 — 좌우 스와이프로 이미지 넘기기 추가, 넘김 버튼 확대</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.1 변경사항</div>
             <div>· 벤치마크 비교 — 내 수익률은 저장값 즉시 표시, 벤치마크는 버튼 누를 때만 조회</div>
             <div>· 스크린샷 업로드 → 인앱 확대 미리보기 연결(메인 버튼)</div>
             <div>· 스크린샷 인식 팁 안내 추가</div>
