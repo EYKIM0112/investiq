@@ -2551,9 +2551,9 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.96)", display: "flex", flexDirection: "column" }}>
       {/* 상단 바 */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", flexShrink: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", flexShrink: 0, background: "#0a0a14", borderBottom: "1px solid #1e293b" }}>
         <button onClick={onCancel} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>✕ 취소</button>
-        <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700 }}>{total > 1 ? `${idx + 1} / ${total}` : "미리보기"}</span>
+        <span style={{ color: "#22d3a0", fontSize: 14, fontWeight: 800 }}>📷 InvestIQ 미리보기{total > 1 ? ` ${idx + 1}/${total}` : ""}</span>
         <button onClick={reset} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, cursor: "pointer" }}>원래대로</button>
       </div>
 
@@ -4102,16 +4102,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.0 변경사항</div>
-            <div>· 🆕 수익률 벤치마크 비교 (코스피·코스닥·S&P500 동일 구간)</div>
-            <div>· 🆕 리밸런싱 AI 추천 비중 (0% 제안 포함)</div>
-            <div>· 🆕 이미지 다중선택 + 인앱 확대(핀치 줌) 미리보기</div>
-            <div>· 환율 반영 — USD 종목 KRW 환산 (평가액·비중·배당)</div>
-            <div>· 종목 뉴스 탭 제거 (효용 대비 토큰 과다)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.1 변경사항</div>
+            <div>· 벤치마크 비교 — 내 수익률은 저장값 즉시 표시, 벤치마크는 버튼 누를 때만 조회</div>
+            <div>· 스크린샷 업로드 → 인앱 확대 미리보기 연결(메인 버튼)</div>
+            <div>· 스크린샷 인식 팁 안내 추가</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.0</div>
+            <div>· 벤치마크 비교 / 리밸런싱 AI 추천 / 환율(USD→KRW) 반영</div>
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
@@ -5092,7 +5092,7 @@ ${holdingsList}
 }
 
 // ---------- 수익률 벤치마크 비교 (Yahoo 시세 · 토큰 없음) ----------
-const BENCH_RESULT_KEY = "investiq_bench_result_v1";
+const BENCH_STORE_KEY = "investiq_bench_v2";
 const BENCH_DATA_PREFIX = "investiq_bench_";
 const BENCHMARKS = [
   { name: "코스피",  ticker: "^KS11", color: "#3b82f6" },
@@ -5122,62 +5122,68 @@ async function fetchIndexCloses(ticker, range) {
 }
 
 function BenchmarkCompare() {
-  const [period, setPeriod] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_RESULT_KEY) || "null")?.period || "3mo"; } catch { return "3mo"; } });
+  const [period, setPeriod] = useState("3mo");
+  const [store, setStore] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_STORE_KEY) || "{}"); } catch { return {}; } });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_RESULT_KEY) || "null"); } catch { return null; } });
 
-  const run = async (pid) => {
-    setPeriod(pid); setLoading(true); setError("");
+  const P = BENCH_PERIODS.find(p => p.id === period) || BENCH_PERIODS[1];
+
+  // 내 수익률: 앱에 저장된 포폴 히스토리에서 즉시 계산 (조회/토큰 없음)
+  const my = React.useMemo(() => {
+    let history = [];
+    try { history = JSON.parse(localStorage.getItem("portfolio_history_v1") || "[]"); } catch {}
+    history = history.filter(h => h.total_value > 0).sort((a, b) => a.timestamp - b.timestamp);
+    const now = Date.now();
+    const inWindow = history.filter(h => h.timestamp >= now - P.days * 86400000);
+    if (inWindow.length >= 2 && inWindow[0].total_value > 0) {
+      const base = inWindow[0], cur = inWindow[inWindow.length - 1];
+      return { ret: (cur.total_value / base.total_value - 1) * 100, baseTime: base.timestamp, days: Math.round((now - base.timestamp) / 86400000) };
+    }
+    return { ret: null, baseTime: null, days: null };
+  }, [period, store]);
+
+  const cached = store[period]; // { rows, baselineDate, ts } | undefined
+
+  // 벤치마크 수익률만 새로 조회 (내 수익률은 저장값 그대로 사용)
+  const fetchBench = async () => {
+    setLoading(true); setError("");
     try {
-      const P = BENCH_PERIODS.find(p => p.id === pid) || BENCH_PERIODS[1];
-      let history = [];
-      try { history = JSON.parse(localStorage.getItem("portfolio_history_v1") || "[]"); } catch {}
-      history = history.filter(h => h.total_value > 0).sort((a, b) => a.timestamp - b.timestamp);
-      const now = Date.now();
-      const baseTime = now - P.days * 86400000;
-      const inWindow = history.filter(h => h.timestamp >= baseTime);
-      let myReturn = null, myBaseTime = null, myDays = null;
-      if (inWindow.length >= 2) {
-        myBaseTime = inWindow[0].timestamp;
-        const baseVal = inWindow[0].total_value, curVal = inWindow[inWindow.length - 1].total_value;
-        if (baseVal > 0) { myReturn = (curVal / baseVal - 1) * 100; myDays = Math.round((now - myBaseTime) / 86400000); }
-      }
+      const myBaseTime = my.baseTime;
       const rows = [];
       for (const b of BENCHMARKS) {
         try {
-          const data = await fetchIndexCloses(b.ticker, pid);
+          const data = await fetchIndexCloses(b.ticker, period);
           const pairs = (data.timestamps || []).map((t, i) => ({ t, c: data.closes[i] })).filter(p => p.c != null && p.c > 0);
           if (pairs.length < 2) { rows.push({ name: b.name, color: b.color, ret: null }); continue; }
           let baseC = pairs[0].c;
           if (myBaseTime) { const bt = myBaseTime / 1000; const near = pairs.find(p => p.t >= bt) || pairs[0]; baseC = near.c; }
-          const curC = pairs[pairs.length - 1].c;
-          rows.push({ name: b.name, color: b.color, ret: (curC / baseC - 1) * 100 });
+          rows.push({ name: b.name, color: b.color, ret: (pairs[pairs.length - 1].c / baseC - 1) * 100 });
         } catch (e) { rows.push({ name: b.name, color: b.color, ret: null }); }
       }
-      const data = { period: pid, ts: now, myReturn, myDays, baselineDate: myBaseTime ? new Date(myBaseTime).toISOString().slice(0, 10) : null, rows };
-      setResult(data);
-      try { localStorage.setItem(BENCH_RESULT_KEY, JSON.stringify(data)); } catch {}
+      const entry = { rows, baselineDate: myBaseTime ? new Date(myBaseTime).toISOString().slice(0, 10) : null, ts: Date.now() };
+      const next = { ...store, [period]: entry };
+      setStore(next);
+      try { localStorage.setItem(BENCH_STORE_KEY, JSON.stringify(next)); } catch {}
     } catch (e) { setError("벤치마크 조회 실패: " + e.message); }
     setLoading(false);
   };
 
-  // 표시용 행 (내 포폴 + 인덱스)
-  const allRows = result ? [{ name: "내 포트폴리오", color: "#22d3a0", ret: result.myReturn, mine: true }, ...result.rows] : [];
+  const allRows = [{ name: "내 포트폴리오", color: "#22d3a0", ret: my.ret, mine: true }, ...(cached?.rows || [])];
   const maxAbs = Math.max(1, ...allRows.filter(r => r.ret != null).map(r => Math.abs(r.ret)));
-  const tsStr = result?.ts ? (() => { const d = new Date(result.ts); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "";
+  const tsStr = cached?.ts ? (() => { const d = new Date(cached.ts); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "";
 
   return (
     <div className="card">
       <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f2e1a)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff", marginBottom: 6 }}>📊 수익률 벤치마크 비교</div>
-        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>내 포트폴리오 수익률을 코스피·코스닥·S&P500과 같은 기간으로 비교합니다. (Yahoo 시세 · 1시간 캐시)</div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>내 수익률은 앱에 저장된 평가액 기록으로 바로 계산합니다. 벤치마크(코스피·코스닥·S&P500)는 아래 버튼을 누를 때만 새로 조회합니다.</div>
       </div>
 
-      {/* 기간 선택 */}
+      {/* 기간 선택 — 누르면 내 수익률만 즉시 갱신(벤치마크는 캐시 표시) */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {BENCH_PERIODS.map(p => (
-          <button key={p.id} onClick={() => run(p.id)} disabled={loading} style={{
+          <button key={p.id} onClick={() => setPeriod(p.id)} disabled={loading} style={{
             flex: 1, padding: "9px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: loading ? "default" : "pointer",
             background: period === p.id ? "#22d3a022" : "#16162a", border: `1px solid ${period === p.id ? "#22d3a0" : "#334155"}`,
             color: period === p.id ? "#22d3a0" : "#94a3b8",
@@ -5185,50 +5191,45 @@ function BenchmarkCompare() {
         ))}
       </div>
 
-      <button onClick={() => run(period)} disabled={loading} style={{
+      <button onClick={fetchBench} disabled={loading} style={{
         width: "100%", background: loading ? "#22d3a011" : "#22d3a0", color: loading ? "#22d3a0" : "#0a0a14",
         border: "none", borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 800, cursor: loading ? "default" : "pointer",
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 14,
-      }}>{loading ? <><Spinner size={14}/>조회 중...</> : result ? "🔄 다시 조회" : "📊 비교 조회"}</button>
+      }}>{loading ? <><Spinner size={14}/>벤치마크 조회 중...</> : cached ? "🔄 벤치마크 수익률 다시 조회" : "📡 벤치마크 수익률 조회"}</button>
 
       {error && <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>}
 
-      {!result && !loading && !error && (
-        <div style={{ textAlign: "center", padding: "50px 20px", color: "#475569" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-          <div style={{ fontSize: 14, color: "#64748b" }}>기간을 고르고 "비교 조회"를 누르세요</div>
-        </div>
-      )}
-
-      {result && !loading && (
-        <>
-          <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 14px" }}>
-            {allRows.map((r, i) => (
-              <div key={i} style={{ marginBottom: i < allRows.length - 1 ? 16 : 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                  <span style={{ fontSize: 13, fontWeight: r.mine ? 800 : 600, color: r.mine ? "#22d3a0" : "#cbd5e1" }}>{r.mine ? "⭐ " : ""}{r.name}</span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: r.ret == null ? "#475569" : r.ret >= 0 ? "#22d3a0" : "#ef4444" }}>
-                    {r.ret == null ? "데이터 부족" : `${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(2)}%`}
-                  </span>
-                </div>
-                {r.ret != null && (
-                  <div style={{ height: 10, background: "#16162a", borderRadius: 5, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${Math.min(100, Math.abs(r.ret) / maxAbs * 100)}%`, background: r.mine ? "#22d3a0" : r.color, borderRadius: 5, transition: "width 0.4s" }} />
-                  </div>
-                )}
+      {/* 비교 카드 — 내 수익률은 항상 표시, 벤치마크는 조회되어 있으면 표시 */}
+      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 14px" }}>
+        {allRows.map((r, i) => (
+          <div key={i} style={{ marginBottom: i < allRows.length - 1 ? 16 : 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+              <span style={{ fontSize: 13, fontWeight: r.mine ? 800 : 600, color: r.mine ? "#22d3a0" : "#cbd5e1" }}>{r.mine ? "⭐ " : ""}{r.name}</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: r.ret == null ? "#475569" : r.ret >= 0 ? "#22d3a0" : "#ef4444" }}>
+                {r.ret == null ? (r.mine ? "데이터 부족" : "—") : `${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(2)}%`}
+              </span>
+            </div>
+            {r.ret != null && (
+              <div style={{ height: 10, background: "#16162a", borderRadius: 5, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, Math.abs(r.ret) / maxAbs * 100)}%`, background: r.mine ? "#22d3a0" : r.color, borderRadius: 5, transition: "width 0.4s" }} />
               </div>
-            ))}
+            )}
           </div>
+        ))}
+        {!cached && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #1a1a2e", fontSize: 12, color: "#64748b", textAlign: "center" }}>
+            벤치마크 수익률은 아직 조회되지 않았어요. 위 버튼을 눌러 비교해보세요.
+          </div>
+        )}
+      </div>
 
-          <div style={{ marginTop: 12, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
-            {result.baselineDate
-              ? `기준일 ${result.baselineDate}부터 현재까지(약 ${result.myDays}일) 동일 구간 비교입니다.`
-              : "내 포트폴리오 누적 데이터가 부족해(2개 시점 이상 필요) 내 수익률은 표시되지 않습니다. 가격을 며칠간 갱신하면 비교가 가능해집니다."}
-            {tsStr && ` · 조회 ${tsStr}`}
-            <br/>· 인덱스는 가격지수 기준(배당 제외)이며, 내 수익률은 평가액 변동 기준입니다.
-          </div>
-        </>
-      )}
+      <div style={{ marginTop: 12, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+        {my.baseTime
+          ? `내 수익률: 기준일 ${new Date(my.baseTime).toISOString().slice(0,10)}부터 현재까지(약 ${my.days}일) 평가액 변동 기준.`
+          : "내 포트폴리오 누적 데이터가 부족해(2개 시점 이상 필요) 내 수익률은 표시되지 않습니다. 가격을 며칠간 갱신하면 비교가 가능해집니다."}
+        {cached && tsStr && ` · 벤치마크 조회 ${tsStr}${cached.baselineDate ? ` (기준 ${cached.baselineDate})` : ""}`}
+        <br/>· 인덱스는 가격지수 기준(배당 제외), 내 수익률은 평가액 변동 기준입니다.
+      </div>
     </div>
   );
 }
