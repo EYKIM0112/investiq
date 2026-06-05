@@ -144,6 +144,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
+  let finishReason = "";
   let buf = "";
 
   while (true) {
@@ -168,12 +169,17 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
           throw new Error(errMsg);
         }
         const chunk = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+        if (parsed.candidates?.[0]?.finishReason) finishReason = parsed.candidates[0].finishReason;
         if (chunk) { fullText += chunk; onChunk && onChunk(fullText); }
       } catch (e) { if (e.message && !e.message.includes("JSON")) throw e; }
     }
   }
-  return fullText;
-}
+  // 토큰 한도로 응답이 잘린 경우: 토큰 2배로 1회 자동 재시도 (사용자가 다시 누를 필요 없게)
+  if (finishReason === "MAX_TOKENS" && _retry < 1) {
+    onChunk && onChunk("[응답이 길어 더 받는 중...]");
+    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, onChunk, _retry: _retry + 1 });
+  }
+  return fullText;}
 
 // ---------- Gemini API 일반 호출 (이미지 등 스트리밍 불필요한 경우) ----------
 async function callGemini({ system, user, maxTokens = 2000, useSearch = false }) {
@@ -466,22 +472,23 @@ const MARKET_PROMPTS = {
 {"vix":{"value":"수치","status":"normal"},"global_flow":"자금흐름 2문장","black_swan":[{"risk":"거시 리스크명","level":"high/medium/low","comment":"한줄"}],"sector_cycle":{"leading":[{"name":"섹터","leaders":["주도주"],"etf":["직접관련ETF만"]}],"turnaround":[{"name":"섹터(leading과 다른 섹터)","leaders":["종목"],"etf":["직접관련ETF만"]}],"declining":[{"name":"섹터","comment":"한줄"}]},"summary":"2문장"}
 [ETF 규칙] etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만 포함. 다른 섹터 ETF 절대 금지.
 [중복 규칙] leading(모멘텀)과 turnaround(턴어라운드)의 섹터명은 반드시 서로 달라야 함.
-[black_swan 규칙] 현재 실제로 진행 중인 거시 리스크만 포함. 전쟁/지정학/금리/금융위기/환율/에너지 위기 등. 해당 없으면 빈 배열 [].`,
+[black_swan 규칙] 현재 실제로 진행 중인 거시 리스크만 포함. 전쟁/지정학/금리/금융위기/환율/에너지 위기 등. 해당 없으면 빈 배열 [].
+[개수 규칙] leading 최대 3, turnaround 최대 2, declining 최대 3, black_swan 최대 3.`,
 
-  kr: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 한국 주식시장 최신 데이터를 웹 검색으로 수집하라. 오늘자 데이터 우선.
+  kr: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 한국 주식시장 최신 데이터를 웹 검색으로 수집하라. 오늘자 데이터 우선. (개수: strong 최대 3·rebound 최대 2·weakening 최대 2·events 최대 3·risks 최대 2)
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 [ETF 규칙] 각 섹터의 etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만. 다른 섹터 ETF 절대 금지.
 [중복 규칙] strong(모멘텀강한)과 rebound(턴어라운드) 섹터명은 서로 달라야 함.
 {"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["직접관련ETF"]}],"rebound":[{"name":"다른섹터","reason":"1문장","leaders":["종목"],"etf":["직접관련ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
-  us: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 미국 주식시장 최신 데이터를 웹 검색으로 수집하라. 오늘자 데이터 우선.
+  us: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 미국 주식시장 최신 데이터를 웹 검색으로 수집하라. 오늘자 데이터 우선. (개수: strong 최대 3·rebound 최대 2·weakening 최대 2·events 최대 3·risks 최대 2)
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 [ETF 규칙] 각 섹터의 etf 배열에는 반드시 해당 섹터와 직접 관련된 ETF만. 다른 섹터 ETF 절대 금지.
 [중복 규칙] strong(모멘텀강한)과 rebound(턴어라운드) 섹터명은 서로 달라야 함.
 {"summary":"2문장","strong":[{"name":"섹터","reason":"1문장","score":80,"leaders":["주도주"],"etf":["직접관련ETF"]}],"rebound":[{"name":"다른섹터","reason":"1문장","leaders":["종목"],"etf":["직접관련ETF"]}],"weakening":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1","이벤트2"],"risks":["리스크1"]}`,
 
   commodities: (d) => `오늘 날짜: ${d}. 지금 이 순간 기준 글로벌 원자재 시장 최신 데이터를 웹 검색으로 수집하라.
-반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어. 시장규모 순 상위 10개.
+반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어. 시장규모 순 상위 6개만(items 6개 이하). hot_picks 최대 3, drivers·risks 각 최대 2.
 [단위 규칙] price와 outlook의 단위를 반드시 동일하게 통일. 원유=배럴당달러, 금/은=온스당달러, 구리=파운드당달러. 전망 수치도 같은 단위로만 표기. 단위 혼용 절대 금지.
 {"summary":"2문장","items":[{"rank":1,"name":"원자재명","price":"현재가(단위포함)","change_pct":"등락%","trend":"up","reason":"1문장","outlook":"같은단위로전망1문장"}],"hot_picks":[{"name":"원자재","reason":"1문장","change_pct":"등락%"}],"drivers":["동인1"],"risks":["리스크1"]}`,
 
@@ -502,7 +509,7 @@ majors 첫 두 개는 반드시 비트코인(BTC)과 이더리움(ETH)으로 시
 주요 지수: 독일DAX, 영국FTSE100 기준. 프롬프트 하단에 API 실시간 지수 데이터가 제공된 경우 해당 값을 참고.
 {"summary":"2문장","indices":[{"name":"독일DAX","value":"현재값","change":"등락%"},{"name":"영국FTSE100","value":"현재값","change":"등락%"}],"strong":[{"name":"섹터","country":"국가","reason":"1문장","leaders":["종목"],"etf":["ETF"]}],"weak":[{"name":"섹터","reason":"1문장"}],"events":["이벤트1"],"risks":["리스크1"]}`,
 
-  ipo: (d) => `오늘 날짜: ${d}. 한국 거래소 최근 1개월 신규상장 및 향후 1개월 상장예정 검색.
+  ipo: (d) => `오늘 날짜: ${d}. 한국 거래소 최근 1개월 신규상장 및 향후 1개월 상장예정 검색. (upcoming 최대 5, recent 최대 5)
 반드시 JSON으로만 응답. {로 시작 }로 끝. 마크다운/인용 금지. 모든 값 한국어.
 {"upcoming":[{"name":"종목명","type":"주식/ETF","expected_date":"예정일","issuer":"회사명","description":"1문장","highlight":"주목이유"}],"recent":[{"name":"종목명","type":"주식/ETF","listed_date":"상장일","market_cap":"시총억원","issuer":"회사명","description":"1문장","highlight":"주목이유","size_note":"소규모참고또는없음"}],"summary":"1문장"}`,
 };
@@ -648,7 +655,7 @@ function MarketInsight({ onRefreshAll }) {
       const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error(`타임아웃 (${timeoutMs/1000}초)`)), timeoutMs));
       const text = await Promise.race([
         callGeminiStream({
-          maxTokens: 6000,
+          maxTokens: 8000,
           useSearch: true,
           system: `You are a global investment analyst with real-time market data access. CRITICAL RULES:
 1. Search the web for TODAY's or YESTERDAY's market data ONLY. Never use data older than 2 days.
@@ -988,7 +995,7 @@ ${SOURCE_RULES}`,
       </div>
       {(d.markets||[]).map((mkt,i) => (
         <div key={i} style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-          <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>{mkt.country} {mkt.index_change||""}</div>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:12, letterSpacing:2 }}><span style={{ color:"#e2e8f0" }}>{mkt.country}</span> <span style={{ color:changePctColor(mkt.index_change) }}>{mkt.index_change||""}</span></div>
           {(mkt.strong||[]).length > 0 && (
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>▲ 강한 섹터</div>
@@ -4203,11 +4210,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.6.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.6.2</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.0 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.2 변경사항</div>
+            <div>· 시장 인사이트 출력 항목 수 제한(원자재 10→6 등) → 분석 더 빠르고 잘림 거의 없음, 타임아웃 원복</div>
+            <div>· 아시아 탭 지수 등락율 색상 수정(상승 초록·하락 빨강)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.1 변경사항</div>
+            <div>· 시장 인사이트 분석 잘림(truncation) 수정 — 토큰 한도 도달 시 자동으로 더 받아 재생성</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.0 변경사항</div>
             <div>· 리밸런싱 AI 추천 JSON 파싱 실패 수정 (검색 끄고 시장 인사이트 전체 탭 활용)</div>
             <div>· 벤치마크 — 지수 수익률을 선택 기간(1/3/6/12개월) 기준으로 계산하도록 수정</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.9 변경사항</div>
