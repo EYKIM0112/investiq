@@ -65,8 +65,8 @@ function safeParseJSON(text) {
     // 끊긴 JSON 복구: holdings 배열 말미 불완전 항목 제거 후 재시도
     let fixed = cleaned;
     // 잘린 holdings 배열 복구: 마지막 완전하지 않은 { ... } 블록 제거
-    if (fixed.includes('"holdings"')) {
-      const holdingsMatch = fixed.match(/"holdings"\s*:\s*\[/);
+    if (fixed.includes('"holdings"') || fixed.includes('"recommendations"')) {
+      const holdingsMatch = fixed.match(/"(?:holdings|recommendations)"\s*:\s*\[/);
       if (holdingsMatch) {
         const startIdx = holdingsMatch.index + holdingsMatch[0].length;
         let depth = 1, lastCompleteIdx = startIdx, inStr = false, escape = false;
@@ -410,11 +410,14 @@ function fmtInsightDate(d) {
   return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 }
 
+// 시장 인사이트 탭 목록
+const ALL_INSIGHT_TABS = ["summary","kr","us","asia","europe","commodities","crypto","ipo"];
+
 // 앱에 이미 조회·저장된 시장 인사이트 캐시를 텍스트로 (추가 생성/검색 없이 재사용)
-function getMarketInsightContext(maxLen = 1200) {
+function getMarketInsightContext(maxLen = 1200, tabs = ["summary","kr","us"]) {
   try {
     const parts = [];
-    ["summary", "kr", "us"].forEach(t => {
+    tabs.forEach(t => {
       const item = localStorage.getItem(`market_cache_${t}`);
       if (item) { const { data } = JSON.parse(item); const txt = typeof data === "string" ? data : JSON.stringify(data); if (txt) parts.push(`[${t}] ${txt}`); }
     });
@@ -4200,11 +4203,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.5.9</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.6.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.9 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.0 변경사항</div>
+            <div>· 리밸런싱 AI 추천 JSON 파싱 실패 수정 (검색 끄고 시장 인사이트 전체 탭 활용)</div>
+            <div>· 벤치마크 — 지수 수익률을 선택 기간(1/3/6/12개월) 기준으로 계산하도록 수정</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.9 변경사항</div>
             <div>· 리밸런싱 AI 추천 — 시장 인사이트 + 고정 신뢰매체(한경·매경·Reuters·CNBC) 검색 보완</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.8 변경사항</div>
             <div>· 시장 인사이트에 검색·분석 날짜 표시</div>
@@ -5041,10 +5047,9 @@ function RebalanceGuide() {
       const tv = (portfolio?.holdings || []).reduce((s,h)=>s+holdingValueKRW(h,fx),0);
       const totalRet = tc > 0 ? ((tv - tc) / tc * 100).toFixed(1) : "0.0";
       // 앱에 이미 조회된 시장 인사이트 재사용 (추가 검색/토큰 없이)
-      const insightCtx = getMarketInsightContext(1200);
+      const insightCtx = getMarketInsightContext(3500, ALL_INSIGHT_TABS);
 
-      const sys = `한국 투자 포트폴리오 전략가. 제공된 [시장 인사이트]를 1차 근거로 하고, 아래 [우선 검색 출처]를 웹에서 확인해 최신 섹터 전망을 보완한 뒤, 보유 현황(비중·수익률·집중도)을 고려해 섹터별 목표 비중을 제안. 순수 JSON만 출력(마크다운/설명문 없이). 냉정하게 평가하고 근거를 분명히.
-[우선 검색 출처] ${TRUSTED_SOURCES} — 이 매체들 위주로(가능하면 site: 검색) 확인하고, 어떤 사이트가 신뢰할 만한지 별도로 탐색하지 말 것.
+      const sys = `한국 투자 포트폴리오 전략가. 제공된 [시장 인사이트](여러 탭의 최신 시장 분석)와 보유 현황(비중·수익률·집중도)을 근거로 섹터별 목표 비중을 제안. 별도 웹 검색 없이 제공된 정보로 판단. 순수 JSON만 출력(마크다운/설명문/주석 없이). 냉정하게 평가하고 근거를 분명히.
 ${SOURCE_RULES}`;
       const usr = `아래 내 포트폴리오를 분석해 섹터별 목표 비중을 제안해줘.
 
@@ -5058,7 +5063,7 @@ ${holdingsList}
 ${totalRet >= 0 ? "+" : ""}${totalRet}%
 ${insightCtx ? `\n[참고: 앱 내 최근 시장 인사이트]\n${insightCtx}\n` : ""}
 [지침]
-- 위 시장 인사이트를 1차로 반영하고, 지정된 신뢰 출처(한경·매경·Reuters·CNBC)에서 최신 섹터 전망을 보완
+- 제공된 시장 인사이트(여러 탭) 전반의 섹터 전망을 종합 반영
 - 종목별 수익률·집중 위험을 함께 고려
 - 전망이 약하거나 비효율적인 섹터는 비중 축소·0%(전량 정리)도 과감히 제안
 - 필요하면 현재 보유하지 않은 유망 섹터를 신규 편입으로 제안 가능(섹터명 명확히)
@@ -5066,7 +5071,7 @@ ${insightCtx ? `\n[참고: 앱 내 최근 시장 인사이트]\n${insightCtx}\n`
 - reason은 1~2문장으로 구체적 근거(전망·밸류에이션·집중도 등) 제시
 - 출력(JSON만):
 {"recommendations":[{"sector":"섹터명","target_pct":30,"reason":"구체적 근거 1~2문장"}],"summary":"전체 전략 한두 문장"}`;
-      const txt = await callGemini({ system: sys, user: usr, maxTokens: 3000, useSearch: true });
+      const txt = await callGemini({ system: sys, user: usr, maxTokens: 2500, useSearch: false });
       const parsed = safeParseJSON(txt);
       const data = {
         recommendations: Array.isArray(parsed?.recommendations) ? parsed.recommendations.filter(r => r && r.sector) : [],
@@ -5134,8 +5139,8 @@ ${insightCtx ? `\n[참고: 앱 내 최근 시장 인사이트]\n${insightCtx}\n`
               <div style={{ fontSize: 13, fontWeight: 800, color: "#a8b4f8" }}>🤖 AI 추천 비중</div>
               {aiRec && aiTsStr && <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>📌 추천일 {aiTsStr} · 저장된 추천 재사용 중</div>}
               {!aiRec && (getMarketInsightDate()
-                ? <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>📅 {fmtInsightDate(getMarketInsightDate())} 인사이트 + 신뢰 매체(한경·매경·Reuters·CNBC) 참고</div>
-                : <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>신뢰 매체(한경·매경·Reuters·CNBC) 참고 · 인사이트 조회 시 더 정확</div>)}
+                ? <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>📅 {fmtInsightDate(getMarketInsightDate())} 시장 인사이트(전체 탭) 기준으로 추천</div>
+                : <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 3 }}>⚠️ 인사이트 탭을 먼저 조회하면 더 정확해요</div>)}
             </div>
             <button onClick={fetchAiRec} disabled={aiLoading} style={{
               background: aiLoading ? "#7c3aed11" : "#7c3aed22", border: "1px solid #7c3aed44", color: "#a8b4f8",
@@ -5300,16 +5305,12 @@ function BenchmarkCompare() {
           const data = await fetchIndexCloses(b.ticker, period, true);
           const pairs = (data.timestamps || []).map((t, i) => ({ t, c: data.closes[i] })).filter(p => p.c != null && p.c > 0);
           if (pairs.length < 2) { rows.push({ name: b.name, color: b.color, ret: null }); continue; }
-          // 기준가: 기준일(myBaseTime) 이전(또는 같은) 마지막 바. 없으면 데이터 시작점.
+          // 지수 수익률 = 선택한 기간 전체 기준 (기간 시작 ~ 현재). 기간 버튼에 따라 달라짐.
           const curIdx = pairs.length - 1;
-          let baseIdx = 0;
-          if (myBaseTime) {
-            const bt = myBaseTime / 1000;
-            baseIdx = -1;
-            for (let i = 0; i < pairs.length; i++) { if (pairs[i].t <= bt) baseIdx = i; else break; }
-            if (baseIdx < 0) baseIdx = 0; // 기준일이 데이터 시작보다 앞이면 처음부터
-          }
-          if (baseIdx >= curIdx) baseIdx = Math.max(0, curIdx - 1); // 같은 바로 잡히면 직전 바 사용(0% 방지)
+          const cutoff = (Date.now() - P.days * 86400000) / 1000; // 초 단위
+          let baseIdx = pairs.findIndex(p => p.t >= cutoff);
+          if (baseIdx < 0) baseIdx = 0;                              // 데이터가 기간보다 짧으면 처음부터
+          if (baseIdx >= curIdx) baseIdx = Math.max(0, curIdx - 1);  // 같은 바면 직전 바(0% 방지)
           rows.push({ name: b.name, color: b.color, ret: (pairs[curIdx].c / pairs[baseIdx].c - 1) * 100 });
         } catch (e) { rows.push({ name: b.name, color: b.color, ret: null }); }
       }
@@ -5379,7 +5380,8 @@ function BenchmarkCompare() {
         {my.baseTime
           ? `내 수익률: 기준일 ${new Date(my.baseTime).toISOString().slice(0,10)}부터 현재까지(약 ${my.days}일) 평가액 변동 기준.`
           : "내 포트폴리오 누적 데이터가 부족해(2개 시점 이상 필요) 내 수익률은 표시되지 않습니다. 가격을 며칠간 갱신하면 비교가 가능해집니다."}
-        {cached && tsStr && ` · 벤치마크 조회 ${tsStr}${cached.baselineDate ? ` (기준 ${cached.baselineDate})` : ""}`}
+        {cached && tsStr && ` · 벤치마크 조회 ${tsStr}`}
+        <br/>· 벤치마크 지수는 <b>선택한 기간({P.label}) 전체</b> 수익률, 내 수익률은 <b>보유 기간(약 {my.days ?? "?"}일)</b> 기준입니다. 보유 기간이 선택 기간보다 짧으면 두 값의 직접 비교는 제한적입니다.
         <br/>· 인덱스는 가격지수 기준(배당 제외), 내 수익률은 평가액 변동 기준입니다.
       </div>
     </div>
