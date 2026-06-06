@@ -2571,6 +2571,88 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
 
 
 // ---------- 포트폴리오 탭 ----------
+// ---------- 계좌명 입력 모달 (스크린샷 등록 전 단계: 계좌명 직접 입력 → 다중 스샷 한 계좌로 병합) ----------
+function AccountInputModal({ existingAccounts = [], initialFiles = [], onSubmit, onCancel }) {
+  const [name, setName] = useState("");
+  const [files, setFiles] = useState(initialFiles);
+  const [dragOver, setDragOver] = useState(false);
+  const trimmed = name.trim();
+  const isDup = existingAccounts.includes(trimmed);
+
+  const isImg = (f) => (f.type || "").startsWith("image/") || ["jpg","jpeg","png","webp","gif","heic","heif","bmp"].includes((f.name.split(".").pop() || "").toLowerCase());
+  const addFiles = (fileList) => {
+    const imgs = Array.from(fileList || []).filter(isImg);
+    if (!imgs.length) return;
+    setFiles(prev => [...prev, ...imgs]);
+  };
+  const removeFile = (i) => setFiles(prev => prev.filter((_, idx) => idx !== i));
+  const canSubmit = trimmed.length > 0 && files.length > 0;
+  const chip = { background:"#16162a", border:"1px solid #334155", color:"#e2e8f0", borderRadius:8 };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:9998, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div style={{ width:"100%", maxWidth:420, background:"#0f0f18", border:"1px solid #1e293b", borderRadius:16, padding:18, maxHeight:"90vh", overflowY:"auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <span style={{ color:"#22d3a0", fontSize:16, fontWeight:800 }}>📷 계좌 스크린샷 등록</span>
+          <button onClick={onCancel} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:15, fontWeight:700, cursor:"pointer" }}>✕</button>
+        </div>
+
+        <div style={{ fontSize:12, color:"#94a3b8", fontWeight:700, marginBottom:6 }}>계좌명</div>
+        <input
+          value={name} onChange={e=>setName(e.target.value)} autoFocus
+          placeholder="예: 삼성 개인연금"
+          style={{ width:"100%", marginBottom:6, padding:"12px", background:"#0a0a14", border:`1px solid ${isDup ? "#f59e0b" : "#334155"}`, borderRadius:10, color:"#e2e8f0", fontSize:15, boxSizing:"border-box" }}
+        />
+        {isDup && (
+          <div style={{ fontSize:12, color:"#f59e0b", marginBottom:8, lineHeight:1.5 }}>⚠️ 이미 등록된 계좌입니다. 등록 시 이 계좌의 종목 정보를 교체할지 확인합니다.</div>
+        )}
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:12, lineHeight:1.6 }}>
+          한 계좌가 여러 화면에 걸쳐 있으면 <b style={{color:"#cbd5e1"}}>여러 장을 함께 선택</b>하세요. 모두 이 계좌로 합쳐집니다.
+        </div>
+
+        {/* 드롭존 + 선택 */}
+        <div
+          onDragOver={e=>{ e.preventDefault(); setDragOver(true); }}
+          onDragLeave={()=>setDragOver(false)}
+          onDrop={e=>{ e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+          style={{ border:`2px dashed ${dragOver ? "#22d3a0" : "#334155"}`, borderRadius:12, padding:"16px", textAlign:"center", background: dragOver ? "#22d3a011" : "#0a0a14", marginBottom:10 }}
+        >
+          <div style={{ fontSize:13, color:"#64748b", marginBottom:10 }}>PC: 여기로 드래그 · 모바일: 아래 버튼</div>
+          <label style={{ display:"inline-block", padding:"11px 18px", borderRadius:10, cursor:"pointer", background:"linear-gradient(135deg,#0ea5e9,#0369a1)", color:"#fff", fontWeight:700, fontSize:14 }}>
+            스크린샷 선택 (여러 장 가능)
+            <input type="file" accept="image/*" multiple style={{ display:"none" }}
+              onChange={e=>{ addFiles(e.target.files); e.target.value=""; }} />
+          </label>
+        </div>
+
+        {/* 선택된 파일 목록 */}
+        {files.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:12, color:"#94a3b8", marginBottom:6 }}>선택된 이미지 {files.length}장</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {files.map((f, i) => (
+                <div key={i} style={{ ...chip, padding:"6px 8px", fontSize:11, display:"flex", alignItems:"center", gap:6, maxWidth:"100%" }}>
+                  <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:120 }}>{f.name}</span>
+                  <button onClick={()=>removeFile(i)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:13, fontWeight:800, padding:0, lineHeight:1 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={()=> canSubmit && onSubmit(trimmed, files)} disabled={!canSubmit}
+          style={{ width:"100%", padding:"14px", borderRadius:12, border:"none", fontSize:15, fontWeight:800,
+                   background: canSubmit ? "#22d3a0" : "#16162a", color: canSubmit ? "#0a0a14" : "#475569",
+                   cursor: canSubmit ? "pointer" : "default" }}
+        >
+          {!trimmed ? "계좌명을 입력하세요" : !files.length ? "스크린샷을 선택하세요" : `미리보기 (${files.length}장)`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- 인앱 이미지 미리보기 (캐러셀 슬라이드 + 핀치 줌) ----------
 function ImageZoomPreview({ items, onConfirm, onCancel }) {
   const [idx, setIdx] = useState(0);
@@ -2725,6 +2807,7 @@ function Portfolio() {
   const [autoUpdated, setAutoUpdated] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(null); // "buy" | "sell" | null
   const [imgPreview, setImgPreview] = useState(null); // { file, url, addToExisting } | null
+  const [acctModal, setAcctModal] = useState(null); // { addToExisting, initialFiles } | null (계좌명 입력 모달)
 
   const imgInputRef      = useRef(null);
   const xlsInputRef      = useRef(null);
@@ -2828,7 +2911,7 @@ function Portfolio() {
   };
 
   // 공통 파일 처리
-  const processFile = async (file, addToExisting = false) => {
+  const processFile = async (file, addToExisting = false, skipPriceUpdate = false, batchCtx = null) => {
     if (!file) return;
     setUploading(true);
     setUploadMsg("파일 확인 중...");
@@ -2942,13 +3025,26 @@ function Portfolio() {
 
       if (!parsed?.holdings?.length) throw new Error("종목을 찾을 수 없어요. 다른 이미지를 시도해보세요.");
 
-      // 계좌명 결정 - 보이는 텍스트 그대로, 중복 시 구분자 추가
-      const rawAccount = (parsed.account || "신규계좌").trim();
-      const existingAccounts = portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : [];
-      let detectedAccount = rawAccount;
-      if (existingAccounts.includes(rawAccount)) {
-        const dupCount = existingAccounts.filter(n => n === rawAccount || n.startsWith(rawAccount + " ")).length;
-        detectedAccount = rawAccount + ` -${dupCount + 1}`;
+      // ── 계좌명 + 등록 방식 결정 ───────────────────────────────────────────
+      // 머지 기준은 항상 최신 localStorage(base)에서 읽음 (다중 이미지 순차 처리 시 stale closure 방지).
+      const base = loadPortfolio();
+      let targetAccountName, regMode;
+      if (batchCtx) {
+        // 스크린샷 모달 경로: 사용자가 입력한 계좌명 사용(AI 자동인식 무시). 교체 여부는 onConfirm에서 배치당 1회 확인 완료.
+        targetAccountName = batchCtx.accountName;
+        if (batchCtx.batchTouched.has(targetAccountName)) regMode = "merge";          // 같은 배치 추가분 → 병합
+        else if (batchCtx.preBatchAccounts.has(targetAccountName)) regMode = "replace"; // 기존 계좌 → 교체
+        else regMode = "new";                                                          // 신규
+      } else {
+        // 비배치(스프레드시트 등): 같은 계좌명이면 구분자 붙여 신규로 (기존 동작 유지, 의도치 않은 덮어쓰기 방지)
+        const rawAccount = (parsed.account || "신규계좌").trim();
+        const existing = [...new Set(base.holdings.map(h => h.account).filter(Boolean))];
+        targetAccountName = rawAccount;
+        if (existing.includes(rawAccount)) {
+          const dup = existing.filter(n => n === rawAccount || n.startsWith(rawAccount + " ")).length;
+          targetAccountName = rawAccount + ` -${dup + 1}`;
+        }
+        regMode = "new";
       }
 
       let newHoldings = parsed.holdings.map(h => {
@@ -2983,7 +3079,7 @@ function Portfolio() {
           yahoo_ticker: isKRW ? null : (h.yahoo_ticker || null),
           current_price: currentPrice,
           change_pct: h.change_pct ?? null,
-          account: h.account || detectedAccount,
+          account: batchCtx ? targetAccountName : (h.account || targetAccountName),
         };
       }).filter(h => h.shares > 0 && h.avg_price >= 0);
 
@@ -3007,25 +3103,32 @@ function Portfolio() {
         } catch(e) { console.warn("ticker 보완 실패:", e); }
       }
 
-      // 기존 같은 계좌가 있는지 확인 → 교체 or 추가
-      const sameAccount = existingAccounts.find(a => a === detectedAccount);
+      // ── 등록 방식에 따라 머지 (base = 최신 localStorage 스냅샷) ──────────────
       let latestPortfolio;
-      if (sameAccount && portfolio) {
-        // 같은 계좌 → 교체 (합산 아님)
-        const otherHoldings = portfolio.holdings.filter(h => h.account !== sameAccount);
-        latestPortfolio = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...otherHoldings, ...newHoldings] };
-        console.log(`계좌 "${sameAccount}" 교체 완료`);
-      } else if (portfolio) {
-        latestPortfolio = { ...portfolio, updatedAt: new Date().toISOString(), holdings: [...portfolio.holdings, ...newHoldings] };
+      if (regMode === "merge") {
+        // 같은 배치의 추가 스샷 → 같은 계좌에 종목 이어붙이기 (같은 종목명은 새 데이터로 갱신)
+        const newNames = new Set(newHoldings.map(h => h.name));
+        const others = base.holdings.filter(h => h.account !== targetAccountName);
+        const keptSame = base.holdings.filter(h => h.account === targetAccountName && !newNames.has(h.name));
+        latestPortfolio = { ...base, updatedAt: new Date().toISOString(), holdings: [...others, ...keptSame, ...newHoldings] };
+      } else if (regMode === "replace") {
+        // 기존 동일 계좌 종목 전부 제거 후 통째 교체
+        const others = base.holdings.filter(h => h.account !== targetAccountName);
+        latestPortfolio = { ...base, updatedAt: new Date().toISOString(), holdings: [...others, ...newHoldings] };
+        console.log(`계좌 "${targetAccountName}" 교체`);
       } else {
-        latestPortfolio = { holdings: newHoldings, account_type: parsed.account_type || "혼합", uploadedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        // 신규 계좌 추가
+        latestPortfolio = { ...base, updatedAt: new Date().toISOString(), holdings: [...base.holdings, ...newHoldings] };
       }
+      // 이번 배치에서 이 계좌를 건드림 → 같은 배치의 다음 스샷은 merge로 처리
+      if (batchCtx) batchCtx.batchTouched.add(targetAccountName);
       if (parsed.cash > 0) latestPortfolio.cash = (latestPortfolio.cash || 0) + parsed.cash;
       savePortfolio(latestPortfolio); setPortfolio(latestPortfolio);
 
       setShowAddPanel(false);
       setUploadMsg(`✅ ${newHoldings.length}개 종목 등록! 현재가 조회 중...`);
-      setTimeout(() => updatePrices(latestPortfolio), 300);
+      // 다중 이미지 배치 처리 중에는 마지막에 한 번만 현재가 조회 (이미지별 updatePrices 동시 발화 → 덮어쓰기 방지)
+      if (!skipPriceUpdate) setTimeout(() => updatePrices(latestPortfolio), 300);
     } catch (e) {
       setUploadMsg(`❌ ${e.message}`);
       setTimeout(() => setUploadMsg(""), 6000);
@@ -3455,16 +3558,10 @@ function Portfolio() {
 
   // 업로드 패널 - label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
   const renderUploadPanel = (addToExisting = false) => {
-    const imgId  = addToExisting ? "file-img-add"  : "file-img-new";
     const xlsId  = addToExisting ? "file-xls-add"  : "file-xls-new";
     return (
       <div>
-        {/* 숨김 input - label과 id로 연결, 항상 DOM에 존재 */}
-        <input
-          id={imgId} type="file" accept="image/*" multiple
-          style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
-          onChange={e => onFileChange(e, addToExisting)}
-        />
+        {/* 숨김 input - xlsx/csv용 (이미지는 계좌명 모달이 자체 input으로 처리) */}
         <input
           id={xlsId} type="file" accept=".xlsx,.xls,.csv"
           style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
@@ -3482,7 +3579,15 @@ function Portfolio() {
             <div
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); processFile(e.dataTransfer.files[0], addToExisting); }}
+              onDrop={e => {
+                e.preventDefault(); setDragOver(false);
+                const dropped = Array.from(e.dataTransfer.files || []);
+                const isImg = (f) => (f.type||"").startsWith("image/") || ["jpg","jpeg","png","webp","gif","heic","heif","bmp"].includes((f.name.split(".").pop()||"").toLowerCase());
+                const imgs = dropped.filter(isImg);
+                const others = dropped.filter(f => !isImg(f));
+                if (imgs.length) setAcctModal({ addToExisting, initialFiles: imgs }); // 이미지는 계좌명 입력 모달 경유
+                others.forEach(f => processFile(f, addToExisting)); // xlsx/csv는 기존대로
+              }}
               style={{
                 border: `2px dashed ${dragOver ? "#0ea5e9" : "#16162a"}`,
                 borderRadius: 12, padding: "20px 16px", textAlign: "center",
@@ -3496,10 +3601,10 @@ function Portfolio() {
 
             {/* label 버튼 - htmlFor로 input 직접 연결 (모바일에서 가장 확실) */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <label
-                htmlFor={imgId}
+              <button
+                onClick={() => setAcctModal({ addToExisting, initialFiles: [] })}
                 style={{
-                  padding: "14px 8px", borderRadius: 12, cursor: "pointer",
+                  padding: "14px 8px", borderRadius: 12, cursor: "pointer", border: "none",
                   background: "linear-gradient(135deg,#0ea5e9,#0369a1)", color: "#fff",
                   fontWeight: 700, fontSize: 15, display: "flex", flexDirection: "column",
                   alignItems: "center", gap: 6, userSelect: "none",
@@ -3507,8 +3612,8 @@ function Portfolio() {
               >
                 <span style={{ fontSize: 24 }}></span>
                 <span>갤러리 / 스크린샷</span>
-                <span style={{ fontSize:11, opacity:0.7, fontWeight:400 }}>여러 장 동시 선택 가능</span>
-              </label>
+                <span style={{ fontSize:11, opacity:0.7, fontWeight:400 }}>계좌명 입력 후 여러 장</span>
+              </button>
               <label
                 htmlFor={xlsId}
                 style={{
@@ -3535,7 +3640,7 @@ function Portfolio() {
             </button>
             <div style={{ marginTop: 12, padding: "11px 12px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 10, fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>
               <div style={{ color: "#0ea5e9", fontWeight: 700, marginBottom: 5 }}>📷 스크린샷 인식 팁</div>
-              <div>· 여러 계좌는 한 번에 올리지 말고 <b style={{color:"#cbd5e1"}}>계좌별로 나눠서</b> 올려주세요.</div>
+              <div>· 등록 시 <b style={{color:"#cbd5e1"}}>계좌명을 직접 입력</b>합니다. 한 계좌가 여러 화면에 걸쳐 있으면 <b style={{color:"#cbd5e1"}}>여러 장을 함께 선택</b>하면 한 계좌로 합쳐집니다.</div>
               <div>· 가장 정확: <b style={{color:"#cbd5e1"}}>종목명 + 매수평단가 + 보유수량</b>. 평단가가 없어도 <b style={{color:"#cbd5e1"}}>종목명 + 보유수량 + 매수금액</b>이면 평단가를 자동 계산합니다.</div>
               <div>· 종목명이 잘리거나(…) 보유수량이 안 보이면 그 종목은 인식되지 않습니다.</div>
             </div>
@@ -3585,15 +3690,48 @@ function Portfolio() {
           defaultAccount={viewMode !== "all" ? viewMode : ""}
         />
       )}
+      {acctModal && (
+        <AccountInputModal
+          existingAccounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
+          initialFiles={acctModal.initialFiles || []}
+          onCancel={() => setAcctModal(null)}
+          onSubmit={(name, files) => {
+            const addToExisting = acctModal.addToExisting;
+            setAcctModal(null);
+            const items = files.map(f => ({ file: f, url: URL.createObjectURL(f) }));
+            setImgPreview({ items, addToExisting, accountName: name }); // 기존 미리보기(줌/스와이프) 단계로
+          }}
+        />
+      )}
       {imgPreview && (
         <ImageZoomPreview
           items={imgPreview.items}
           onCancel={() => { imgPreview.items.forEach(it => { try { URL.revokeObjectURL(it.url); } catch {} }); setImgPreview(null); }}
           onConfirm={(files) => {
-            const { items, addToExisting } = imgPreview;
+            const { items, addToExisting, accountName } = imgPreview;
             setImgPreview(null);
             items.forEach(it => { try { URL.revokeObjectURL(it.url); } catch {} });
-            (async () => { for (const f of files) await processFile(f, addToExisting); })();
+            // 배치 컨텍스트: 사용자가 입력한 계좌명으로 모든 스샷을 한 계좌에 병합
+            const trimmedName = (accountName || "").trim();
+            const preBatch = loadPortfolio();
+            const preBatchAccounts = new Set(preBatch.holdings.map(h => h.account).filter(Boolean));
+            let ctx = null;
+            if (trimmedName) {
+              // 기존 계좌면 배치 단위로 교체 여부 1회만 확인 (이미지마다 재질문 방지)
+              if (preBatchAccounts.has(trimmedName)) {
+                const ok = window.confirm(
+                  `"${trimmedName}" 계좌가 이미 등록되어 있습니다.\n이 계좌의 종목 정보를 새 스크린샷으로 교체할까요?\n\n` +
+                  `일부 종목만 매수/매도된 경우에는 [취소] 후 "주문체결/실현손익" 기능이나 종목 직접 수정을 권장합니다.`
+                );
+                if (!ok) return; // 배치 전체 취소
+              }
+              ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set() };
+            }
+            (async () => {
+              // 이미지별 현재가 조회는 건너뛰고(skipPriceUpdate), 모든 이미지 등록 후 누적 포폴로 한 번만 조회
+              for (const f of files) await processFile(f, addToExisting, true, ctx);
+              setTimeout(() => updatePrices(loadPortfolio()), 300);
+            })();
           }}
         />
       )}
@@ -3813,7 +3951,7 @@ function Portfolio() {
             <label htmlFor="input-order-upload" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"11px",borderRadius:10,cursor:"pointer",background:"#16162a",border:"1px solid #334155",color:"#e2e8f0",fontWeight:700,fontSize:13,boxSizing:"border-box"}}>주문체결/실현손익 캡처</label>
             <div style={{ marginTop:10, padding:"11px 12px", background:"#0a0a14", border:"1px solid #1e293b", borderRadius:10, fontSize:11, color:"#94a3b8", lineHeight:1.6 }}>
               <div style={{ color:"#22d3a0", fontWeight:700, marginBottom:5 }}>📷 스크린샷 인식 팁</div>
-              <div>· 여러 계좌는 한 번에 올리지 말고 <b style={{color:"#cbd5e1"}}>계좌별로 나눠서</b> 올려주세요.</div>
+              <div>· 등록 시 <b style={{color:"#cbd5e1"}}>계좌명을 직접 입력</b>합니다. 한 계좌가 여러 화면에 걸쳐 있으면 <b style={{color:"#cbd5e1"}}>여러 장을 함께 선택</b>하면 한 계좌로 합쳐집니다.</div>
               <div>· 가장 정확: <b style={{color:"#cbd5e1"}}>종목명 + 매수평단가 + 보유수량</b>. 평단가가 없어도 <b style={{color:"#cbd5e1"}}>종목명 + 보유수량 + 매수금액</b>이면 평단가를 자동 계산합니다.</div>
               <div>· 종목명이 잘리거나(…) 보유수량이 안 보이면 그 종목은 인식되지 않습니다.</div>
             </div>
@@ -4312,11 +4450,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.8.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.1 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.0 변경사항</div>
+            <div>· 스크린샷 등록 방식 개편 — 등록 시 계좌명을 직접 입력. 한 계좌가 여러 화면에 걸쳐 있으면 여러 장을 함께 선택해 한 계좌로 합칠 수 있음 (계좌명이 잘리거나 안 보이는 스샷도 OK)</div>
+            <div>· 같은 계좌명을 다시 등록하면 "종목 정보 교체할까요?" 확인 후 교체</div>
+            <div>· 다중 이미지 등록 버그 수정 — 직전 이미지 결과를 못 읽던 stale state 문제 근본 수정 (현재가 조회도 마지막에 한 번만)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.1 변경사항</div>
             <div>· API 프록시 인증 — 로그인한 사용자만 AI 기능(시세조회·시장인사이트·스크린샷 인식·리밸런싱 추천) 호출 가능하도록 서버에서 토큰 검증</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.0 변경사항</div>
             <div>· 로그인/회원가입 도입 (Supabase Auth) — 초대코드가 있어야 가입 가능</div>
