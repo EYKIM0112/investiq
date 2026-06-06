@@ -24,8 +24,14 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useCallback, useEffect, useRef } = React;
+
+// ===== Supabase (인증 + 초대코드) =====
+const SUPABASE_URL = "https://vqmuwmjdzskycxaqostt.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_g1nrFhcQzjLO8pirzWiy2g_aT8Ys-Fd";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
 const STORAGE_KEY = "portfolio_v1";
@@ -4121,8 +4127,75 @@ ${SOURCE_RULES}
 
 // ---------- 설정 탭 ----------
 function Settings() {
+  const restoreInputRef = useRef(null);
+  const [userEmail, setUserEmail] = useState("");
+  useEffect(() => {
+    supabaseClient.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email || ""));
+  }, []);
+
+  // 백업/복원 대상 = 영구 데이터만 (캐시류 제외)
+  const isBackupKey = (k) =>
+    k === "portfolio_v1" ||
+    k.startsWith("portfolio_history") ||
+    k === "investiq_rebalance_targets_v1" ||
+    k === "history_period";
+
+  const handleBackup = () => {
+    const dump = {};
+    Object.keys(localStorage).filter(isBackupKey).forEach(k => { dump[k] = localStorage.getItem(k); });
+    if (Object.keys(dump).length === 0) { alert("백업할 데이터가 없습니다."); return; }
+    const payload = { _app: "InvestIQ", _exportedAt: new Date().toISOString(), data: dump };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `investiq-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try {
+        const parsed = JSON.parse(reader.result);
+        data = parsed.data || parsed; // 구형식 호환
+        if (!data || typeof data !== "object") throw new Error();
+      } catch (e) {
+        alert("복원 실패: 올바른 InvestIQ 백업 파일이 아닙니다.");
+        return;
+      }
+      if (!window.confirm("백업 파일로 복원할까요?\n이 기기의 포트폴리오·히스토리·리밸런싱 설정이 덮어쓰기됩니다.")) return;
+      Object.keys(data).forEach(k => { if (isBackupKey(k) && data[k] != null) localStorage.setItem(k, data[k]); });
+      alert("복원이 완료되었습니다. 앱을 새로고침합니다.");
+      window.location.reload();
+    };
+    reader.readAsText(file);
+  };
+
+  const handleLogout = async () => {
+    if (!window.confirm("로그아웃할까요?")) return;
+    await supabaseClient.auth.signOut();
+    window.location.reload();
+  };
+
   return (
     <div style={{ padding: "0 4px" }}>
+
+      {/* 계정 */}
+      <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
+        <div style={{ fontSize:13, color:"#4f6ef7", fontWeight:700, letterSpacing:2, marginBottom:12 }}>계정</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+          <div style={{ fontSize:14, color:"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {userEmail || "—"}
+          </div>
+          <button onClick={handleLogout} style={{ flexShrink:0, padding:"8px 14px", borderRadius:9, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            로그아웃
+          </button>
+        </div>
+      </div>
 
       {/* 히스토리 주기 설정 */}
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
@@ -4145,6 +4218,25 @@ function Settings() {
         <button onClick={() => { if(window.confirm("수익률 히스토리를 초기화할까요?")) { localStorage.removeItem("portfolio_history_v1"); window.location.reload(); } }} style={{ width:"100%", marginTop:12, padding:"10px", borderRadius:10, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
           히스토리 초기화
         </button>
+      </div>
+
+      {/* 데이터 백업 / 복원 */}
+      <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
+        <div style={{ fontSize:13, color:"#22d3a0", fontWeight:700, letterSpacing:2, marginBottom:4 }}>데이터 백업 / 복원</div>
+        <div style={{ fontSize:13, color:"#64748b", marginBottom:14, lineHeight:1.7 }}>
+          포트폴리오·히스토리·리밸런싱 설정은 이 기기에만 저장됩니다.<br/>
+          기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업해 두세요.
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={handleBackup} style={{ flex:1, padding:"12px", borderRadius:10, border:"1px solid #22d3a044", background:"#22d3a011", color:"#22d3a0", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            ⬇ 백업 (내보내기)
+          </button>
+          <button onClick={() => restoreInputRef.current && restoreInputRef.current.click()} style={{ flex:1, padding:"12px", borderRadius:10, border:"1px solid #334155", background:"none", color:"#94a3b8", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            ⬆ 복원 (가져오기)
+          </button>
+        </div>
+        <input ref={restoreInputRef} type="file" accept="application/json,.json" style={{ display:"none" }}
+          onChange={e => { handleRestoreFile(e.target.files && e.target.files[0]); e.target.value = ""; }} />
       </div>
 
       {/* 캐시 초기화 */}
@@ -4211,11 +4303,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.7.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.8.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.7.1 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.0 변경사항</div>
+            <div>· 로그인/회원가입 도입 (Supabase Auth) — 초대코드가 있어야 가입 가능</div>
+            <div>· 데이터 백업/복원 (JSON 내보내기·가져오기) — 기기 이전·브라우저 초기화 대비</div>
+            <div>· 설정에 계정·로그아웃 추가</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.7.1 변경사항</div>
             <div>· 리밸런싱 AI 추천 — temperature만 낮춰 무작위 변동 감소 (과감한 추천·0%·신규 섹터 편입은 그대로 허용, ±5%p 제약 제거)</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.7.0 변경사항</div>
             <div>· 배당 / 채권 섹터 분리 (주식+채권 혼합형은 채권으로 분류) — 포폴·리밸런싱 공통</div>
@@ -5492,8 +5588,131 @@ function App() {
 }
 
 
+// ===== 로그인 / 회원가입 화면 =====
+function AuthScreen() {
+  const [mode, setMode] = useState("login"); // login | signup
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const switchMode = (m) => { setMode(m); setErr(""); };
+
+  const doLogin = async () => {
+    if (!email || !pw) { setErr("이메일과 비밀번호를 입력해주세요."); return; }
+    setBusy(true); setErr("");
+    const { error } = await supabaseClient.auth.signInWithPassword({ email: email.trim(), password: pw });
+    if (error) { setErr("로그인 실패: 이메일 또는 비밀번호를 확인해주세요."); setBusy(false); }
+    // 성공 시 onAuthStateChange가 화면을 전환함 (busy 유지)
+  };
+
+  const doSignup = async () => {
+    if (!email || !pw || !code) { setErr("이메일·비밀번호·초대코드를 모두 입력해주세요."); return; }
+    if (pw.length < 6) { setErr("비밀번호는 6자 이상이어야 합니다."); return; }
+    setBusy(true); setErr("");
+    // 1) 초대코드 검증
+    const { data: valid, error: vErr } = await supabaseClient.rpc("validate_invite", { p_code: code.trim() });
+    if (vErr) { setErr("초대코드 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요."); setBusy(false); return; }
+    if (!valid) { setErr("초대코드가 유효하지 않거나 이미 사용되었습니다."); setBusy(false); return; }
+    // 2) 가입
+    const { error: sErr } = await supabaseClient.auth.signUp({ email: email.trim(), password: pw });
+    if (sErr) {
+      setErr(/already|registered|exists/i.test(sErr.message||"") ? "이미 가입된 이메일입니다. 로그인해주세요." : "가입 실패: " + (sErr.message || ""));
+      setBusy(false); return;
+    }
+    // 3) 초대코드 사용처리 (가입 직후 세션으로 인증됨)
+    await supabaseClient.rpc("redeem_invite", { p_code: code.trim() });
+    // 성공 시 onAuthStateChange가 화면을 전환함
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "13px 14px", borderRadius: 10,
+    background: "#0f0f18", border: "1px solid #2a2a48", color: "#e8eaf0",
+    fontSize: 15, outline: "none", marginBottom: 10, boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#e8eaf0", fontFamily: "'Pretendard','Apple SD Gothic Neo',system-ui,sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        {/* 로고 */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg,#2563eb,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, marginBottom: 12 }}>📈</div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: "#f0f0ff" }}>InvestIQ</div>
+          <div style={{ fontSize: 10, color: "#64748b", letterSpacing: 2.5, fontWeight: 600, marginTop: 2 }}>AI INVESTMENT ADVISOR</div>
+        </div>
+
+        {/* 탭 */}
+        <div style={{ display: "flex", marginBottom: 18, background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 10, padding: 4 }}>
+          {[{ id: "login", label: "로그인" }, { id: "signup", label: "회원가입" }].map(t => (
+            <button key={t.id} onClick={() => switchMode(t.id)} disabled={busy} style={{
+              flex: 1, padding: "9px 0", borderRadius: 7, border: "none",
+              background: mode === t.id ? "#4f6ef7" : "transparent",
+              color: mode === t.id ? "#fff" : "#94a3b8",
+              fontSize: 14, fontWeight: mode === t.id ? 700 : 500, cursor: busy ? "default" : "pointer",
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {/* 입력 */}
+        <input style={inputStyle} type="email" placeholder="이메일" value={email}
+          autoComplete="email"
+          onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && mode === "login") doLogin(); }} />
+        <input style={inputStyle} type="password" placeholder="비밀번호 (6자 이상)" value={pw}
+          autoComplete={mode === "login" ? "current-password" : "new-password"}
+          onChange={e => setPw(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && mode === "login") doLogin(); }} />
+        {mode === "signup" && (
+          <input style={inputStyle} type="text" placeholder="초대코드" value={code}
+            onChange={e => setCode(e.target.value)} />
+        )}
+
+        {err && (
+          <div style={{ fontSize: 13, color: "#f87171", background: "#f8717111", border: "1px solid #f8717133", borderRadius: 8, padding: "9px 12px", marginBottom: 10, lineHeight: 1.5 }}>{err}</div>
+        )}
+
+        <button onClick={mode === "login" ? doLogin : doSignup} disabled={busy} style={{
+          width: "100%", padding: "13px", borderRadius: 10, border: "none",
+          background: busy ? "#334155" : "linear-gradient(135deg,#2563eb,#7c3aed)",
+          color: "#fff", fontSize: 15, fontWeight: 700, cursor: busy ? "default" : "pointer", marginTop: 2,
+        }}>
+          {busy ? "처리 중…" : (mode === "login" ? "로그인" : "가입하기")}
+        </button>
+
+        {mode === "signup" && (
+          <div style={{ fontSize: 12, color: "#475569", marginTop: 14, lineHeight: 1.6, textAlign: "center" }}>
+            가입은 초대코드가 있어야 가능합니다.<br/>코드는 InvestIQ 운영자에게 받으세요.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== 인증 게이트 (미인증 시 앱 진입 차단) =====
+function AuthGate() {
+  const [session, setSession] = useState(undefined); // undefined=확인 중, null=미인증, obj=인증됨
+  useEffect(() => {
+    supabaseClient.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabaseClient.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#0a0a0f", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 28, height: 28, border: "3px solid #1e293b", borderTopColor: "#4f6ef7", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+      </div>
+    );
+  }
+  if (!session) return <AuthScreen />;
+  return <App />;
+}
+
 const domRoot = ReactDOM.createRoot(document.getElementById('root'));
-domRoot.render(React.createElement(App));
+domRoot.render(React.createElement(AuthGate));
   </script>
 </body>
 </html>
