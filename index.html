@@ -36,6 +36,7 @@ const SECTOR_COLORS = {
   "기술": "#00d4ff", "반도체": "#7c3aed", "AI": "#f59e0b",
   "에너지": "#10b981", "금융": "#3b82f6", "헬스케어": "#ec4899",
   "소비재": "#f97316", "부동산": "#84cc16", "방산": "#ef4444",
+  "배당": "#22c55e", "채권": "#0ea5e9",
   "기타": "#6b7280",
 };
 
@@ -104,13 +105,13 @@ function safeParseJSON(text) {
 }
 
 // ---------- Gemini API 스트리밍 호출 ----------
-async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, temperature = 0.7, thinkingBudget = 0, onChunk, _retry = 0 }) {
+async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, onChunk, _retry = 0 }) {
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
   else contents.push({ role: "user", parts: [{ text: user }] });
 
-  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget } }) } };
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
   let res;
@@ -124,7 +125,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
     // network error (Failed to fetch) 재시도
     if (_retry < 2) {
       await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
-      return callGeminiStream({ system, user, maxTokens, useSearch, temperature, thinkingBudget, onChunk, _retry: _retry + 1 });
+      return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
     }
     throw new Error("network error");
   }
@@ -136,7 +137,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
       const delay = (res.status === 429 ? 5000 : 2000) * (_retry + 1);
       onChunk && onChunk(`[재시도 중... ${_retry + 1}/3]`);
       await new Promise(r => setTimeout(r, delay));
-      return callGeminiStream({ system, user, maxTokens, useSearch, temperature, thinkingBudget, onChunk, _retry: _retry + 1 });
+      return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
     }
     throw new Error(msg);
   }
@@ -164,7 +165,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
           // 스트리밍 중 과부하 에러도 재시도
           if ((parsed.error.code === 429 || parsed.error.code === 503) && _retry < 3) {
             await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
-            return callGeminiStream({ system, user, maxTokens, useSearch, temperature, thinkingBudget, onChunk, _retry: _retry + 1 });
+            return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
           }
           throw new Error(errMsg);
         }
@@ -177,18 +178,18 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   // 토큰 한도로 응답이 잘린 경우: 토큰 2배로 1회 자동 재시도 (사용자가 다시 누를 필요 없게)
   if (finishReason === "MAX_TOKENS" && _retry < 1) {
     onChunk && onChunk("[응답이 길어 더 받는 중...]");
-    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, temperature, thinkingBudget, onChunk, _retry: _retry + 1 });
+    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, onChunk, _retry: _retry + 1 });
   }
   return fullText;}
 
 // ---------- Gemini API 일반 호출 (이미지 등 스트리밍 불필요한 경우) ----------
-async function callGemini({ system, user, maxTokens = 2000, useSearch = false, temperature = 0.7, thinkingBudget = 0 }) {
+async function callGemini({ system, user, maxTokens = 2000, useSearch = false, temperature = 0.7 }) {
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
   else contents.push({ role: "user", parts: [{ text: user }] });
 
-  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget } }) } };
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
   const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, body, stream: false }) });
@@ -1277,8 +1278,9 @@ function guessRegion(name) {
 
 function getSectorLabel(sector, name) {
   const n = (name||"").toUpperCase();
+  if (n.includes("채권")||n.includes("미국채")||n.includes("국채")||n.includes("국공채")||n.includes("회사채")||n.includes("단기채")||n.includes("CD금리")||n.includes("KOFR")||n.includes("금리액티브")||n.includes("MMF")||n.includes("머니마켓")||n.includes("TDF")||n.includes("타겟데이트")||n.includes("자산배분")) return "채권";
+  if (n.includes("배당")) return "배당";
   if (n.includes("삼성전자")) return "반도체";
-  if (n.includes("TDF")||n.includes("타겟데이트")||n.includes("로자산배분")||n.includes("자산배분")) return "배당·채권";
   if (n.includes("AI")||n.includes("인공지능")||n.includes("로보")) return "AI·로보틱스";
   if (n.includes("반도체")) return "반도체";
   if (n.includes("빅테크")||n.includes("테크TOP")) return "미국빅테크";
@@ -1288,7 +1290,6 @@ function getSectorLabel(sector, name) {
   if (n.includes("방산")||n.includes("조선")) return "방산·조선";
   if (n.includes("2차전지")) return "2차전지";
   if (n.includes("금현물")||n.includes("구리실물")) return "금·원자재";
-  if (n.includes("채권")||n.includes("배당")) return "배당·채권";
   if (n.includes("차이나")||n.includes("인도빌리언")) return "신흥국";
   if (n.includes("코스닥")||n.includes("코스피")||n.includes("밸류업")||n.includes("증권")) return "국내지수";
   if (sector && sector !== "기타") return sector;
@@ -2374,7 +2375,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
     });
   };
 
-  const SECTORS = ["기타","국내지수","미국지수","반도체","AI·로보틱스","미국빅테크","전력인프라","원자력","방산·조선","2차전지","금·원자재","배당·채권","신흥국"];
+  const SECTORS = ["기타","국내지수","미국지수","반도체","AI·로보틱스","미국빅테크","전력인프라","원자력","방산·조선","2차전지","금·원자재","배당","채권","신흥국"];
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
@@ -4210,12 +4211,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.6.3</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.7.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.3 변경사항</div>
-            <div>· 리밸런싱 AI 추천 "정반대 추천" 수정 — 온도 0.7→0.25, 추론 활성화, 현재 비중 앵커로 무근거 대반전 억제</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.7.1 변경사항</div>
+            <div>· 리밸런싱 AI 추천 — temperature만 낮춰 무작위 변동 감소 (과감한 추천·0%·신규 섹터 편입은 그대로 허용, ±5%p 제약 제거)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.7.0 변경사항</div>
+            <div>· 배당 / 채권 섹터 분리 (주식+채권 혼합형은 채권으로 분류) — 포폴·리밸런싱 공통</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.6.2 변경사항</div>
             <div>· 시장 인사이트 출력 항목 수 제한(원자재 10→6 등) → 분석 더 빠르고 잘림 거의 없음, 타임아웃 원복</div>
             <div>· 아시아 탭 지수 등락율 색상 수정(상승 초록·하락 빨강)</div>
@@ -5077,17 +5080,15 @@ ${holdingsList}
 ${totalRet >= 0 ? "+" : ""}${totalRet}%
 ${insightCtx ? `\n[참고: 앱 내 최근 시장 인사이트]\n${insightCtx}\n` : ""}
 [지침]
-- **현재 섹터 비중을 기준점(앵커)으로 삼아 판단해라.** 시장 인사이트가 특정 섹터의 강한 호재/악재나 명확한 추세 전환을 가리키면 과감하게 조정(±10%p 이상·방향 전환 포함)해도 된다. 근거가 약하거나 인사이트에 해당 섹터 언급이 적으면 ±10%p 이내의 합리적 조정으로 한다.
-- 방향 전환(비중 확대↔축소)이나 큰 폭 조정은 인사이트에 그 근거가 있을 때만. 근거 없이 방향을 뒤집지 마라.
 - 제공된 시장 인사이트(여러 탭) 전반의 섹터 전망을 종합 반영
 - 종목별 수익률·집중 위험을 함께 고려
-- 전망이 명확히 약하거나 비효율적인 섹터는 비중 축소·0%(전량 정리)도 제안 가능(단, 근거 명시)
+- 전망이 약하거나 비효율적인 섹터는 비중 축소·0%(전량 정리)도 과감히 제안
 - 필요하면 현재 보유하지 않은 유망 섹터를 신규 편입으로 제안 가능(섹터명 명확히)
 - 추천 비중 합계 = 100%
-- reason은 1~2문장으로 구체적 근거(전망·밸류에이션·집중도 등) 제시. 현재 비중 대비 왜 그 방향으로 조정하는지 밝혀라.
+- reason은 1~2문장으로 구체적 근거(전망·밸류에이션·집중도 등) 제시
 - 출력(JSON만):
 {"recommendations":[{"sector":"섹터명","target_pct":30,"reason":"구체적 근거 1~2문장"}],"summary":"전체 전략 한두 문장"}`;
-      const txt = await callGemini({ system: sys, user: usr, maxTokens: 5000, useSearch: false, temperature: 0.25, thinkingBudget: 2048 });
+      const txt = await callGemini({ system: sys, user: usr, maxTokens: 2500, useSearch: false, temperature: 0.25 });
       const parsed = safeParseJSON(txt);
       const data = {
         recommendations: Array.isArray(parsed?.recommendations) ? parsed.recommendations.filter(r => r && r.sector) : [],
