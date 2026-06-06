@@ -1,15 +1,42 @@
 // Vercel 서버리스 함수 - Gemini API 프록시
 // API 키는 Vercel 환경변수(GEMINI_API_KEY)에만 저장, 클라이언트에 절대 노출 안 됨
+// 호출 권한: Supabase 로그인 세션 토큰(JWT)을 검증해 인증된 사용자만 허용
 
 export const config = { maxDuration: 60 };
+
+// Supabase (URL·publishable key는 공개값이라 하드코딩 가능. 원하면 env var로 빼도 됨)
+const SUPABASE_URL = "https://vqmuwmjdzskycxaqostt.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_g1nrFhcQzjLO8pirzWiy2g_aT8Ys-Fd";
+
+// 요청의 Bearer 토큰을 Supabase로 검증 → 유효하면 사용자 객체, 아니면 null
+async function verifyUser(req) {
+  const auth = req.headers.authorization || req.headers.Authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u && u.id ? u : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  // 인증 검증 — 로그인된 사용자만 Gemini 호출 허용
+  const user = await verifyUser(req);
+  if (!user) return res.status(401).json({ error: "인증이 필요합니다. 다시 로그인해주세요." });
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다." });
