@@ -5611,19 +5611,23 @@ function AuthScreen() {
     if (!email || !pw || !code) { setErr("이메일·비밀번호·초대코드를 모두 입력해주세요."); return; }
     if (pw.length < 6) { setErr("비밀번호는 6자 이상이어야 합니다."); return; }
     setBusy(true); setErr("");
-    // 1) 초대코드 검증
+    // 1) 사전 검증 (빠른 에러 메시지용 — 실제 점유는 가입 트리거가 함)
     const { data: valid, error: vErr } = await supabaseClient.rpc("validate_invite", { p_code: code.trim() });
     if (vErr) { setErr("초대코드 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요."); setBusy(false); return; }
     if (!valid) { setErr("초대코드가 유효하지 않거나 이미 사용되었습니다."); setBusy(false); return; }
-    // 2) 가입
-    const { error: sErr } = await supabaseClient.auth.signUp({ email: email.trim(), password: pw });
+    // 2) 가입 — 초대코드를 메타데이터로 전달하면 DB 트리거가 가입과 동시에 코드를 점유
+    const { error: sErr } = await supabaseClient.auth.signUp({
+      email: email.trim(), password: pw,
+      options: { data: { invite_code: code.trim() } },
+    });
     if (sErr) {
-      setErr(/already|registered|exists/i.test(sErr.message||"") ? "이미 가입된 이메일입니다. 로그인해주세요." : "가입 실패: " + (sErr.message || ""));
+      const m = sErr.message || "";
+      setErr(/already|registered|exists/i.test(m) ? "이미 가입된 이메일입니다. 로그인해주세요."
+           : /invite|database error/i.test(m) ? "초대코드가 유효하지 않거나 이미 사용되었습니다."
+           : "가입 실패: " + m);
       setBusy(false); return;
     }
-    // 3) 초대코드 사용처리 (가입 직후 세션으로 인증됨)
-    await supabaseClient.rpc("redeem_invite", { p_code: code.trim() });
-    // 성공 시 onAuthStateChange가 화면을 전환함
+    // 성공 시 onAuthStateChange가 화면을 전환함 (코드 점유는 트리거가 처리 완료)
   };
 
   const inputStyle = {
