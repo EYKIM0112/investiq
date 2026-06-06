@@ -56,6 +56,15 @@ function getSectorColor(sector) {
 // ---------- API 프록시 ----------
 const GEMINI_PROXY = "/api/gemini";
 
+// 프록시 호출 헤더 — 로그인 세션 토큰을 동봉(서버에서 검증). 미인증이면 토큰 없이 전송 → 서버가 401.
+async function geminiHeaders() {
+  const { data } = await supabaseClient.auth.getSession();
+  const token = data?.session?.access_token;
+  const h = { "Content-Type": "application/json" };
+  if (token) h["Authorization"] = "Bearer " + token;
+  return h;
+}
+
 // ---------- 안전한 JSON 파싱 ----------
 function safeParseJSON(text) {
   // 마크다운 코드블록 제거
@@ -124,7 +133,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   try {
     res = await fetch(GEMINI_PROXY, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await geminiHeaders(),
       body: JSON.stringify({ model, body, stream: true }),
     });
   } catch (netErr) {
@@ -198,7 +207,7 @@ async function callGemini({ system, user, maxTokens = 2000, useSearch = false, t
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
-  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, body, stream: false }) });
+  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model, body, stream: false }) });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
@@ -215,7 +224,7 @@ async function callGeminiWithImage({ system, user, imageBase64, mediaType, maxTo
     generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
   };
 
-  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: GEMINI_MODEL, body, stream: false }) });
+  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model: GEMINI_MODEL, body, stream: false }) });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
@@ -1727,7 +1736,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
       // 3. Gemini Search
       if (name) {
         const body = { contents:[{role:"user",parts:[{text:`${name} 현재 주가(${priceUnit==="USD"?"달러":"원화"})를 검색해서 숫자만 반환`}]}], tools:[{googleSearch:{}}], generationConfig:{maxOutputTokens:100,temperature:0,thinkingConfig:{thinkingBudget:0}} };
-        const res = await fetch(GEMINI_PROXY, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"gemini-2.5-flash-lite",body,stream:false})});
+        const res = await fetch(GEMINI_PROXY, {method:"POST",headers: await geminiHeaders(),body:JSON.stringify({model:"gemini-2.5-flash-lite",body,stream:false})});
         if (res.ok) {
           const data = await res.json();
           const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
@@ -2341,7 +2350,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
       }
       if (name) {
         const body = { contents:[{role:"user",parts:[{text:`${name} 현재 주가(${priceUnit==="USD"?"달러":"원화"})를 검색해서 숫자만 반환`}]}], tools:[{googleSearch:{}}], generationConfig:{maxOutputTokens:100,temperature:0,thinkingConfig:{thinkingBudget:0}} };
-        const res = await fetch(GEMINI_PROXY, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"gemini-2.5-flash-lite",body,stream:false})});
+        const res = await fetch(GEMINI_PROXY, {method:"POST",headers: await geminiHeaders(),body:JSON.stringify({model:"gemini-2.5-flash-lite",body,stream:false})});
         if (res.ok) {
           const data = await res.json();
           const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"";
@@ -3184,7 +3193,7 @@ function Portfolio() {
         let retries = 2;
         while (retries >= 0) {
           try {
-            const res = await fetch(GEMINI_PROXY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
+            const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model: "gemini-2.5-flash-lite", body, stream: false }) });
             if (res.status === 503 || res.status === 429) {
               retries--;
               if (retries >= 0) { await new Promise(r => setTimeout(r, 3000)); continue; }
@@ -3307,7 +3316,7 @@ function Portfolio() {
             let retries = 2;
             while (retries >= 0) {
               try {
-                const gr = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
+                const gr = await fetch(GEMINI_PROXY, { method:"POST", headers: await geminiHeaders(), body:JSON.stringify({ model:"gemini-2.5-flash-lite", body, stream:false }) });
                 if ((gr.status===503||gr.status===429) && retries>0) { retries--; await new Promise(r=>setTimeout(r,3000)); continue; }
                 if (!gr.ok) break;
                 const gd = await gr.json();
@@ -4303,11 +4312,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.8.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.8.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.0 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.1 변경사항</div>
+            <div>· API 프록시 인증 — 로그인한 사용자만 AI 기능(시세조회·시장인사이트·스크린샷 인식·리밸런싱 추천) 호출 가능하도록 서버에서 토큰 검증</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.8.0 변경사항</div>
             <div>· 로그인/회원가입 도입 (Supabase Auth) — 초대코드가 있어야 가입 가능</div>
             <div>· 데이터 백업/복원 (JSON 내보내기·가져오기) — 기기 이전·브라우저 초기화 대비</div>
             <div>· 설정에 계정·로그아웃 추가</div>
@@ -4971,7 +4982,7 @@ function IndexWidget() {
             tools: [{ googleSearch: {} }],
             generationConfig: { maxOutputTokens: 400, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
           };
-          const gRes = await fetch(GEMINI_PROXY, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:geminiBody, stream:false }) });
+          const gRes = await fetch(GEMINI_PROXY, { method:"POST", headers: await geminiHeaders(), body:JSON.stringify({ model:"gemini-2.5-flash-lite", body:geminiBody, stream:false }) });
           if (gRes.ok) {
             const gData = await gRes.json();
             const gText = gData.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("") || "";
