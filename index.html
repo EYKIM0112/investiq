@@ -3008,14 +3008,24 @@ function Portfolio() {
           const countFails = parsed.partial_fail.length - realFails.length;
           const succeeded = parsed.holdings?.length || 0;
           const failCount = parsed.partial_fail.length;
-          let msg = `⚠️ ${succeeded + failCount}개 종목 중 ${failCount}개 인식 실패\n\n`;
-          if (realFails.length > 0) msg += `실패 종목: ${realFails.join(", ")}\n\n`;
-          if (countFails > 0) msg += `미확인 ${countFails}개 (스크롤하여 재업로드 시 추가 가능)\n\n`;
-          msg += `나머지 ${succeeded}개 종목을 등록하시겠습니까?`;
-          const proceed = window.confirm(msg);
-          if (!proceed) { setUploading(false); setUploadMsg(""); return; }
+          if (batchCtx) {
+            // 다중 이미지 배치: 이미지마다 confirm을 띄우면 모바일 브라우저가 반복 대화상자를
+            // 자동 억제(이후 confirm()=false)해서 이미지가 통째로 누락됨. → confirm 없이 성공분 등록,
+            // 잘린 종목명만 모아서 배치 끝에 1회 안내. (경계 잘림은 대부분 옆 이미지에서 잡힘)
+            if (realFails.length) batchCtx.partialFails.push(...realFails);
+          } else {
+            let msg = `⚠️ ${succeeded + failCount}개 종목 중 ${failCount}개 인식 실패\n\n`;
+            if (realFails.length > 0) msg += `실패 종목: ${realFails.join(", ")}\n\n`;
+            if (countFails > 0) msg += `미확인 ${countFails}개 (스크롤하여 재업로드 시 추가 가능)\n\n`;
+            msg += `나머지 ${succeeded}개 종목을 등록하시겠습니까?`;
+            const proceed = window.confirm(msg);
+            if (!proceed) { setUploading(false); setUploadMsg(""); return; }
+          }
         }
-        if (!parsed?.holdings?.length) throw new Error("등록할 수 있는 종목이 없습니다.\n수량과 평균단가가 보이는 화면을 올려주세요.");
+        if (!parsed?.holdings?.length) {
+          if (batchCtx) { setUploading(false); return; } // 이 이미지엔 등록할 종목 없음 → 조용히 건너뜀
+          throw new Error("등록할 수 있는 종목이 없습니다.\n수량과 평균단가가 보이는 화면을 올려주세요.");
+        }
 
       } else if (isSpreadsheet) {
         parsed = await analyzeSpreadsheet(file);
@@ -3023,7 +3033,10 @@ function Portfolio() {
         throw new Error(`지원하지 않는 파일 형식입니다. (${ext || mime || "알 수 없음"})\n이미지, xlsx, csv 파일만 가능합니다.`);
       }
 
-      if (!parsed?.holdings?.length) throw new Error("종목을 찾을 수 없어요. 다른 이미지를 시도해보세요.");
+      if (!parsed?.holdings?.length) {
+        if (batchCtx) { setUploading(false); return; } // 배치: 이 이미지 건너뜀
+        throw new Error("종목을 찾을 수 없어요. 다른 이미지를 시도해보세요.");
+      }
 
       // ── 계좌명 + 등록 방식 결정 ───────────────────────────────────────────
       // 머지 기준은 항상 최신 localStorage(base)에서 읽음 (다중 이미지 순차 처리 시 stale closure 방지).
@@ -3725,11 +3738,16 @@ function Portfolio() {
                 );
                 if (!ok) return; // 배치 전체 취소
               }
-              ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set() };
+              ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [] };
             }
             (async () => {
               // 이미지별 현재가 조회는 건너뛰고(skipPriceUpdate), 모든 이미지 등록 후 누적 포폴로 한 번만 조회
               for (const f of files) await processFile(f, addToExisting, true, ctx);
+              // 잘려서 인식 못 한 종목이 있으면 배치 끝에 1회만 안내 (이미지별 confirm 금지 → 모바일 대화상자 억제 방지)
+              if (ctx && ctx.partialFails.length) {
+                const list = [...new Set(ctx.partialFails)].join(", ");
+                alert(`⚠️ 일부 종목은 이름이 잘려 인식하지 못했습니다:\n${list}\n\n해당 종목이 온전히 보이는 화면으로 다시 등록해주세요.`);
+              }
               setTimeout(() => updatePrices(loadPortfolio()), 300);
             })();
           }}
@@ -4064,7 +4082,7 @@ function Portfolio() {
                       )}
                     </div>
                     <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account) })} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 16, cursor: "pointer", padding: "2px 3px", lineHeight: 1 }}>×</button>
+                    <button onClick={() => removeHolding(portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account))} style={{ background: "none", border: "none", color: "#f87171", fontSize: 19, fontWeight: 800, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
@@ -4448,11 +4466,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.2</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.1 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.2 변경사항</div>
+            <div>· 모바일 다중 스크린샷 등록 시 일부 종목이 누락되던 버그 수정 — 이미지마다 뜨던 인식실패 확인창을 없애고(모바일이 반복 대화상자를 막아 종목이 통째로 누락됨) 배치 끝에 1회만 안내</div>
+            <div>· 종목 삭제(×) 아이콘 색상·크기 강화 (PC에서 희미하던 문제)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.1 변경사항</div>
             <div>· 포트폴리오 헤더의 📷 스크린샷 버튼도 계좌명 입력 모달을 거치도록 수정 (v1.9.0에서 누락된 진입점)</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.0 변경사항</div>
             <div>· 스크린샷 등록 방식 개편 — 등록 시 계좌명을 직접 입력. 한 계좌가 여러 화면에 걸쳐 있으면 여러 장을 함께 선택해 한 계좌로 합칠 수 있음 (계좌명이 잘리거나 안 보이는 스샷도 OK)</div>
