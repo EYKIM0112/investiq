@@ -224,10 +224,23 @@ async function callGeminiWithImage({ system, user, imageBase64, mediaType, maxTo
     generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
   };
 
-  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model: GEMINI_MODEL, body, stream: false }) });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+  // 콜드스타트(첫 호출)·일시 오류(5xx/429)·네트워크 끊김은 재시도 (최대 3회, 백오프)
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+    try {
+      const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model: GEMINI_MODEL, body, stream: false }) });
+      if ([429, 500, 502, 503, 504].includes(res.status)) { lastErr = new Error(`서버 일시 오류 (${res.status})`); continue; }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message); // 인증·요청 오류 등은 즉시 실패(재시도 무의미)
+      return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+    } catch (e) {
+      lastErr = e;
+      const transient = (e.name === "TypeError") || /failed to fetch|networkerror|load failed|fetch|시간 초과|timeout/i.test(e.message || "");
+      if (!transient) throw e; // 네트워크 계열만 재시도
+    }
+  }
+  throw lastErr || new Error("이미지 분석 실패");
 }
 
 // 기존 함수명 호환성 유지
@@ -3143,8 +3156,13 @@ function Portfolio() {
       // 다중 이미지 배치 처리 중에는 마지막에 한 번만 현재가 조회 (이미지별 updatePrices 동시 발화 → 덮어쓰기 방지)
       if (!skipPriceUpdate) setTimeout(() => updatePrices(latestPortfolio), 300);
     } catch (e) {
-      setUploadMsg(`❌ ${e.message}`);
-      setTimeout(() => setUploadMsg(""), 6000);
+      if (batchCtx) {
+        // 배치: 이미지 한 장 실패해도 나머지는 진행. 실패는 모아서 끝에 1회 안내(겁나는 순간 플래시 X)
+        batchCtx.errors.push(e.message || "분석 실패");
+      } else {
+        setUploadMsg(`❌ ${e.message}`);
+        setTimeout(() => setUploadMsg(""), 6000);
+      }
     }
     setUploading(false);
   };
@@ -3738,15 +3756,17 @@ function Portfolio() {
                 );
                 if (!ok) return; // 배치 전체 취소
               }
-              ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [] };
+              ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [], errors: [] };
             }
             (async () => {
               // 이미지별 현재가 조회는 건너뛰고(skipPriceUpdate), 모든 이미지 등록 후 누적 포폴로 한 번만 조회
               for (const f of files) await processFile(f, addToExisting, true, ctx);
-              // 잘려서 인식 못 한 종목이 있으면 배치 끝에 1회만 안내 (이미지별 confirm 금지 → 모바일 대화상자 억제 방지)
-              if (ctx && ctx.partialFails.length) {
-                const list = [...new Set(ctx.partialFails)].join(", ");
-                alert(`⚠️ 일부 종목은 이름이 잘려 인식하지 못했습니다:\n${list}\n\n해당 종목이 온전히 보이는 화면으로 다시 등록해주세요.`);
+              // 배치 끝에 1회 안내 (이미지별 confirm/alert 금지 → 모바일 대화상자 억제 방지)
+              if (ctx && (ctx.errors.length || ctx.partialFails.length)) {
+                let msg = "";
+                if (ctx.errors.length) msg += `⚠️ ${ctx.errors.length}장의 스크린샷 분석에 실패했습니다. 잠시 후 그 이미지만 다시 등록해주세요.\n(${[...new Set(ctx.errors)].join(" / ")})`;
+                if (ctx.partialFails.length) msg += `${msg ? "\n\n" : ""}일부 종목은 이름이 잘려 인식하지 못했습니다:\n${[...new Set(ctx.partialFails)].join(", ")}\n그 종목이 온전히 보이는 화면으로 다시 등록해주세요.`;
+                if (msg) alert(msg);
               }
               setTimeout(() => updatePrices(loadPortfolio()), 300);
             })();
@@ -3864,9 +3884,9 @@ function Portfolio() {
                   {updating ? <Spinner size={11} /> : "🔄"} 가격
                 </button>
                 <button onClick={() => setShowDeleteModal(true)} style={{
-                  background: "#0f0f18", color: "#4a1a1a",
-                  border: "1px solid #2a1010", borderRadius: 8, padding: "6px 11px",
-                  cursor: "pointer", fontSize: 12,
+                  background: "#0f0f18", color: "#f87171",
+                  border: "1px solid #5a2530", borderRadius: 8, padding: "6px 11px",
+                  cursor: "pointer", fontSize: 13,
                 }}>🗑</button>
               </div>
             </div>
@@ -4466,11 +4486,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.2</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.3</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.2 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.3 변경사항</div>
+            <div>· 스크린샷 분석 재시도 추가 — 첫 업로드(콜드스타트)·일시 서버오류로 등록이 통째로 실패하던 문제 완화 (최대 3회 자동 재시도)</div>
+            <div>· 다중 등록 중 일부 이미지 분석 실패 시, 나머지는 정상 등록하고 실패한 장수만 끝에 안내</div>
+            <div>· 계좌 삭제(🗑) 아이콘 색상 강화 (PC에서 거의 안 보이던 문제)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.2 변경사항</div>
             <div>· 모바일 다중 스크린샷 등록 시 일부 종목이 누락되던 버그 수정 — 이미지마다 뜨던 인식실패 확인창을 없애고(모바일이 반복 대화상자를 막아 종목이 통째로 누락됨) 배치 끝에 1회만 안내</div>
             <div>· 종목 삭제(×) 아이콘 색상·크기 강화 (PC에서 희미하던 문제)</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.1 변경사항</div>
