@@ -2638,7 +2638,7 @@ function AccountInputModal({ kind = "image", existingAccounts = [], initialFiles
     <div style={{ position:"fixed", inset:0, zIndex:9998, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div style={{ width:"100%", maxWidth:420, background:"#0f0f18", border:"1px solid #1e293b", borderRadius:16, padding:18, maxHeight:"90vh", overflowY:"auto" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <span style={{ color:"#22d3a0", fontSize:16, fontWeight:800 }}>{isSheet ? "📊 계좌 엑셀/CSV 등록" : "📷 계좌 스크린샷 등록"}</span>
+          <span style={{ color:"#22d3a0", fontSize:16, fontWeight:800 }}>{isSheet ? "📊 계좌 엑셀 등록" : "📷 계좌 스크린샷 등록"}</span>
           <button onClick={onCancel} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:15, fontWeight:700, cursor:"pointer" }}>✕</button>
         </div>
 
@@ -2666,7 +2666,7 @@ function AccountInputModal({ kind = "image", existingAccounts = [], initialFiles
 
         <div style={{ fontSize:12, color:"#64748b", margin:"6px 0 12px", lineHeight:1.6 }}>
           {isSheet
-            ? <>엑셀/CSV 파일을 선택하세요. 표의 종목명·수량·평균단가를 읽어옵니다.</>
+            ? <>엑셀 파일을 선택하세요. 표의 종목명·수량·평균단가를 읽어옵니다. (구글시트는 xlsx로 내보내기 하면 됩니다)</>
             : <>한 계좌가 여러 화면에 걸쳐 있으면 <b style={{color:"#cbd5e1"}}>여러 장을 함께 선택</b>하세요. 모두 이 계좌로 합쳐집니다.</>}
         </div>
 
@@ -2679,7 +2679,7 @@ function AccountInputModal({ kind = "image", existingAccounts = [], initialFiles
         >
           <div style={{ fontSize:13, color:"#64748b", marginBottom:10 }}>PC: 여기로 드래그 · 모바일: 아래 버튼</div>
           <label style={{ display:"inline-block", padding:"11px 18px", borderRadius:10, cursor:"pointer", background:"linear-gradient(135deg,#0ea5e9,#0369a1)", color:"#fff", fontWeight:700, fontSize:14 }}>
-            {isSheet ? "엑셀/CSV 선택" : "스크린샷 선택 (여러 장 가능)"}
+            {isSheet ? "엑셀 파일 선택" : "스크린샷 선택 (여러 장 가능)"}
             <input type="file" accept={accept} multiple style={{ display:"none" }}
               onChange={e=>{ addFiles(e.target.files); e.target.value=""; }} />
           </label>
@@ -2907,8 +2907,8 @@ function Portfolio() {
     setUploadMsg("종목 데이터 인식 중...");
     const text = await callClaude({
       maxTokens: 2000,
-      system: `포트폴리오 CSV/텍스트에서 보유 종목을 추출해 순수 JSON만 반환. 표의 실제 값만 사용하고 절대 임의로 종목을 지어내지 말 것. 종목명·수량·평균단가 컬럼을 찾아 매핑.
-{"holdings":[{"ticker":"","name":"종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":""}],"account_type":"","broker":""}`,
+      system: `포트폴리오 CSV/텍스트에서 보유 종목을 추출해 순수 JSON만 반환. 표의 실제 값만 사용하고 절대 임의로 종목을 지어내지 말 것. 종목명·수량·평균단가 컬럼을 찾아 매핑. 예수금/현금/현금잔고 항목이 있으면 cash에 숫자로(없으면 0).
+{"holdings":[{"ticker":"","name":"종목명","shares":수량,"avg_price":평균단가,"currency":"KRW","sector":""}],"account_type":"","broker":"","cash":예수금숫자또는0}`,
       user: `아래 데이터에서 보유 종목을 추출:\n\n${textContent.slice(0, 12000)}`,
     });
     return safeParseJSON(text);
@@ -3139,9 +3139,11 @@ function Portfolio() {
       }
       // 이번 배치에서 이 계좌를 건드림 → 같은 배치의 다음 스샷은 merge로 처리
       if (batchCtx) batchCtx.batchTouched.add(targetAccountName);
-      if (parsed.cash > 0) {
-        const prevCash = regMode === "replace" ? 0 : getCashFor(latestPortfolio, targetAccountName);
-        latestPortfolio.cashByAccount = setCashFor(latestPortfolio, targetAccountName, prevCash + parsed.cash);
+      // 현금(예수금) 반영: 교체·신규는 그 스샷/엑셀 기준으로 설정(현금 정보 없으면 0) / 같은 배치 병합은 누적
+      if (regMode === "replace" || regMode === "new") {
+        latestPortfolio.cashByAccount = setCashFor(latestPortfolio, targetAccountName, parsed.cash > 0 ? parsed.cash : 0);
+      } else if (parsed.cash > 0) {
+        latestPortfolio.cashByAccount = setCashFor(latestPortfolio, targetAccountName, getCashFor(latestPortfolio, targetAccountName) + parsed.cash);
       }
       savePortfolio(latestPortfolio); setPortfolio(latestPortfolio);
 
@@ -3643,7 +3645,7 @@ function Portfolio() {
             >
               <div style={{ fontSize: 26, marginBottom: 5 }}></div>
               <div style={{ fontSize: 14, color: "#64748b" }}>PC: 파일을 여기로 드래그</div>
-              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>이미지 · xlsx · csv</div>
+              <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>이미지 · 엑셀(xlsx)</div>
             </div>
 
             {/* 스크린샷·엑셀 둘 다 계좌명 모달 경유 */}
@@ -3671,7 +3673,7 @@ function Portfolio() {
                 }}
               >
                 <span style={{ fontSize: 24 }}>📊</span>
-                <span>엑셀 / CSV</span>
+                <span>엑셀</span>
                 <span style={{ fontSize:11, opacity:0.7, fontWeight:400 }}>계좌명 입력 후 등록</span>
               </button>
             </div>
@@ -4013,7 +4015,7 @@ function Portfolio() {
           <div style={{ marginBottom: 12 }}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:7, marginBottom:7 }}>
               <button onClick={()=>setAcctModal({ addToExisting:true, kind:"image", initialFiles:[] })} style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#22d3a0", fontWeight:700, fontSize:12, cursor:"pointer", textAlign:"center", userSelect:"none", display:"block" }}>📷<br/>스크린샷</button>
-              <button onClick={()=>setAcctModal({ addToExisting:true, kind:"spreadsheet", initialFiles:[] })} style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#a8b4f8", fontWeight:700, fontSize:12, cursor:"pointer", textAlign:"center", userSelect:"none", display:"block" }}>📊<br/>엑셀/CSV</button>
+              <button onClick={()=>setAcctModal({ addToExisting:true, kind:"spreadsheet", initialFiles:[] })} style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#a8b4f8", fontWeight:700, fontSize:12, cursor:"pointer", textAlign:"center", userSelect:"none", display:"block" }}>📊<br/>엑셀</button>
               <button onClick={()=>setShowManual(true)} style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#6b7280", fontWeight:700, fontSize:12, cursor:"pointer" }}>✏️<br/>종목추가</button>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7, marginBottom:7 }}>
@@ -4523,11 +4525,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.3</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.5</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.3 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.5 변경사항</div>
+            <div>· 파일 등록 항목 표기를 "엑셀"로 정리(CSV 표현 제거, csv 파일은 계속 지원). 구글시트는 xlsx로 내보내면 동일하게 동작</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.4 변경사항</div>
+            <div>· 계좌 교체 시 예수금도 함께 교체 — 스샷/엑셀에 현금 정보가 있으면 그 값으로, 없으면 0으로 처리(기존 예수금이 그대로 남던 문제 수정). 엑셀/CSV에서도 예수금 인식 추가</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.3 변경사항</div>
             <div>· 스크린샷/엑셀로 계좌 등록·교체 시 그 계좌 종목만 현재가 조회 (전체 포폴 재조회 안 함 → 토큰 절약). 신규/매수 단일 종목은 그 종목만 조회. 포폴 "가격" 버튼은 전체 재조회 유지</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.2 변경사항</div>
             <div>· 매수/매도 시 예수금 처리를 명확한 버튼 선택으로 변경 ("예수금에서 차감"/"예수금에 추가"/"변경 없음" 등)</div>
