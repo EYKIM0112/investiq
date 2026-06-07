@@ -1373,14 +1373,19 @@ function SvgPieChart({ data, colors, totalValue }) {
           onTouchStart={(e)=>{e.preventDefault();handleTouch(i);}}
           style={{cursor:"pointer",transition:"opacity 0.15s"}}/>
       ))}
-      {h ? <>
-        <text x={cx} y={cy-14} textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="700">{h.name.length>8?h.name.slice(0,8)+"..":h.name}</text>
-        <text x={cx} y={cy+6} textAnchor="middle" fill={h.color} fontSize="18" fontWeight="800">{h.pct}%</text>
-        <text x={cx} y={cy+22} textAnchor="middle" fill="#364875" fontSize="11">{Math.round(h.value/10000).toLocaleString()}만원</text>
-      </> : <>
+      {/* 중앙(도넛 구멍) 클릭/탭 → 선택 해제하고 전체 보기로 */}
+      <circle cx={cx} cy={cy} r={ri-1} fill="transparent"
+        onClick={()=>setHov(null)} onTouchStart={(e)=>{e.preventDefault();setHov(null);}}
+        style={{cursor:"pointer"}}/>
+      {h ? <g style={{pointerEvents:"none"}}>
+        <text x={cx} y={cy-16} textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="700">{h.name.length>8?h.name.slice(0,8)+"..":h.name}</text>
+        <text x={cx} y={cy+4} textAnchor="middle" fill={h.color} fontSize="18" fontWeight="800">{h.pct}%</text>
+        <text x={cx} y={cy+20} textAnchor="middle" fill="#364875" fontSize="11">{Math.round(h.value/10000).toLocaleString()}만원</text>
+        <text x={cx} y={cy+34} textAnchor="middle" fill="#475569" fontSize="9">가운데 탭 → 전체</text>
+      </g> : <g style={{pointerEvents:"none"}}>
         <text x={cx} y={cy-8} textAnchor="middle" fill="#2a3a60" fontSize="12">총 자산</text>
         <text x={cx} y={cy+10} textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{totalValue?Math.round(totalValue/10000).toLocaleString()+"만":""}</text>
-      </>}
+      </g>}
     </svg>
   );
 }
@@ -2861,6 +2866,7 @@ function Portfolio() {
   const [editTarget, setEditTarget] = useState(null);
   const [autoUpdated, setAutoUpdated] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(null); // "buy" | "sell" | null
+  const [cashPrompt, setCashPrompt] = useState(null); // 매수/매도 후 예수금 처리 선택 모달
   const [imgPreview, setImgPreview] = useState(null); // { file, url, addToExisting } | null
   const [acctModal, setAcctModal] = useState(null); // { addToExisting, initialFiles } | null (계좌명 입력 모달)
 
@@ -3759,6 +3765,41 @@ function Portfolio() {
           }}
         />
       )}
+      {cashPrompt && (() => {
+        const { scenario, account, amount, curCash, updated, apply } = cashPrompt;
+        const opts = scenario === "sell"
+          ? [{ label:"예수금에 추가", cash: curCash + amount, primary:true }, { label:"예수금 변경 없음", cash: null }]
+          : scenario === "buy-over"
+            ? [{ label:"예수금 0원으로 변경", cash: 0, primary:true }, { label:"예수금 변경 없음", cash: null }]
+            : [{ label:"예수금에서 차감", cash: curCash - amount, primary:true }, { label:"예수금 변경 없음", cash: null }];
+        const desc = scenario === "buy-over"
+          ? `매수금액 ₩${Math.round(amount).toLocaleString()}이 예수금(₩${Math.round(curCash).toLocaleString()})보다 큽니다.`
+          : scenario === "sell"
+            ? `매도금액 ₩${Math.round(amount).toLocaleString()}`
+            : `매수금액 ₩${Math.round(amount).toLocaleString()}`;
+        const choose = (cash) => {
+          const final = cash === null ? updated : { ...updated, cashByAccount: setCashFor(portfolio, account, cash) };
+          setCashPrompt(null);
+          apply(final);
+        };
+        return (
+          <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", padding:18 }}>
+            <div style={{ width:"100%", maxWidth:360, background:"#0f0f18", border:"1px solid #1e293b", borderRadius:16, padding:20 }}>
+              <div style={{ fontSize:15, fontWeight:800, color:"#e2e8f0", marginBottom:6 }}>예수금 처리</div>
+              <div style={{ fontSize:13, color:"#94a3b8", marginBottom:4 }}>{account}</div>
+              <div style={{ fontSize:13, color:"#cbd5e1", marginBottom:16, lineHeight:1.5 }}>{desc}<br/>예수금을 어떻게 할까요?</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {opts.map((o, i) => (
+                  <button key={i} onClick={()=>choose(o.cash)} style={{
+                    width:"100%", padding:"13px", borderRadius:10, border:"none", fontSize:14, fontWeight:700, cursor:"pointer",
+                    background: o.primary ? "#22d3a0" : "#16162a", color: o.primary ? "#0a0a14" : "#94a3b8",
+                  }}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {showTradeModal && (
         <TradeModal
           mode={showTradeModal}
@@ -3769,11 +3810,13 @@ function Portfolio() {
           onClose={() => setShowTradeModal(null)}
           onConfirm={(trade) => {
             const amount = (trade.shares || 0) * (trade.price || 0);
-            const cash = getCashFor(portfolio, trade.account);
+            const acct = trade.account;
+            const curCash = getCashFor(portfolio, acct);
+            // 1. 보유내역 변경 계산 (현금은 아직 손대지 않음)
+            let updated, isNew = false, baseMsg = "";
             if (trade.type === "buy") {
-              // 기존 종목 있으면 평단 재계산, 없으면 신규 추가
-              const idx = portfolio.holdings.findIndex(h => h.name === trade.name && h.account === trade.account);
-              let newHoldings, isNew = false;
+              const idx = portfolio.holdings.findIndex(h => h.name === trade.name && h.account === acct);
+              let newHoldings;
               if (idx >= 0) {
                 const h = portfolio.holdings[idx];
                 const totalShares = (h.shares||0) + trade.shares;
@@ -3781,40 +3824,34 @@ function Portfolio() {
                 newHoldings = portfolio.holdings.map((h2, i) => i===idx ? {...h2, shares:totalShares, avg_price:newAvg} : h2);
               } else {
                 isNew = true;
-                newHoldings = [...portfolio.holdings, { name:trade.name, ticker:"", shares:trade.shares, avg_price:trade.price, currency:"KRW", sector:"기타", account:trade.account }];
+                newHoldings = [...portfolio.holdings, { name:trade.name, ticker:"", shares:trade.shares, avg_price:trade.price, currency:"KRW", sector:"기타", account:acct }];
               }
-              const updated = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
-              // 현금 차감 확인
-              if (amount > 0 && cash > 0) {
-                if (amount > cash) {
-                  if (window.confirm(`매수금액(₩${Math.round(amount).toLocaleString()})이 ${trade.account} 현금 잔고(₩${Math.round(cash).toLocaleString()})보다 큽니다.\n무시하고 진행할까요? (확인 시 이 계좌 현금 0)`)) updated.cashByAccount = setCashFor(portfolio, trade.account, 0);
-                } else if (window.confirm(`매수금액 ₩${Math.round(amount).toLocaleString()}을 ${trade.account} 현금 잔고에서 차감할까요?`)) {
-                  updated.cashByAccount = setCashFor(portfolio, trade.account, cash - amount);
-                }
-              }
-              savePortfolio(updated); setPortfolio(updated);
-              setUploadMsg(`✅ 매수 반영: ${trade.name} ${trade.shares}주`);
-              // 신규 종목이면 그 종목만 현재가 조회(onlyMissing) → 전체 갱신 안 함(토큰 절약)
-              if (isNew) setTimeout(() => updatePrices(updated, true), 300);
+              updated = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
+              baseMsg = `✅ 매수 반영: ${trade.name} ${trade.shares}주`;
             } else {
-              // 매도: 수량 차감, 전량이면 삭제
-              const idx = portfolio.holdings.findIndex(h => h.name === trade.name && h.account === trade.account);
-              if (idx < 0) return;
+              const idx = portfolio.holdings.findIndex(h => h.name === trade.name && h.account === acct);
+              if (idx < 0) { setShowTradeModal(null); return; }
               const h = portfolio.holdings[idx];
               const remain = (h.shares||0) - trade.shares;
-              let newHoldings;
-              if (remain <= 0) newHoldings = portfolio.holdings.filter((_, i) => i !== idx);
-              else newHoldings = portfolio.holdings.map((h2, i) => i===idx ? {...h2, shares:remain} : h2);
-              const updated = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
-              // 매도금액 현금 반영 확인
-              if (amount > 0 && window.confirm(`매도금액 ₩${Math.round(amount).toLocaleString()}을 ${trade.account} 현금 잔고에 추가할까요?`)) {
-                updated.cashByAccount = setCashFor(portfolio, trade.account, cash + amount);
-              }
-              savePortfolio(updated); setPortfolio(updated);
-              setUploadMsg(remain<=0 ? `✅ 전량매도: ${trade.name} 삭제됨` : `✅ 매도 반영: ${trade.name} 잔여 ${remain}주`);
+              const newHoldings = remain <= 0 ? portfolio.holdings.filter((_, i) => i !== idx) : portfolio.holdings.map((h2, i) => i===idx ? {...h2, shares:remain} : h2);
+              updated = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
+              baseMsg = remain<=0 ? `✅ 전량매도: ${trade.name} 삭제됨` : `✅ 매도 반영: ${trade.name} 잔여 ${remain}주`;
             }
-            setTimeout(() => setUploadMsg(""), 3000);
             setShowTradeModal(null);
+            // 2. 적용 함수
+            const apply = (finalUpdated) => {
+              savePortfolio(finalUpdated); setPortfolio(finalUpdated);
+              setUploadMsg(baseMsg);
+              if (isNew) setTimeout(() => updatePrices(finalUpdated, true), 300); // 신규 종목만 시세 조회
+              setTimeout(() => setUploadMsg(""), 3000);
+            };
+            // 3. 예수금 처리 선택지 - 매도는 항상, 매수는 예수금>0일 때만
+            if (amount > 0 && (trade.type === "sell" || curCash > 0)) {
+              const scenario = trade.type === "sell" ? "sell" : (amount > curCash ? "buy-over" : "buy-normal");
+              setCashPrompt({ scenario, account: acct, amount, curCash, updated, apply });
+            } else {
+              apply(updated);
+            }
           }}
         />
       )}
@@ -4482,11 +4519,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.2</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.1 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.2 변경사항</div>
+            <div>· 매수/매도 시 예수금 처리를 명확한 버튼 선택으로 변경 ("예수금에서 차감"/"예수금에 추가"/"변경 없음" 등)</div>
+            <div>· 섹터별·지역별 구성 그래프: 가운데(도넛 구멍)를 탭하면 전체 보기로 복귀</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.1 변경사항</div>
             <div>· 현금(예수금)을 계좌별로 분리 — 계좌 탭마다 해당 계좌 현금, 전체 탭은 합계. 매수/매도·임포트·구성 그래프 모두 계좌별 반영 (기존 전역 현금값은 초기화되니 계좌별로 다시 입력)</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.0 변경사항</div>
             <div>· 엑셀/CSV 등록 정상화 — 브라우저에서 직접 파싱(SheetJS)해 실제 데이터 반영. 계좌명도 직접 입력</div>
