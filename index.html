@@ -2919,6 +2919,7 @@ function Portfolio() {
     if (!file) return;
     setUploading(true);
     setUploadMsg("파일 확인 중...");
+    const localCorrections = []; // 비배치 경로에서 1글자 오타 보정 알림용
     try {
       const ext = (file.name.split(".").pop() || "").toLowerCase();
       const mime = file.type || "";
@@ -3115,7 +3116,14 @@ function Portfolio() {
             const r = resolvedMap[h.name];
             if (!r?.yahoo_ticker) return h;
             const m = r.yahoo_ticker.match(/^(\d{6})\.(KS|KQ)$/);
-            return { ...h, yahoo_ticker: r.yahoo_ticker, ticker: m ? m[1] : "" };
+            // 1글자 오타 보정으로 공식명을 받은 경우 이름 교정 + 알림 기록
+            const corrected = r._officialName && r._officialName !== h.name;
+            if (corrected) {
+              const note = { from: h.name, to: r._officialName };
+              if (batchCtx) batchCtx.corrections.push(note);
+              else localCorrections.push(note);
+            }
+            return { ...h, yahoo_ticker: r.yahoo_ticker, ticker: m ? m[1] : "", name: corrected ? r._officialName : h.name };
           });
         } catch(e) { console.warn("ticker 보완 실패:", e); }
       }
@@ -3151,6 +3159,9 @@ function Portfolio() {
       setUploadMsg(`✅ ${newHoldings.length}개 종목 등록! 현재가 조회 중...`);
       // 다중 이미지 배치 처리 중에는 마지막에 한 번만 현재가 조회 (이미지별 updatePrices 동시 발화 → 덮어쓰기 방지)
       if (!skipPriceUpdate) setTimeout(() => updatePrices(latestPortfolio), 300);
+      if (!batchCtx && localCorrections.length) {
+        alert("이름 자동 교정:\n" + localCorrections.map(c => `${c.from} → ${c.to}`).join("\n"));
+      }
     } catch (e) {
       if (batchCtx) {
         // 배치: 이미지 한 장 실패해도 나머지는 진행. 실패는 모아서 끝에 1회 안내(겁나는 순간 플래시 X)
@@ -3191,7 +3202,7 @@ function Portfolio() {
         const ok = window.confirm(`"${trimmedName}" 계좌가 이미 등록되어 있습니다.\n이 계좌의 종목 정보를 새로 올린 내용으로 교체할까요?`);
         if (!ok) return;
       }
-      ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [], errors: [] };
+      ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [], errors: [], corrections: [] };
     }
     (async () => {
       // 파일별 현재가 조회는 건너뛰고(skipPriceUpdate), 전부 등록 후 누적 포폴로 한 번만 조회
@@ -3201,6 +3212,10 @@ function Portfolio() {
         if (ctx.errors.length) msg += `⚠️ ${ctx.errors.length}개 파일 분석에 실패했습니다. 잠시 후 그 파일만 다시 등록해주세요.\n(${[...new Set(ctx.errors)].join(" / ")})`;
         if (ctx.partialFails.length) msg += `${msg ? "\n\n" : ""}일부 종목은 이름이 잘려 인식하지 못했습니다:\n${[...new Set(ctx.partialFails)].join(", ")}\n그 종목이 온전히 보이는 화면으로 다시 등록해주세요.`;
         if (msg) alert(msg);
+      }
+      // 1글자 오타 자동 교정 알림 (사용자가 인지 후 필요시 수정 가능)
+      if (ctx && ctx.corrections.length) {
+        alert("이름 자동 교정 (OCR 1글자 오차 보정):\n" + ctx.corrections.map(c => `${c.from} → ${c.to}`).join("\n"));
       }
       // 등록한 계좌의 종목만 현재가 조회 (전체 포폴 재조회 안 함 → 토큰 절약)
       setTimeout(() => updatePrices(loadPortfolio(), false, trimmedName || null), 300);
@@ -3298,6 +3313,35 @@ function Portfolio() {
       return short.length >= 6 && long.includes(short);
     };
 
+    // 1글자 치환/추가/삭제 오타 보정용 헬퍼 (가드: 숫자 동일 + 한글 코어 6자 이상)
+    const digitsOf = (s) => (s.match(/\d/g) || []).join("");
+    const hangulCount = (s) => (s.match(/[가-힣]/g) || []).length;
+    const editDistanceIsOne = (a, b) => {
+      if (a === b) return false;
+      const la = a.length, lb = b.length;
+      if (Math.abs(la - lb) > 1) return false;
+      if (la === lb) { // 치환 1회
+        let diff = 0;
+        for (let i = 0; i < la; i++) { if (a[i] !== b[i]) { if (++diff > 1) return false; } }
+        return diff === 1;
+      }
+      // 삽입/삭제 1회
+      const [s, l] = la < lb ? [a, b] : [b, a];
+      let i = 0, j = 0, skipped = false;
+      while (i < s.length && j < l.length) {
+        if (s[i] === l[j]) { i++; j++; }
+        else { if (skipped) return false; skipped = true; j++; }
+      }
+      return true;
+    };
+    const closeByOneChar = (queryName, resultName) => {
+      const a = norm(queryName), b = norm(resultName);
+      if (!a || !b) return false;
+      if (digitsOf(a) !== digitsOf(b)) return false;                 // 숫자 동일해야 (100/200/150 등 구분 보호)
+      if (Math.max(hangulCount(a), hangulCount(b)) < 6) return false; // 한글 코어 6자 미만(코스피/코스닥 등) 제외
+      return editDistanceIsOne(a, b);
+    };
+
     await Promise.allSettled(needTicker.map(async h => {
       const tryEndpoints = [
         `/api/naver?type=search&q=${encodeURIComponent(h.name)}`,   // 1차: 네이버 (한국 ETF 정확)
@@ -3316,17 +3360,27 @@ function Portfolio() {
           );
           if (quotes.length === 0) continue;
           // 이름이 일치하는 결과만 채택 (엉뚱한 종목 차단)
-          // 1순위: 정규화 후 완전 일치 / 2순위: 포함 관계 (접미사 잘림 대응)
+          // 1순위: 정규화 후 완전 일치 / 2순위: 포함 관계(접미사 잘림 대응) → 티커만, 이름 유지
           const exact = quotes.find(q => norm(h.name) === norm(q.longname || q.shortname || ""));
-          const verified = exact || quotes.find(q => nameMatches(h.name, q.longname || q.shortname || ""));
-          if (verified) { tickerMap[h.name] = verified.symbol; return; }
-          // 검색 결과는 있으나 이름 검증 실패 → 다음 엔드포인트 시도
+          const inc = exact || quotes.find(q => nameMatches(h.name, q.longname || q.shortname || ""));
+          if (inc) { tickerMap[h.name] = { symbol: inc.symbol, officialName: null }; return; }
+          // 3순위: 한 글자 오타 보정 (가드 통과 + 후보 단일 + 공식명이 한글일 때만) → 티커 + 이름 교정
+          const edCands = quotes.filter(q => closeByOneChar(h.name, q.longname || q.shortname || ""));
+          if (edCands.length === 1) {
+            const off = edCands[0].longname || edCands[0].shortname || "";
+            tickerMap[h.name] = { symbol: edCands[0].symbol, officialName: /[가-힣]/.test(off) ? off : null };
+            return;
+          }
+          // 검색 결과는 있으나 검증 실패 → 다음 엔드포인트 시도
         } catch(e) {}
       }
-      // 모든 검색에서 이름 검증 실패 → ticker 미할당 (updatePrices가 이름 기반 Gemini Search로 가격 조회)
+      // 모든 검색에서 검증 실패 → ticker 미할당 (updatePrices가 이름 기반 검색으로 가격 조회)
     }));
 
-    return holdings.map(h => ({ ...h, yahoo_ticker: h.yahoo_ticker || tickerMap[h.name] || null }));
+    return holdings.map(h => {
+      const t = tickerMap[h.name];
+      return { ...h, yahoo_ticker: h.yahoo_ticker || t?.symbol || null, _officialName: t?.officialName || null };
+    });
   };
 
   // Gemini fallback (Yahoo 실패 종목 재시도)
@@ -4525,11 +4579,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.5</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.6</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.5 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.6 변경사항</div>
+            <div>· OCR 1글자 오타 자동 보정 — 종목명이 한 글자 틀려도(예: 전략→전력) 티커를 찾아 공식명으로 교정. 가드: 숫자 동일·한글 6자 이상·후보 단일·공식명이 한글일 때만 동작(다른 종목 오매칭 방지). 교정 시 알림 표시</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.5 변경사항</div>
             <div>· 파일 등록 항목 표기를 "엑셀"로 정리(CSV 표현 제거, csv 파일은 계속 지원). 구글시트는 xlsx로 내보내면 동일하게 동작</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.4 변경사항</div>
             <div>· 계좌 교체 시 예수금도 함께 교체 — 스샷/엑셀에 현금 정보가 있으면 그 값으로, 없으면 0으로 처리(기존 예수금이 그대로 남던 문제 수정). 엑셀/CSV에서도 예수금 인식 추가</div>
