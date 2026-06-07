@@ -3200,7 +3200,8 @@ function Portfolio() {
         if (ctx.partialFails.length) msg += `${msg ? "\n\n" : ""}일부 종목은 이름이 잘려 인식하지 못했습니다:\n${[...new Set(ctx.partialFails)].join(", ")}\n그 종목이 온전히 보이는 화면으로 다시 등록해주세요.`;
         if (msg) alert(msg);
       }
-      setTimeout(() => updatePrices(loadPortfolio()), 300);
+      // 등록한 계좌의 종목만 현재가 조회 (전체 포폴 재조회 안 함 → 토큰 절약)
+      setTimeout(() => updatePrices(loadPortfolio(), false, trimmedName || null), 300);
     })();
   };
 
@@ -3383,16 +3384,18 @@ function Portfolio() {
   // KRW + 6자리 ticker → 네이버 금융 (가장 정확)
   // KRW + ticker 없음  → Gemini Search
   // USD 등 외화        → Yahoo Finance → Gemini fallback
-  const updatePrices = async (targetPortfolio, onlyMissing = false) => {
+  const updatePrices = async (targetPortfolio, onlyMissing = false, accountFilter = null) => {
     const pf = targetPortfolio || portfolio;
     if (!pf || !pf.holdings) return;
-    // onlyMissing=true면 current_price 없는 종목만 조회 후 전체 포폴에 병합
+    // onlyMissing: 가격 없는 종목만 / accountFilter: 특정 계좌 종목만 → 조회 후 전체 포폴에 병합
     const fullHoldings = pf.holdings;
-    const activeHoldings = onlyMissing ? fullHoldings.filter(h => !h.current_price) : fullHoldings;
+    const activeHoldings = fullHoldings.filter(h =>
+      (!onlyMissing || !h.current_price) && (!accountFilter || h.account === accountFilter)
+    );
     if (activeHoldings.length === 0) return;
     const activePf = { ...pf, holdings: activeHoldings };
     setUpdating(true);
-    setUploadMsg(onlyMissing ? "📡 신규 종목 현재가 조회 중..." : "📡 현재가 조회 중...");
+    setUploadMsg(accountFilter ? `📡 ${accountFilter} 현재가 조회 중...` : (onlyMissing ? "📡 신규 종목 현재가 조회 중..." : "📡 현재가 조회 중..."));
     try {
       const isNoPriceAsset = (h) => {
         const lower = (h.name||"").toLowerCase();
@@ -3523,8 +3526,9 @@ function Portfolio() {
       }
 
       const allPricedHoldings = [...pricedKRW, ...pricedForeign, ...cashHoldings];
-      // onlyMissing이면 업데이트된 종목만 전체 포폴에 병합
-      const mergedHoldings = onlyMissing
+      // 부분 조회(onlyMissing 또는 accountFilter)면 조회한 종목만 전체 포폴에 병합
+      const isSubset = onlyMissing || !!accountFilter;
+      const mergedHoldings = isSubset
         ? fullHoldings.map(h => {
             const updated = allPricedHoldings.find(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account);
             return updated || h;
@@ -4519,11 +4523,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.2</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.3</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.2 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.3 변경사항</div>
+            <div>· 스크린샷/엑셀로 계좌 등록·교체 시 그 계좌 종목만 현재가 조회 (전체 포폴 재조회 안 함 → 토큰 절약). 신규/매수 단일 종목은 그 종목만 조회. 포폴 "가격" 버튼은 전체 재조회 유지</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.2 변경사항</div>
             <div>· 매수/매도 시 예수금 처리를 명확한 버튼 선택으로 변경 ("예수금에서 차감"/"예수금에 추가"/"변경 없음" 등)</div>
             <div>· 섹터별·지역별 구성 그래프: 가운데(도넛 구멍)를 탭하면 전체 보기로 복귀</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.1 변경사항</div>
