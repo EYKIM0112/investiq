@@ -3930,9 +3930,7 @@ function Portfolio() {
 
           {/* 종목 추가 버튼 */}
           <div style={{ marginBottom: 12 }}>
-            <input ref={imgInputRef} id="input-img-upload" type="file" accept="image/*" multiple
-              style={{display:"none"}}
-              onChange={e=>onFileChange(e, true)}/>
+            {/* 스크린샷은 계좌명 입력 모달 경유 (아래 📷 버튼) */}
             <input ref={xlsInputRef} id="input-xls-upload" type="file" accept=".xlsx,.xls,.csv"
               style={{display:"none"}}
               onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) processFile(f, true); }}/>
@@ -3940,7 +3938,7 @@ function Portfolio() {
               style={{display:"none"}}
               onChange={e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) processOrderCapture(f); }}/>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:7, marginBottom:7 }}>
-              <label htmlFor="input-img-upload" style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#22d3a0", fontWeight:700, fontSize:12, cursor:"pointer", textAlign:"center", userSelect:"none", display:"block" }}>📷<br/>스크린샷</label>
+              <button onClick={()=>setAcctModal({ addToExisting:true, initialFiles:[] })} style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#22d3a0", fontWeight:700, fontSize:12, cursor:"pointer", textAlign:"center", userSelect:"none", display:"block" }}>📷<br/>스크린샷</button>
               <label htmlFor="input-xls-upload" style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#a8b4f8", fontWeight:700, fontSize:12, cursor:"pointer", textAlign:"center", display:"block" }}>📊<br/>엑셀/CSV</label>
               <button onClick={()=>setShowManual(true)} style={{ padding:"11px 6px", borderRadius:12, background:"#0f0f18", border:"1px solid #16162a", color:"#6b7280", fontWeight:700, fontSize:12, cursor:"pointer" }}>✏️<br/>종목추가</button>
             </div>
@@ -4450,11 +4448,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.9.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.0 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.1 변경사항</div>
+            <div>· 포트폴리오 헤더의 📷 스크린샷 버튼도 계좌명 입력 모달을 거치도록 수정 (v1.9.0에서 누락된 진입점)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.9.0 변경사항</div>
             <div>· 스크린샷 등록 방식 개편 — 등록 시 계좌명을 직접 입력. 한 계좌가 여러 화면에 걸쳐 있으면 여러 장을 함께 선택해 한 계좌로 합칠 수 있음 (계좌명이 잘리거나 안 보이는 스샷도 OK)</div>
             <div>· 같은 계좌명을 다시 등록하면 "종목 정보 교체할까요?" 확인 후 교체</div>
             <div>· 다중 이미지 등록 버그 수정 — 직전 이미지 결과를 못 읽던 stale state 문제 근본 수정 (현재가 조회도 마지막에 한 번만)</div>
