@@ -2908,6 +2908,9 @@ function Portfolio() {
   const [cashPrompt, setCashPrompt] = useState(null); // 매수/매도 후 예수금 처리 선택 모달
   const [imgPreview, setImgPreview] = useState(null); // { file, url, addToExisting } | null
   const [dragAcc, setDragAcc] = useState(null); // 드래그 중인 계좌 탭
+  const [editAccounts, setEditAccounts] = useState(false); // 계좌 탭 순서편집 모드
+  const accTabRef = useRef({ order: null });
+  const portfolioRef = useRef(portfolio); portfolioRef.current = portfolio;
   const [acctModal, setAcctModal] = useState(null); // { addToExisting, initialFiles } | null (계좌명 입력 모달)
 
   const imgInputRef      = useRef(null);
@@ -3657,15 +3660,33 @@ function Portfolio() {
 
   // 계좌 목록
   const accounts = orderedAccounts(portfolio);
-  const reorderAccounts = (from, to) => {
-    if (!from || from === to) return;
-    const arr = orderedAccounts(portfolio);
-    const fi = arr.indexOf(from); if (fi < 0) return;
-    arr.splice(fi, 1);
-    const ti = to ? arr.indexOf(to) : arr.length;
-    arr.splice(ti < 0 ? arr.length : ti, 0, from);
-    const updated = { ...portfolio, accountOrder: arr };
-    savePortfolio(updated); setPortfolio(updated);
+  // 계좌 탭 순서편집 — 포인터(터치+마우스) 기반 드래그. 편집모드(editAccounts)에서 핸들로만 동작
+  const moveTabTo = (overAcc) => {
+    const arr = accTabRef.current.order;
+    if (!arr || !dragAcc || !overAcc || overAcc === dragAcc) return;
+    const fi = arr.indexOf(dragAcc), ti = arr.indexOf(overAcc);
+    if (fi < 0 || ti < 0) return;
+    arr.splice(fi, 1); arr.splice(ti, 0, dragAcc);
+    setPortfolio(p => ({ ...p, accountOrder: [...arr] })); // 드래그 중 실시간 표시(저장은 손 뗄 때)
+  };
+  const onAccDown = (acc, e) => {
+    if (!editAccounts) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    accTabRef.current.order = orderedAccounts(portfolio);
+    setDragAcc(acc);
+  };
+  const onAccMove = (e) => {
+    if (!dragAcc) return;
+    const t = document.elementFromPoint(e.clientX, e.clientY);
+    const tab = t && t.closest && t.closest("[data-acc]");
+    if (tab) moveTabTo(tab.getAttribute("data-acc"));
+  };
+  const onAccUp = () => {
+    if (!dragAcc) return;
+    const arr = accTabRef.current.order;
+    if (arr) { const np = { ...portfolioRef.current, accountOrder: [...arr] }; savePortfolio(np); setPortfolio(np); }
+    accTabRef.current.order = null; setDragAcc(null);
   };
 
   // 현재 뷰에 따른 종목 필터 + 동일 종목 합산 (전체/계좌별 모두)
@@ -3989,14 +4010,13 @@ function Portfolio() {
               transition: "all 0.15s",
             }}>전체</button>
             {accounts.map(acc => (
-              <div key={acc}
-                draggable
-                onDragStart={() => setDragAcc(acc)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); reorderAccounts(dragAcc, acc); setDragAcc(null); }}
-                onDragEnd={() => setDragAcc(null)}
-                title="드래그하여 순서 변경"
-                style={{ display: "flex", alignItems: "center", flexShrink: 0, cursor: "grab", opacity: dragAcc === acc ? 0.4 : 1, transition: "opacity 0.15s" }}>
+              <div key={acc} data-acc={acc}
+                style={{ display: "flex", alignItems: "center", flexShrink: 0, opacity: dragAcc === acc ? 0.4 : 1, transition: "opacity 0.15s", border: editAccounts ? "1px dashed #4f6ef7" : "1px solid transparent", borderRadius: 7, paddingLeft: editAccounts ? 2 : 0 }}>
+                {editAccounts && (
+                  <span onPointerDown={(e) => onAccDown(acc, e)} onPointerMove={onAccMove} onPointerUp={onAccUp} onPointerCancel={onAccUp}
+                    title="드래그하여 순서 변경"
+                    style={{ cursor: "grab", color: "#8aa0ff", fontSize: 15, lineHeight: 1, padding: "4px 5px", touchAction: "none", userSelect: "none" }}>⠿</span>
+                )}
                 <button onClick={() => setViewMode(acc)} style={{
                   padding: "7px 10px", border: "none", background: "transparent",
                   color: viewMode === acc ? "#e8eaf0" : "#94a3b8",
@@ -4015,6 +4035,12 @@ function Portfolio() {
                 }} style={{ background: "none", border: "none", color: "#475569", fontSize: 10, cursor: "pointer", padding: "0 2px", marginBottom: 2 }}>✎</button>
               </div>
             ))}
+            {accounts.length > 1 && (
+              <button onClick={() => setEditAccounts(v => !v)} title="계좌 탭 순서 편집"
+                style={{ padding: "7px 9px", border: "none", background: "transparent", color: editAccounts ? "#22d3a0" : "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                {editAccounts ? "✓ 완료" : "⇄ 순서"}
+              </button>
+            )}
           </div>
 
           {/* 요약 카드 */}
@@ -4636,11 +4662,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.11.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.11.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.0 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.1 변경사항</div>
+            <div>· 계좌 탭 순서편집 방식 개선 — 탭 바의 "⇄ 순서" 버튼으로 편집모드 진입 후 각 탭의 ⠿ 핸들을 잡고 드래그해 순서 변경, "✓ 완료"로 종료. 포인터 방식이라 PC·모바일(크롬) 모두 동작 (기존 드래그가 모바일에서 안 되고 PC도 어색하던 문제 해결)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.0 변경사항</div>
             <div>· 이미지 미리보기 PC 조작 추가 — 마우스 휠로 확대/축소, 확대 후 드래그로 이동, % 단계 슬라이더로 배율 조절 (모바일 핀치줌·더블탭·스와이프는 그대로)</div>
             <div>· 계좌 탭 드래그 재정렬 — 계좌 탭을 드래그해 순서 변경, 순서 저장. 탭/매수·매도/등록/삭제 등 계좌 목록 표시가 지정 순서를 따름 (이름변경해도 위치 유지)</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.6 변경사항</div>
