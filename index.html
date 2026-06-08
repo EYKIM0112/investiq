@@ -2776,10 +2776,35 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
         else { g.mode = "swipe"; }
       }
     };
+    // PC: 마우스 휠 줌
+    const onWheel = (e) => {
+      e.preventDefault();
+      setView(v => { const ns = clamp(v.s * (e.deltaY < 0 ? 1.12 : 0.893)); return ns <= 1 ? { s: 1, x: 0, y: 0 } : { ...v, s: ns }; });
+    };
+    // PC: 마우스 드래그 팬 (확대 상태에서만)
+    const onMouseDown = (e) => {
+      if (viewRef.current.s <= 1) return;
+      e.preventDefault();
+      g.mode = "mpan"; g.sx = e.clientX; g.sy = e.clientY; g.x0 = viewRef.current.x; g.y0 = viewRef.current.y;
+    };
+    const onMouseMove = (e) => {
+      if (g.mode !== "mpan") return;
+      e.preventDefault();
+      setView(v => ({ ...v, x: g.x0 + (e.clientX - g.sx), y: g.y0 + (e.clientY - g.sy) }));
+    };
+    const onMouseUp = () => { if (g.mode === "mpan") g.mode = null; };
     el.addEventListener("touchstart", onStart, { passive: false });
     el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd);
-    return () => { el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd); };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove); el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("wheel", onWheel); el.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp);
+    };
   }, [total]);
 
   const zoomBtn = (d) => setView(v => { const ns = clamp(v.s + d); return ns <= 1 ? { s: 1, x: 0, y: 0 } : { ...v, s: ns }; });
@@ -2797,7 +2822,7 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       </div>
 
       {/* 이미지 트랙(캐러셀) */}
-      <div ref={boxRef} style={{ flex: 1, overflow: "hidden", position: "relative", touchAction: "none" }}>
+      <div ref={boxRef} style={{ flex: 1, overflow: "hidden", position: "relative", touchAction: "none", cursor: view.s > 1 ? "grab" : "default" }}>
         <div style={{
           display: "flex", height: "100%", width: `${total * 100}%`,
           transform: `translateX(calc(${-idx * (100 / total)}% + ${dragX}px))`,
@@ -2834,18 +2859,23 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       </div>
 
       {/* 줌 컨트롤 */}
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10, padding: "8px 0", flexShrink: 0 }}>
-        <button onClick={() => zoomBtn(-0.5)} style={{ ...btn, width: 44 }}>−</button>
-        <span style={{ color: "#94a3b8", fontSize: 12, minWidth: 48, textAlign: "center" }}>{Math.round(view.s * 100)}%</span>
-        <button onClick={() => zoomBtn(0.5)} style={{ ...btn, width: 44 }}>+</button>
-        <button onClick={() => setRemoved(r => ({ ...r, [idx]: !r[idx] }))} style={{ ...btn, color: curRemoved ? "#22d3a0" : "#f87171", border: `1px solid ${curRemoved ? "#22d3a0" : "#7f1d1d"}` }}>
-          {curRemoved ? "되돌리기" : "이 장 제외"}
-        </button>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "8px 0", flexShrink: 0 }}>
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 10 }}>
+          <button onClick={() => zoomBtn(-0.5)} style={{ ...btn, width: 44 }}>−</button>
+          <span style={{ color: "#94a3b8", fontSize: 12, minWidth: 48, textAlign: "center" }}>{Math.round(view.s * 100)}%</span>
+          <button onClick={() => zoomBtn(0.5)} style={{ ...btn, width: 44 }}>+</button>
+          <button onClick={() => setRemoved(r => ({ ...r, [idx]: !r[idx] }))} style={{ ...btn, color: curRemoved ? "#22d3a0" : "#f87171", border: `1px solid ${curRemoved ? "#22d3a0" : "#7f1d1d"}` }}>
+            {curRemoved ? "되돌리기" : "이 장 제외"}
+          </button>
+        </div>
+        <input type="range" min={100} max={600} step={10} value={Math.round(view.s * 100)}
+          onChange={(e) => { const ns = clamp(Number(e.target.value) / 100); setView(v => ns <= 1 ? { s: 1, x: 0, y: 0 } : { ...v, s: ns }); }}
+          style={{ width: "82%", maxWidth: 360, accentColor: "#22d3a0", cursor: "pointer" }} />
       </div>
 
       {/* 하단 액션 */}
       <div style={{ padding: "10px 16px 18px", flexShrink: 0 }}>
-        <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 10 }}>두 손가락 확대 · 더블탭 · 확대 후 한 손가락 이동{total > 1 ? " · 좌우로 휙 넘기기" : ""}</div>
+        <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 10 }}>두 손가락 확대 · 더블탭 · 확대 후 한 손가락 이동{total > 1 ? " · 좌우로 휙 넘기기" : ""} · PC: 휠 확대·드래그 이동</div>
         <button onClick={() => keptFiles.length && onConfirm(keptFiles)} disabled={keptFiles.length === 0}
           style={{ width: "100%", background: keptFiles.length ? "#22d3a0" : "#16162a", color: keptFiles.length ? "#0a0a14" : "#475569", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 800, cursor: keptFiles.length ? "pointer" : "default" }}>
           {keptFiles.length ? `📊 ${keptFiles.length}장 분석 시작` : "분석할 이미지 없음"}
@@ -2853,6 +2883,15 @@ function ImageZoomPreview({ items, onConfirm, onCancel }) {
       </div>
     </div>
   );
+}
+
+function orderedAccounts(portfolio) {
+  if (!portfolio || !Array.isArray(portfolio.holdings)) return [];
+  const present = [...new Set(portfolio.holdings.map(h => h.account).filter(Boolean))];
+  const order = Array.isArray(portfolio.accountOrder) ? portfolio.accountOrder : [];
+  const inOrder = order.filter(a => present.includes(a));   // 저장된 순서 중 현존 계좌
+  const rest = present.filter(a => !inOrder.includes(a));   // 순서 미지정 신규 계좌(첫 등장 순)
+  return [...inOrder, ...rest];
 }
 
 function Portfolio() {
@@ -2868,6 +2907,7 @@ function Portfolio() {
   const [showTradeModal, setShowTradeModal] = useState(null); // "buy" | "sell" | null
   const [cashPrompt, setCashPrompt] = useState(null); // 매수/매도 후 예수금 처리 선택 모달
   const [imgPreview, setImgPreview] = useState(null); // { file, url, addToExisting } | null
+  const [dragAcc, setDragAcc] = useState(null); // 드래그 중인 계좌 탭
   const [acctModal, setAcctModal] = useState(null); // { addToExisting, initialFiles } | null (계좌명 입력 모달)
 
   const imgInputRef      = useRef(null);
@@ -3616,7 +3656,17 @@ function Portfolio() {
   }, []);
 
   // 계좌 목록
-  const accounts = portfolio ? [...new Set(portfolio.holdings.map(h => h.account).filter(Boolean))] : [];
+  const accounts = orderedAccounts(portfolio);
+  const reorderAccounts = (from, to) => {
+    if (!from || from === to) return;
+    const arr = orderedAccounts(portfolio);
+    const fi = arr.indexOf(from); if (fi < 0) return;
+    arr.splice(fi, 1);
+    const ti = to ? arr.indexOf(to) : arr.length;
+    arr.splice(ti < 0 ? arr.length : ti, 0, from);
+    const updated = { ...portfolio, accountOrder: arr };
+    savePortfolio(updated); setPortfolio(updated);
+  };
 
   // 현재 뷰에 따른 종목 필터 + 동일 종목 합산 (전체/계좌별 모두)
   const rawHoldings = (() => {
@@ -3790,14 +3840,14 @@ function Portfolio() {
         <ManualInputModal
           onClose={() => setShowManual(false)}
           onAdd={h => { addManualHolding(h); setShowManual(false); }}
-          existingAccounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
+          existingAccounts={orderedAccounts(portfolio)}
           defaultAccount={viewMode !== "all" ? viewMode : ""}
         />
       )}
       {acctModal && (
         <AccountInputModal
           kind={acctModal.kind || "image"}
-          existingAccounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
+          existingAccounts={orderedAccounts(portfolio)}
           initialFiles={acctModal.initialFiles || []}
           onCancel={() => setAcctModal(null)}
           onSubmit={(name, files) => {
@@ -3864,7 +3914,7 @@ function Portfolio() {
         <TradeModal
           mode={showTradeModal}
           holdings={portfolio?.holdings || []}
-          accounts={portfolio ? [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))] : []}
+          accounts={orderedAccounts(portfolio)}
           defaultAccount={viewMode !== "all" ? viewMode : ""}
           currentCash={getCashFor(portfolio, viewMode !== "all" ? viewMode : "")}
           onClose={() => setShowTradeModal(null)}
@@ -3939,7 +3989,14 @@ function Portfolio() {
               transition: "all 0.15s",
             }}>전체</button>
             {accounts.map(acc => (
-              <div key={acc} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <div key={acc}
+                draggable
+                onDragStart={() => setDragAcc(acc)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); reorderAccounts(dragAcc, acc); setDragAcc(null); }}
+                onDragEnd={() => setDragAcc(null)}
+                title="드래그하여 순서 변경"
+                style={{ display: "flex", alignItems: "center", flexShrink: 0, cursor: "grab", opacity: dragAcc === acc ? 0.4 : 1, transition: "opacity 0.15s" }}>
                 <button onClick={() => setViewMode(acc)} style={{
                   padding: "7px 10px", border: "none", background: "transparent",
                   color: viewMode === acc ? "#e8eaf0" : "#94a3b8",
@@ -3952,7 +4009,7 @@ function Portfolio() {
                   const newName = prompt("계좌 탭 이름 변경:", acc);
                   if (!newName || newName.trim() === acc) return;
                   const trimmed = newName.trim();
-                  const updated = { ...portfolio, holdings: portfolio.holdings.map(h => h.account === acc ? { ...h, account: trimmed } : h) };
+                  const updated = { ...portfolio, holdings: portfolio.holdings.map(h => h.account === acc ? { ...h, account: trimmed } : h), accountOrder: (portfolio.accountOrder || []).map(a => a === acc ? trimmed : a) };
                   savePortfolio(updated); setPortfolio(updated);
                   if (viewMode === acc) setViewMode(trimmed);
                 }} style={{ background: "none", border: "none", color: "#475569", fontSize: 10, cursor: "pointer", padding: "0 2px", marginBottom: 2 }}>✎</button>
@@ -3992,7 +4049,7 @@ function Portfolio() {
 
             {/* 계좌 삭제 모달 */}
             {showDeleteModal && (() => {
-              const accs = [...new Set(portfolio.holdings.map(h=>h.account).filter(Boolean))];
+              const accs = orderedAccounts(portfolio);
               const targetAcc = viewMode !== "all" ? viewMode : null;
               return (
                 <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:999, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
@@ -4579,11 +4636,14 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.10.6</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.11.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.6 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.0 변경사항</div>
+            <div>· 이미지 미리보기 PC 조작 추가 — 마우스 휠로 확대/축소, 확대 후 드래그로 이동, % 단계 슬라이더로 배율 조절 (모바일 핀치줌·더블탭·스와이프는 그대로)</div>
+            <div>· 계좌 탭 드래그 재정렬 — 계좌 탭을 드래그해 순서 변경, 순서 저장. 탭/매수·매도/등록/삭제 등 계좌 목록 표시가 지정 순서를 따름 (이름변경해도 위치 유지)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.6 변경사항</div>
             <div>· OCR 1글자 오타 자동 보정 — 종목명이 한 글자 틀려도(예: 전략→전력) 티커를 찾아 공식명으로 교정. 가드: 숫자 동일·한글 6자 이상·후보 단일·공식명이 한글일 때만 동작(다른 종목 오매칭 방지). 교정 시 알림 표시</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.10.5 변경사항</div>
             <div>· 파일 등록 항목 표기를 "엑셀"로 정리(CSV 표현 제거, csv 파일은 계속 지원). 구글시트는 xlsx로 내보내면 동일하게 동작</div>
