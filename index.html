@@ -406,6 +406,7 @@ function loadPortfolio() {
     const p = stored || PRESET_PORTFOLIO;
     // 마이그레이션: 과거 전역 현금(cash) → 계좌별 현금(cashByAccount). 전역값은 계좌를 알 수 없어 초기화.
     if (p && !p.cashByAccount) { p.cashByAccount = {}; if ("cash" in p) delete p.cash; }
+    if (p && !p.cashFxByAccount) { p.cashFxByAccount = {}; }
     return p;
   } catch { return PRESET_PORTFOLIO; }
 }
@@ -428,45 +429,134 @@ function setCashFor(pf, account, value) {
   return m;
 }
 
+// ===== 외화 예수금 — cashFxByAccount: { 계좌: { USD: n, JPY: n } } (외화 명목값) =====
+function getCashFx(pf, account, ccy) {
+  if (!pf) return 0;
+  const m = pf.cashFxByAccount || {};
+  if (!account || account === "all") return Object.values(m).reduce((s, byc) => s + (Number(byc?.[ccy]) || 0), 0);
+  return Number(m[account]?.[ccy]) || 0;
+}
+function setCashFx(pf, account, ccy, value) {
+  const m = { ...(pf && pf.cashFxByAccount ? pf.cashFxByAccount : {}) };
+  const acc = { ...(m[account] || {}) };
+  const v = Number(value) || 0;
+  if (v <= 0) delete acc[ccy]; else acc[ccy] = v;
+  if (Object.keys(acc).length === 0) delete m[account]; else m[account] = acc;
+  return m;
+}
+// 외화 예수금을 KRW로 환산한 합 (account 범위)
+function getCashFxKRW(pf, account) {
+  if (!pf) return 0;
+  const m = pf.cashFxByAccount || {};
+  const accs = (!account || account === "all") ? Object.keys(m) : [account];
+  let sum = 0;
+  for (const a of accs) { const byc = m[a] || {}; for (const ccy of Object.keys(byc)) sum += (Number(byc[ccy]) || 0) * getFxRate(ccy); }
+  return sum;
+}
+// 계좌에 들어있는 외화 통화 목록
+function cashFxCcys(pf, account) {
+  if (!pf) return [];
+  const m = pf.cashFxByAccount || {};
+  const accs = (!account || account === "all") ? Object.keys(m) : [account];
+  const set = {};
+  for (const a of accs) { const byc = m[a] || {}; for (const ccy of Object.keys(byc)) if ((Number(byc[ccy]) || 0) > 0) set[ccy] = true; }
+  return Object.keys(set);
+}
+// 원화 예수금 + 외화 예수금(KRW 환산) 총합
+function getCashTotalKRW(pf, account) { return getCashFor(pf, account) + getCashFxKRW(pf, account); }
+
 // ---------- USD/KRW 환율 (캐싱, 1시간 TTL) ----------
-const FX_CACHE_KEY = "investiq_usdkrw_v1";
-const FX_FALLBACK  = 1380; // 조회 실패 시 폴백
+const FX_CACHE_KEY = "investiq_usdkrw_v1";   // 구버전 USD 전용 캐시(호환)
+const FX_CACHE_KEY2 = "investiq_fx_v2";       // {USD:{rate,ts}, JPY:{rate,ts}}
+const FX_FALLBACK_MAP = { USD: 1380, JPY: 9.0 }; // 조회 실패 시 폴백(JPY/KRW ≈ 9원)
+const FX_PAIRS = { USD: "USDKRW=X", JPY: "JPYKRW=X" };
 
-function getUsdKrw() {
+// 통화 → KRW 환율. KRW는 1.
+function getFxRate(ccy) {
+  if (!ccy || ccy === "KRW") return 1;
   try {
-    const c = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || "null");
-    if (c && c.rate > 0) return c.rate;
+    const c = JSON.parse(localStorage.getItem(FX_CACHE_KEY2) || "null");
+    if (c && c[ccy] && c[ccy].rate > 0) return c[ccy].rate;
   } catch {}
-  return FX_FALLBACK;
+  if (ccy === "USD") { // 구버전 캐시 폴백
+    try { const o = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || "null"); if (o && o.rate > 0) return o.rate; } catch {}
+  }
+  return FX_FALLBACK_MAP[ccy] || 1;
 }
-async function refreshUsdKrw() {
-  try {
-    // 1시간 이내 캐시면 재조회 생략 (토큰/요청 절약)
-    const c = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || "null");
-    if (c && c.rate > 0 && Date.now() - (c.ts || 0) < 3600 * 1000) return c.rate;
-  } catch {}
-  try {
-    const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent("USDKRW=X")}`);
-    if (r.ok) {
-      const d = await r.json();
-      const rate = d.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (rate > 0) {
-        try { localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ rate, ts: Date.now() })); } catch {}
-        return rate;
+// 기존 호출 호환용
+function getUsdKrw() { return getFxRate("USD"); }
+
+async function refreshFx() {
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(FX_CACHE_KEY2) || "{}") || {}; } catch {}
+  for (const ccy of Object.keys(FX_PAIRS)) {
+    const cur = cache[ccy];
+    if (cur && cur.rate > 0 && Date.now() - (cur.ts || 0) < 3600 * 1000) continue; // 1시간 캐시
+    try {
+      const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(FX_PAIRS[ccy])}`);
+      if (r.ok) {
+        const d = await r.json();
+        const rate = d.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (rate > 0) cache[ccy] = { rate, ts: Date.now() };
       }
-    }
+    } catch {}
+  }
+  try {
+    localStorage.setItem(FX_CACHE_KEY2, JSON.stringify(cache));
+    if (cache.USD && cache.USD.rate > 0) localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ rate: cache.USD.rate, ts: cache.USD.ts })); // 구버전 호환
   } catch {}
-  return null;
+  return cache;
 }
+// 기존 호출 호환용
+async function refreshUsdKrw() { const c = await refreshFx(); return c.USD?.rate || null; }
 
-// 보유 종목 평가액/매입액을 KRW로 환산 (USD 종목은 환율 곱)
+// 보유 종목 평가액/매입액을 KRW로 환산 (통화별 환율 적용)
 function holdingValueKRW(h, fx) {
   const v = (h.shares || 0) * (h.current_price || h.avg_price || 0);
-  return h.currency === "USD" ? v * (fx || getUsdKrw()) : v;
+  return v * getFxRate(h.currency);
 }
 function holdingCostKRW(h, fx) {
   const v = (h.shares || 0) * (h.avg_price || 0);
-  return h.currency === "USD" ? v * (fx || getUsdKrw()) : v;
+  return v * getFxRate(h.currency);
+}
+
+// ===== 표시 통화(KRW/USD) 변환·포맷 — V2.1 =====
+// 평가액/총액: KRW 기준 금액을 표시통화로
+function fmtDisp(krw, dispCcy, fx) {
+  if (dispCcy === "USD") return "$" + Math.round(krw / getFxRate("USD")).toLocaleString();
+  return krw >= 1e8 ? `₩${(krw / 1e8).toFixed(2)}억` : `₩${Math.round(krw / 10000).toLocaleString()}만`;
+}
+// 수익금 등 부호 있는 금액(KRW 기준)
+function fmtDispSigned(krw, dispCcy, fx) {
+  const sign = krw >= 0 ? "+" : "-";
+  const a = Math.abs(krw);
+  if (dispCcy === "USD") return sign + "$" + Math.round(a / getFxRate("USD")).toLocaleString();
+  return sign + (a >= 1e8 ? `₩${(a / 1e8).toFixed(2)}억` : `₩${Math.round(a / 10000).toLocaleString()}만`);
+}
+// 단가(평단/현재가): native=종목통화 금액, nativeCcy=종목통화, dispCcy=표시통화(KRW|USD)
+function fmtPrice(native, nativeCcy, dispCcy, fx) {
+  const krw = (native || 0) * getFxRate(nativeCcy);
+  if (dispCcy === "USD") return "$" + (krw / getFxRate("USD")).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return "₩" + Math.round(krw).toLocaleString();
+}
+// 입력값(inputCcy 단위) → 종목 통화(nativeCcy) 환산. KRW는 정수, 외화는 소수 2자리.
+function toNativePrice(inputVal, inputCcy, nativeCcy) {
+  const v = parseFloat(String(inputVal).replace(/,/g, "")) || 0;
+  let out;
+  if (inputCcy === nativeCcy) out = v;
+  else out = (v * getFxRate(inputCcy)) / getFxRate(nativeCcy); // inputCcy → KRW → nativeCcy
+  return nativeCcy === "KRW" ? Math.round(out) : Math.round(out * 100) / 100;
+}
+function ccySymbol(ccy) { return ccy === "USD" ? "$" : ccy === "JPY" ? "¥" : "₩"; }
+// 외화 예수금 표시: 표시통화 환산값 + (원래통화 명목). 표시통화와 원래통화가 같으면 괄호 생략.
+function fmtFxCash(amt, ccy, dispCcy) {
+  const krw = (amt || 0) * getFxRate(ccy);
+  const nominal = `${ccy} ${(amt || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  if (dispCcy === "USD") {
+    if (ccy === "USD") return "$" + Math.round(amt || 0).toLocaleString();
+    return "$" + Math.round(krw / getFxRate("USD")).toLocaleString() + ` (${nominal})`;
+  }
+  return "₩" + Math.round(krw).toLocaleString() + ` (${nominal})`;
 }
 
 // 리밸런싱 AI 추천이 우선 참고할 고정 신뢰 출처 (매번 사이트 탐색하지 않도록 박아둠)
@@ -1842,7 +1932,24 @@ function getSectorLabel(sector, name, ticker, currency) {
 }
 
 
-function SvgPieChart({ data, colors, totalValue }) {
+// 입력 모달 공통 통화 선택 토글. 종목통화(nativeCcy)가 KRW면 표시 안 함(원화 입력만).
+function CcyToggle({ value, onChange, nativeCcy }) {
+  if (!nativeCcy || nativeCcy === "KRW") return null;
+  const opts = [nativeCcy, "KRW"];
+  const label = (c) => c === "KRW" ? "₩ 원화" : c === "USD" ? "$ USD" : c === "JPY" ? "¥ JPY" : c;
+  return (
+    <div style={{ display: "flex", gap: 0, background: "#0d1228", border: "1px solid #1e2750", borderRadius: 8, padding: 2 }}>
+      {opts.map(c => (
+        <button key={c} onClick={() => onChange(c)} style={{
+          fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer",
+          background: value === c ? "#4f6ef7" : "transparent", color: value === c ? "#fff" : "#64748b",
+        }}>{label(c)}</button>
+      ))}
+    </div>
+  );
+}
+
+function SvgPieChart({ data, colors, totalValue, dispCcy = "KRW" }) {
   const [hov, setHov] = useState(null);
   const cx=110, cy=100, r=78, ri=44, W=220, H=200;
   const total = data.reduce((s,d)=>s+d.value,0);
@@ -1880,11 +1987,11 @@ function SvgPieChart({ data, colors, totalValue }) {
       {h ? <g style={{pointerEvents:"none"}}>
         <text x={cx} y={cy-16} textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="700">{h.name.length>8?h.name.slice(0,8)+"..":h.name}</text>
         <text x={cx} y={cy+4} textAnchor="middle" fill={h.color} fontSize="18" fontWeight="800">{h.pct}%</text>
-        <text x={cx} y={cy+20} textAnchor="middle" fill="#364875" fontSize="11">{Math.round(h.value/10000).toLocaleString()}만원</text>
+        <text x={cx} y={cy+20} textAnchor="middle" fill="#364875" fontSize="11">{fmtDisp(h.value, dispCcy)}</text>
         <text x={cx} y={cy+34} textAnchor="middle" fill="#475569" fontSize="9">가운데 탭 → 전체</text>
       </g> : <g style={{pointerEvents:"none"}}>
         <text x={cx} y={cy-8} textAnchor="middle" fill="#2a3a60" fontSize="12">총 자산</text>
-        <text x={cx} y={cy+10} textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{totalValue?Math.round(totalValue/10000).toLocaleString()+"만":""}</text>
+        <text x={cx} y={cy+10} textAnchor="middle" fill="#94a3b8" fontSize="13" fontWeight="700">{totalValue?fmtDisp(totalValue, dispCcy):""}</text>
       </g>}
     </svg>
   );
@@ -1904,7 +2011,7 @@ function PieLegend({data, colors, grand}) {
   );
 }
 
-function PortfolioPieCharts({ portfolio, filterAccount }) {
+function PortfolioPieCharts({ portfolio, filterAccount, dispCcy = "KRW" }) {
   if (!portfolio) return null;
   const holdings = filterAccount && filterAccount !== "all"
     ? portfolio.holdings.filter(h => h.account === filterAccount)
@@ -1925,7 +2032,7 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
   });
   const merged = Array.from(mergedMap.values());
 
-  const cash = getCashFor(portfolio, filterAccount);
+  const cash = getCashFor(portfolio, filterAccount) + getCashFxKRW(portfolio, filterAccount);
   const fx = getUsdKrw();
   const totalValue = merged.reduce((s,h)=>s+holdingValueKRW(h,fx),0);
   const grand = totalValue + cash;
@@ -1937,7 +2044,7 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
     const rk=guessRegion(h.name);
     regionMap[rk]=(regionMap[rk]||0)+sv;
   });
-  if(cash>0){sectorMap["₩ 현금"]=cash; regionMap["₩ 현금"]=cash;}
+  if(cash>0){sectorMap["현금"]=cash; regionMap["현금"]=cash;}
 
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
@@ -1948,12 +2055,12 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
     <>
       <div style={{background:"#0f0f18",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
-        <SvgPieChart data={sectorData} colors={sectorColors} totalValue={grand}/>
+        <SvgPieChart data={sectorData} colors={sectorColors} totalValue={grand} dispCcy={dispCcy}/>
         <PieLegend data={sectorData} colors={sectorColors} grand={grand}/>
       </div>
       <div style={{background:"#0f0f18",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
-        <SvgPieChart data={regionData} colors={PIE_COLORS} totalValue={grand}/>
+        <SvgPieChart data={regionData} colors={PIE_COLORS} totalValue={grand} dispCcy={dispCcy}/>
         <PieLegend data={regionData} colors={PIE_COLORS} grand={grand}/>
       </div>
     </>
@@ -2206,9 +2313,10 @@ const SECTORS  = ["기술","반도체","AI","에너지","금융","헬스케어",
 
 
 function EditHoldingModal({ holding, onClose, onSave }) {
+  const nativeCcy = holding.currency || "KRW"; // 종목 고유 통화(저장 기준)
   const [mode, setMode] = useState("edit");
   const [shares, setShares] = useState(String(holding.shares || ""));
-  const [avgPrice, setAvgPrice] = useState(String(Math.round(holding.avg_price || 0))); // #6 소수점 수정
+  const [avgPrice, setAvgPrice] = useState(String(holding.avg_price || 0));
   const [addShares, setAddShares] = useState("");
   const [addPrice, setAddPrice] = useState("");
   const [sellShares, setSellShares] = useState("");
@@ -2216,12 +2324,26 @@ function EditHoldingModal({ holding, onClose, onSave }) {
   const [showNameEdit, setShowNameEdit] = useState(!holding.ticker); // ticker 없으면 바로 열기
   const [showPriceInput, setShowPriceInput] = useState(false);
   const [currentPriceInput, setCurrentPriceInput] = useState(holding.current_price > 0 ? String(holding.current_price) : "");
-  const [priceUnit, setPriceUnit] = useState(holding.currency === "USD" ? "USD" : "KRW"); // 향후 외화 확장 대비
+  const [priceUnit, setPriceUnit] = useState(nativeCcy); // 입력 통화(기본=종목통화). 외화 종목이면 ₩/현지 토글
   const [fetchingPrice, setFetchingPrice] = useState(false);
+
+  // 입력 통화 전환 시 이미 입력된 단가들을 새 통화 단위로 환산
+  const changeInputCcy = (newCcy) => {
+    const conv = (s) => {
+      const v = parseFloat(String(s).replace(/,/g, "")); if (!(v > 0)) return s;
+      const krw = v * getFxRate(priceUnit);
+      const out = newCcy === "KRW" ? Math.round(krw) : Math.round(krw / getFxRate(newCcy) * 100) / 100;
+      return String(out);
+    };
+    setAvgPrice(conv(avgPrice));
+    if (currentPriceInput) setCurrentPriceInput(conv(currentPriceInput));
+    if (addPrice) setAddPrice(conv(addPrice));
+    setPriceUnit(newCcy);
+  };
 
   const handleSave = () => {
     if (mode === "edit") {
-      const base = { ...holding, shares: parseFloat(shares)||0, avg_price: parseFloat(String(avgPrice).replace(/,/g,""))||0 };
+      const base = { ...holding, shares: parseFloat(shares)||0, avg_price: toNativePrice(avgPrice, priceUnit, nativeCcy) };
       if (stockOverride) {
         base.name = stockOverride.name;
         if (stockOverride.ticker) {
@@ -2230,13 +2352,14 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         }
       }
       const cp = parseFloat(String(currentPriceInput).replace(/,/g,""));
-      if (showPriceInput && cp > 0) base.current_price = cp;
+      if (showPriceInput && cp > 0) base.current_price = toNativePrice(currentPriceInput, priceUnit, nativeCcy);
       onSave(base);
     } else if (mode === "buy") {
       const addSh = parseFloat(addShares)||0;
-      const addPr = parseFloat(String(addPrice).replace(/,/g,""))||0;
+      const addPr = toNativePrice(addPrice, priceUnit, nativeCcy); // 종목통화로 환산
       const newShares = (holding.shares||0) + addSh;
-      const newAvg = newShares>0 ? Math.round(((holding.shares||0)*(holding.avg_price||0)+addSh*addPr)/newShares) : (holding.avg_price||0);
+      const rawAvg = newShares>0 ? ((holding.shares||0)*(holding.avg_price||0)+addSh*addPr)/newShares : (holding.avg_price||0);
+      const newAvg = nativeCcy === "KRW" ? Math.round(rawAvg) : Math.round(rawAvg*100)/100;
       onSave({ ...holding, shares: newShares, avg_price: newAvg });
     } else if (mode === "sell") {
       const sellSh = parseFloat(sellShares)||0;
@@ -2296,7 +2419,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
 
   const newSharesCalc = (holding.shares||0)+(parseFloat(addShares)||0);
   const newAvgCalc = newSharesCalc>0
-    ? Math.round(((holding.shares||0)*(holding.avg_price||0)+(parseFloat(addShares)||0)*(parseFloat(String(addPrice).replace(/,/g,""))||0))/newSharesCalc)
+    ? (() => { const ap = toNativePrice(addPrice, priceUnit, nativeCcy); const raw = ((holding.shares||0)*(holding.avg_price||0)+(parseFloat(addShares)||0)*ap)/newSharesCalc; return nativeCcy==="KRW"?Math.round(raw):Math.round(raw*100)/100; })()
     : 0;
 
   return (
@@ -2306,7 +2429,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
           <div>
             <div style={{ fontWeight:700, color:"#e2e8f0", fontSize:17 }}>{stockOverride?.name || holding.name}</div>
-            <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>현재 {holding.shares}주 · 평단 {Math.round(holding.avg_price||0).toLocaleString()}원{holding.account?` · ${holding.account}`:""}</div>
+            <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}{ccySymbol(nativeCcy)}{holding.account?` · ${holding.account}`:""}</div>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:22, cursor:"pointer" }}>x</button>
         </div>
@@ -2346,9 +2469,15 @@ function EditHoldingModal({ holding, onClose, onSave }) {
             <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>보유 수량</div>
             <input value={shares} onChange={e=>setShares(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
-            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>평균단가</div>
-            <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal"
-              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+              <div style={{ fontSize:13, color:"#94a3b8" }}>평균단가</div>
+              <CcyToggle value={priceUnit} onChange={changeInputCcy} nativeCcy={nativeCcy} />
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal"
+                style={{ flex:1, background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
+              <div style={{ padding:"0 16px", borderRadius:8, background:"#16162a", border:"1px solid #334155", color:"#94a3b8", fontSize:15, fontWeight:700, display:"flex", alignItems:"center", minWidth:44, justifyContent:"center" }}>{ccySymbol(priceUnit)}</div>
+            </div>
             {/* 현재가 */}
             <div style={{ fontSize:13, color:"#94a3b8", marginBottom:8, fontWeight:600 }}>
               현재가 <span style={{ fontSize:11, color:"#475569", fontWeight:400 }}>(선택 · 미입력 시 기존값 유지)</span>
@@ -2389,9 +2518,15 @@ function EditHoldingModal({ holding, onClose, onSave }) {
             <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>추가 매수 수량</div>
             <input value={addShares} onChange={e=>setAddShares(e.target.value)} inputMode="decimal"
               style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
-            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>매수 단가</div>
-            <input value={addPrice} onChange={e=>setAddPrice(e.target.value)} inputMode="decimal"
-              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+              <div style={{ fontSize:13, color:"#94a3b8" }}>매수 단가</div>
+              <CcyToggle value={priceUnit} onChange={changeInputCcy} nativeCcy={nativeCcy} />
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <input value={addPrice} onChange={e=>setAddPrice(e.target.value)} inputMode="decimal"
+                style={{ flex:1, background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
+              <div style={{ padding:"0 16px", borderRadius:8, background:"#16162a", border:"1px solid #334155", color:"#94a3b8", fontSize:15, fontWeight:700, display:"flex", alignItems:"center", minWidth:44, justifyContent:"center" }}>{ccySymbol(priceUnit)}</div>
+            </div>
             {addShares && addPrice && (
               <div style={{ background:"#16162a", borderRadius:8, padding:"12px 14px", marginBottom:12 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", fontSize:14 }}>
@@ -2400,7 +2535,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
                 </div>
                 <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, marginTop:4 }}>
                   <span style={{ color:"#94a3b8" }}>새 평단가</span>
-                  <span style={{ color:"#0ea5e9", fontWeight:700 }}>{newAvgCalc.toLocaleString()}원</span>
+                  <span style={{ color:"#0ea5e9", fontWeight:700 }}>{newAvgCalc.toLocaleString()}{ccySymbol(nativeCcy)}</span>
                 </div>
               </div>
             )}
@@ -2455,6 +2590,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
   const [searching, setSearching]     = useState(false);
   const [price, setPrice]             = useState("");
   const [shares, setShares]           = useState("");
+  const [inputCcy, setInputCcy]       = useState("KRW"); // 단가 입력 통화(외화 종목이면 ₩/현지 토글)
   const [cashAmt, setCashAmt]         = useState(String(currentCash || ""));
   const searchTimer = React.useRef(null);
 
@@ -2469,6 +2605,15 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
   const existingOptions = holdings.filter(h => !account || h.account === account);
   const selectedHolding = holdings.find(h => h.name === name && h.account === account);
   const maxShares = selectedHolding?.shares || 0;
+  // 종목 통화: 기존 종목이면 그 통화, 신규는 선택 국가로 추정
+  const ccyFromCountry = (c) => c === "KR" ? "KRW" : c === "JP" ? "JPY" : "USD";
+  const nativeCcy = selectedHolding ? (selectedHolding.currency || "KRW") : ccyFromCountry(country);
+  React.useEffect(() => { setInputCcy(nativeCcy); }, [nativeCcy]); // 종목/국가 바뀌면 입력통화 동기화
+  const changeInputCcy = (c) => {
+    const v = parseFloat(String(price).replace(/,/g, ""));
+    if (v > 0) { const krw = v * getFxRate(inputCcy); setPrice(String(c === "KRW" ? Math.round(krw) : Math.round(krw / getFxRate(c) * 100) / 100)); }
+    setInputCcy(c);
+  };
   const totalCost = (parseFloat(price)||0) * (parseFloat(shares)||0);
 
   const doSearch = async (q, ctry) => {
@@ -2611,7 +2756,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
               style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:name?"#e8eaf0":"#475569", fontSize:14, outline:"none" }}>
               <option value="">종목 선택...</option>
               {existingOptions.map((h,i) => (
-                <option key={i} value={h.name}>{h.name} ({isSell?h.shares+"주":"평단 "+Math.round(h.avg_price||0).toLocaleString()+"원"})</option>
+                <option key={i} value={h.name}>{h.name} ({isSell?h.shares+"주":"평단 "+Math.round(h.avg_price||0).toLocaleString()+ccySymbol(h.currency||"KRW")})</option>
               ))}
             </select>
           )}
@@ -2673,9 +2818,15 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
 
         {/* 단가 */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>{isBuy?"매수":"매도"} 단가</div>
-          <input value={price} onChange={e=>setPrice(e.target.value)} inputMode="decimal" placeholder="0"
-            style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{isBuy?"매수":"매도"} 단가</div>
+            <CcyToggle value={inputCcy} onChange={changeInputCcy} nativeCcy={nativeCcy} />
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <input value={price} onChange={e=>setPrice(e.target.value)} inputMode="decimal" placeholder="0"
+              style={{ flex:1, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+            <div style={{ padding:"0 15px", borderRadius:8, background:"#0d1228", border:"1px solid #1e1e35", color:"#94a3b8", fontSize:15, fontWeight:700, display:"flex", alignItems:"center", minWidth:42, justifyContent:"center" }}>{ccySymbol(inputCcy)}</div>
+          </div>
         </div>
 
         {/* 수량 */}
@@ -2696,11 +2847,11 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
         {totalCost > 0 && (
           <div style={{ background:"#16162a", borderRadius:10, padding:"12px 14px", marginBottom:16, display:"flex", justifyContent:"space-between" }}>
             <span style={{ fontSize:13, color:"#64748b" }}>총 {isBuy?"매수":"매도"}금액</span>
-            <span style={{ fontSize:14, fontWeight:700, color:isBuy?"#22d3a0":"#f87171" }}>₩{Math.round(totalCost).toLocaleString()}</span>
+            <span style={{ fontSize:14, fontWeight:700, color:isBuy?"#22d3a0":"#f87171" }}>{ccySymbol(inputCcy)}{Math.round(totalCost).toLocaleString()}</span>
           </div>
         )}
 
-        <button onClick={()=>{ if(!isValid)return; onConfirm({type:mode,account,name:name.trim(),yahooTicker,price:parseFloat(price),shares:parseFloat(shares)}); }}
+        <button onClick={()=>{ if(!isValid)return; onConfirm({type:mode,account,name:name.trim(),yahooTicker,price:toNativePrice(price, inputCcy, nativeCcy),shares:parseFloat(shares),currency:nativeCcy}); }}
           disabled={!isValid} style={{
           width:"100%", padding:"14px", borderRadius:12, border:"none",
           background:!isValid?"#16162a":isBuy?"linear-gradient(135deg,#22d3a0,#0891b2)":"linear-gradient(135deg,#f87171,#dc2626)",
@@ -2728,9 +2879,17 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
   const [directName, setDirectName]   = useState("");
   const [showPriceInput, setShowPriceInput] = useState(false);
   const [currentPriceInput, setCurrentPriceInput] = useState("");
-  const [priceUnit, setPriceUnit]     = useState("KRW"); // 향후 USD 등 외화 확장 대비
+  const [priceUnit, setPriceUnit]     = useState("KRW"); // 단가 입력 통화(기본=종목통화)
   const [fetchingPrice, setFetchingPrice] = useState(false);
   const searchTimer = React.useRef(null);
+  // 종목 통화(currency) 바뀌면 입력 통화도 동기화
+  React.useEffect(() => { setPriceUnit(currency); }, [currency]);
+  const changeInputCcy = (c) => {
+    const conv = (s) => { const v = parseFloat(String(s).replace(/,/g, "")); if (!(v > 0)) return s; const krw = v * getFxRate(priceUnit); return String(c === "KRW" ? Math.round(krw) : Math.round(krw / getFxRate(c) * 100) / 100); };
+    setAvgPrice(conv(avgPrice));
+    if (currentPriceInput) setCurrentPriceInput(conv(currentPriceInput));
+    setPriceUnit(c);
+  };
 
   const COUNTRIES = [
     { id:"KR", label:"🇰🇷 한국" },
@@ -2902,7 +3061,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
 
   const handleAdd = () => {
     const cp = parseFloat(String(currentPriceInput).replace(/,/g,""));
-    const finalCurrentPrice = (showPriceInput && cp > 0) ? cp : null;
+    const finalCurrentPrice = (showPriceInput && cp > 0) ? toNativePrice(currentPriceInput, priceUnit, currency) : null;
     // 자동 분류 섹터와 사용자 선택이 다르면 확인. normKey: 미국빅테크는 통째로, 그 외는 국가접두 제거.
     const normKey = (label) => {
       if (!label) return "";
@@ -2925,7 +3084,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
       const nm = directName.trim();
       const finalSector = resolveSector(nm, "", currency);
       onAdd({ ticker: "", yahoo_ticker: null, name: nm,
-        avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
+        avg_price: toNativePrice(avgPrice, priceUnit, currency),
         shares: parseFloat(shares) || 0, currency, sector: finalSector, account: finalAccount, current_price: finalCurrentPrice });
       return;
     }
@@ -2939,7 +3098,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
       ticker: tk2,
       yahoo_ticker: selected?.ticker || null,
       name: nm2,
-      avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
+      avg_price: toNativePrice(avgPrice, priceUnit, currency),
       shares: parseFloat(shares) || 0,
       currency, sector: finalSector2,
       account: finalAccount,
@@ -3050,9 +3209,15 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
         {/* 평균단가 + 수량 */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
           <div>
-            <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>평균단가</div>
-            <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal" placeholder="0"
-              style={{ width:"100%", background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6, minHeight:22 }}>
+              <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>평균단가</div>
+              <CcyToggle value={priceUnit} onChange={changeInputCcy} nativeCcy={currency} />
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              <input value={avgPrice} onChange={e=>setAvgPrice(e.target.value)} inputMode="decimal" placeholder="0"
+                style={{ flex:1, minWidth:0, background:"#16162a", border:"1px solid #1e1e35", borderRadius:8, padding:"11px 12px", color:"#e8eaf0", fontSize:14, outline:"none" }} />
+              {currency !== "KRW" && <div style={{ padding:"0 11px", borderRadius:8, background:"#0d1228", border:"1px solid #1e1e35", color:"#94a3b8", fontSize:14, fontWeight:700, display:"flex", alignItems:"center" }}>{ccySymbol(priceUnit)}</div>}
+            </div>
           </div>
           <div>
             <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>수량 (주/좌)</div>
@@ -3435,6 +3600,8 @@ function Portfolio() {
   const dragRef = useRef({ rects: null, fromIndex: -1, slot: 0, startX: 0, dx: 0 });
   const portfolioRef = useRef(portfolio); portfolioRef.current = portfolio;
   const [acctModal, setAcctModal] = useState(null); // { addToExisting, initialFiles } | null (계좌명 입력 모달)
+  const [dispCcy, setDispCcy] = useState(() => { try { return localStorage.getItem("investiq_disp_ccy") === "USD" ? "USD" : "KRW"; } catch { return "KRW"; } }); // 표시 통화(KRW 기본)
+  const toggleDispCcy = () => setDispCcy(c => { const n = c === "USD" ? "KRW" : "USD"; try { localStorage.setItem("investiq_disp_ccy", n); } catch {} return n; });
 
   const imgInputRef      = useRef(null);
 
@@ -4314,10 +4481,12 @@ function Portfolio() {
   });
 
   const cash = getCashFor(portfolio, viewMode);
+  const cashFxKrw = getCashFxKRW(portfolio, viewMode);
   const fxMain = getUsdKrw();
   const totalCost  = visibleHoldings.reduce((s, h) => s + holdingCostKRW(h, fxMain), 0);
-  const totalValue = visibleHoldings.reduce((s, h) => s + holdingValueKRW(h, fxMain), 0) + cash;
+  const totalValue = visibleHoldings.reduce((s, h) => s + holdingValueKRW(h, fxMain), 0) + cash + cashFxKrw;
   const totalReturn = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
+  const hasForeign = (portfolio?.holdings || []).some(h => h.currency && h.currency !== "KRW" && (h.shares || 0) > 0) || cashFxCcys(portfolio, viewMode).length > 0;
 
   // 업로드 패널 - label+input을 항상 DOM에 렌더링 (모바일 sandbox 대응)
   const renderUploadPanel = (addToExisting = false) => {
@@ -4478,19 +4647,24 @@ function Portfolio() {
         />
       )}
       {cashPrompt && (() => {
-        const { scenario, account, amount, curCash, updated, apply } = cashPrompt;
+        const { scenario, account, amount, curCash, updated, apply, ccy = "KRW" } = cashPrompt;
+        const sym = ccySymbol(ccy);
+        const fmtAmt = (v) => sym + Math.round(v).toLocaleString();
         const opts = scenario === "sell"
           ? [{ label:"예수금에 추가", cash: curCash + amount, primary:true }, { label:"예수금 변경 없음", cash: null }]
           : scenario === "buy-over"
-            ? [{ label:"예수금 0원으로 변경", cash: 0, primary:true }, { label:"예수금 변경 없음", cash: null }]
+            ? [{ label:"예수금 0으로 변경", cash: 0, primary:true }, { label:"예수금 변경 없음", cash: null }]
             : [{ label:"예수금에서 차감", cash: curCash - amount, primary:true }, { label:"예수금 변경 없음", cash: null }];
         const desc = scenario === "buy-over"
-          ? `매수금액 ₩${Math.round(amount).toLocaleString()}이 예수금(₩${Math.round(curCash).toLocaleString()})보다 큽니다.`
+          ? `매수금액 ${fmtAmt(amount)}이 ${ccy} 예수금(${fmtAmt(curCash)})보다 큽니다.`
           : scenario === "sell"
-            ? `매도금액 ₩${Math.round(amount).toLocaleString()}`
-            : `매수금액 ₩${Math.round(amount).toLocaleString()}`;
+            ? `매도금액 ${fmtAmt(amount)}`
+            : `매수금액 ${fmtAmt(amount)}`;
         const choose = (cash) => {
-          const final = cash === null ? updated : { ...updated, cashByAccount: setCashFor(portfolio, account, cash) };
+          let final;
+          if (cash === null) final = updated;
+          else if (ccy === "KRW") final = { ...updated, cashByAccount: setCashFor(portfolio, account, cash) };
+          else final = { ...updated, cashFxByAccount: setCashFx(portfolio, account, ccy, cash) };
           setCashPrompt(null);
           apply(final);
         };
@@ -4523,7 +4697,8 @@ function Portfolio() {
           onConfirm={(trade) => {
             const amount = (trade.shares || 0) * (trade.price || 0);
             const acct = trade.account;
-            const curCash = getCashFor(portfolio, acct);
+            const tradeCcy = trade.currency || "KRW";
+            const curCash = tradeCcy === "KRW" ? getCashFor(portfolio, acct) : getCashFx(portfolio, acct, tradeCcy);
             // 1. 보유내역 변경 계산 (현금은 아직 손대지 않음)
             let updated, isNew = false, baseMsg = "";
             if (trade.type === "buy") {
@@ -4536,7 +4711,8 @@ function Portfolio() {
                 newHoldings = portfolio.holdings.map((h2, i) => i===idx ? {...h2, shares:totalShares, avg_price:newAvg} : h2);
               } else {
                 isNew = true;
-                newHoldings = [...portfolio.holdings, { name:trade.name, ticker:"", shares:trade.shares, avg_price:trade.price, currency:"KRW", sector:"기타", account:acct }];
+                const newCcy = trade.currency || "KRW";
+                newHoldings = [...portfolio.holdings, { name:trade.name, ticker:"", shares:trade.shares, avg_price:trade.price, currency:newCcy, sector:getSectorLabel("", trade.name, "", newCcy), account:acct }];
               }
               updated = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
               baseMsg = `✅ 매수 반영: ${trade.name} ${trade.shares}주`;
@@ -4560,7 +4736,7 @@ function Portfolio() {
             // 3. 예수금 처리 선택지 - 매도는 항상, 매수는 예수금>0일 때만
             if (amount > 0 && (trade.type === "sell" || curCash > 0)) {
               const scenario = trade.type === "sell" ? "sell" : (amount > curCash ? "buy-over" : "buy-normal");
-              setCashPrompt({ scenario, account: acct, amount, curCash, updated, apply });
+              setCashPrompt({ scenario, account: acct, amount, curCash, updated, apply, ccy: tradeCcy });
             } else {
               apply(updated);
             }
@@ -4720,9 +4896,17 @@ function Portfolio() {
             })()}
             <div>
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 10, color: "#3a3a6a", fontWeight: 700, letterSpacing: 2, marginBottom: 6, textTransform:"uppercase" }}>총 평가액</div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: "#3a3a6a", fontWeight: 700, letterSpacing: 2, textTransform:"uppercase" }}>총 평가액</div>
+                  {hasForeign && (
+                    <button onClick={toggleDispCcy} style={{ display:"flex", alignItems:"center", background:"#0d1228", border:"1px solid #1e2750", borderRadius:8, padding:2, cursor:"pointer" }}>
+                      <span style={{ fontSize:11, fontWeight:800, padding:"2px 9px", borderRadius:6, background: dispCcy==="KRW"?"#4f6ef7":"transparent", color: dispCcy==="KRW"?"#fff":"#64748b" }}>₩</span>
+                      <span style={{ fontSize:11, fontWeight:800, padding:"2px 9px", borderRadius:6, background: dispCcy==="USD"?"#22c55e":"transparent", color: dispCcy==="USD"?"#fff":"#64748b" }}>$</span>
+                    </button>
+                  )}
+                </div>
                 <div style={{ fontSize: 34, fontWeight: 900, color: "#f1f5f9", letterSpacing: -1.5, lineHeight: 1.1 }}>
-                  {totalValue >= 100000000 ? `₩${(totalValue/100000000).toFixed(2)}억` : `₩${Math.round(totalValue/10000).toLocaleString()}만`}
+                  {fmtDisp(totalValue, dispCcy, fxMain)}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:6 }}>
                   <span style={{ fontSize: 20, fontWeight: 800, color: totalReturn >= 0 ? "#22d3a0" : "#f87171" }}>
@@ -4733,12 +4917,12 @@ function Portfolio() {
                     background: totalReturn >= 0 ? "#34d39918" : "#f8717118",
                     color: totalReturn >= 0 ? "#34d399aa" : "#f87171aa",
                   }}>
-                    {totalReturn >= 0 ? "+" : ""}₩{Math.round((totalValue-totalCost)/10000).toLocaleString()}만
+                    {fmtDispSigned(totalValue-totalCost, dispCcy, fxMain)}
                   </span>
                 </div>
               </div>
               <div style={{ fontSize: 11, color: "#475569", paddingTop: 8, borderTop: "1px solid #13183a" }}>
-                총 매입 {totalCost >= 100000000 ? `₩${(totalCost/100000000).toFixed(2)}억` : `₩${Math.round(totalCost/10000).toLocaleString()}만`}
+                총 매입 {fmtDisp(totalCost, dispCcy, fxMain)}
               </div>
             </div>
           </div>
@@ -4763,7 +4947,7 @@ function Portfolio() {
           </div>
 
           {/* 원형 그래프 */}
-          <PortfolioPieCharts portfolio={portfolio} filterAccount={viewMode} />
+          <PortfolioPieCharts portfolio={portfolio} filterAccount={viewMode} dispCcy={dispCcy} />
 
           {/* 수익률 히스토리 */}
           <ReturnHistoryChart portfolio={portfolio} viewMode={viewMode} />
@@ -4792,44 +4976,83 @@ function Portfolio() {
               <span style={{ fontSize: 10, color: "#3a4a6a", fontWeight: 700, letterSpacing: 2, textTransform:"uppercase" }}>보유 종목 ({visibleHoldings.length}{cash > 0 ? " + 현금" : ""})</span>
             </div>
 
-            {/* 현금 행 */}
+            {/* 원화 예수금 행 */}
             {cash > 0 && (
               <div style={{ padding: "11px 14px", borderBottom: "1px solid #0d1228", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
                   <div style={{ width:4, height:28, borderRadius:3, background:"#3a4a6a", flexShrink:0, opacity:0.6 }}/>
                   <div>
-                    <div style={{ fontWeight: 700, color: "#3a4a6a", fontSize: 13, marginBottom: 1 }}>현금 (예수금)</div>
+                    <div style={{ fontWeight: 700, color: "#3a4a6a", fontSize: 13, marginBottom: 1 }}>현금 (원화 예수금)</div>
                     <div style={{ fontSize: 10, color: "#16162a" }}>예수금 · 배당금</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8" }}>
-                      {cash >= 100000000 ? `₩${(cash/100000000).toFixed(2)}억` : `₩${Math.round(cash/10000).toLocaleString()}만`}
+                      {fmtDisp(cash, dispCcy, fxMain)}
                     </div>
                     <div style={{ fontSize: 10, color: "#64748b" }}>{viewMode === "all" ? "계좌 합계" : (totalValue > 0 ? `${((cash/totalValue)*100).toFixed(1)}%` : "")}</div>
                   </div>
                   {viewMode !== "all" && (
                     <button onClick={() => {
-                      const input = prompt(`${viewMode} 현금 잔고 입력 (원):`, getCashFor(portfolio, viewMode) || 0);
+                      const input = prompt(`${viewMode} 원화 예수금 입력 (원):`, getCashFor(portfolio, viewMode) || 0);
                       if (input !== null) { const p = { ...portfolio, cashByAccount: setCashFor(portfolio, viewMode, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
                     }} style={{ background: "none", border: "1px solid #1a2040", borderRadius: 6, color: "#64748b", fontSize: 11, cursor: "pointer", padding: "2px 5px" }}>✎</button>
                   )}
                 </div>
               </div>
             )}
-            {!cash && viewMode !== "all" && (
-              <div style={{ padding: "7px 14px", borderBottom: "1px solid #0d1228" }}>
+            {/* 외화 예수금 행들 (통화별) */}
+            {cashFxCcys(portfolio, viewMode).map(ccy => {
+              const amt = getCashFx(portfolio, viewMode, ccy);
+              const krwVal = amt * getFxRate(ccy);
+              return (
+                <div key={ccy} style={{ padding: "11px 14px", borderBottom: "1px solid #0d1228", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
+                    <div style={{ width:4, height:28, borderRadius:3, background:"#3a4a6a", flexShrink:0, opacity:0.6 }}/>
+                    <div>
+                      <div style={{ fontWeight: 700, color: "#3a4a6a", fontSize: 13, marginBottom: 1 }}>현금 ({ccy} 예수금)</div>
+                      <div style={{ fontSize: 10, color: "#16162a" }}>외화 예수금</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8" }}>{fmtFxCash(amt, ccy, dispCcy)}</div>
+                      <div style={{ fontSize: 10, color: "#64748b" }}>{viewMode === "all" ? "계좌 합계" : (totalValue > 0 ? `${((krwVal/totalValue)*100).toFixed(1)}%` : "")}</div>
+                    </div>
+                    {viewMode !== "all" && (
+                      <button onClick={() => {
+                        const input = prompt(`${viewMode} ${ccy} 예수금 입력 (${ccy}):`, getCashFx(portfolio, viewMode, ccy) || 0);
+                        if (input !== null) { const p = { ...portfolio, cashFxByAccount: setCashFx(portfolio, viewMode, ccy, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
+                      }} style={{ background: "none", border: "1px solid #1a2040", borderRadius: 6, color: "#64748b", fontSize: 11, cursor: "pointer", padding: "2px 5px" }}>✎</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {/* 예수금 추가 버튼 */}
+            {viewMode !== "all" && (
+              <div style={{ padding: "8px 14px", borderBottom: "1px solid #0d1228", display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {!cash && (
+                  <button onClick={() => {
+                    const input = prompt(`${viewMode} 원화 예수금 입력 (원):`, 0);
+                    if (input !== null) { const p = { ...portfolio, cashByAccount: setCashFor(portfolio, viewMode, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
+                  }} style={{ background: "none", border: "none", color: "#4f6ef7", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 원화 현금 잔고 추가</button>
+                )}
                 <button onClick={() => {
-                  const input = prompt(`${viewMode} 현금 잔고 입력 (원):`, 0);
-                  if (input !== null) { const p = { ...portfolio, cashByAccount: setCashFor(portfolio, viewMode, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
-                }} style={{ background: "none", border: "none", color: "#4f6ef7", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 현금 잔고 추가</button>
+                  const ccyIn = prompt("외화 통화 입력 (USD 또는 JPY):", "USD");
+                  if (ccyIn === null) return;
+                  const c = ccyIn.trim().toUpperCase();
+                  if (c !== "USD" && c !== "JPY") { alert("USD 또는 JPY만 지원합니다."); return; }
+                  const input = prompt(`${viewMode} ${c} 예수금 입력 (${c}):`, getCashFx(portfolio, viewMode, c) || 0);
+                  if (input !== null) { const p = { ...portfolio, cashFxByAccount: setCashFx(portfolio, viewMode, c, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
+                }} style={{ background: "none", border: "none", color: "#22c55e", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 외화 현금 잔고 추가</button>
               </div>
             )}
 
             {visibleHoldings.map((h, i) => {
-              const cost  = (h.shares||0)*(h.avg_price||0);
-              const value = (h.shares||0)*(h.current_price||h.avg_price||0);
+              const cost  = holdingCostKRW(h, fxMain);
+              const value = holdingValueKRW(h, fxMain);
               const ret   = cost > 0 ? ((value-cost)/cost)*100 : 0;
               const gain  = value - cost;
               const hasPrice = !!h.current_price;
@@ -4847,9 +5070,9 @@ function Portfolio() {
                       <div style={{ fontSize: 10, color: "#7c8db5" }}>
                         <span style={{ color: "#cbd5e1" }}>{h.shares}주</span>
                         {" · "}
-                        <span>평단 {(h.avg_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
+                        <span>평단 {fmtPrice(h.avg_price, h.currency, dispCcy, fxMain)}</span>
                         {h.current_price ? (
-                          <span style={{ color: "#7c8db5" }}>{" · "}현재 {(h.current_price||0).toLocaleString()}{h.currency === "USD" ? "$" : "₩"}</span>
+                          <span style={{ color: "#7c8db5" }}>{" · "}현재 {fmtPrice(h.current_price, h.currency, dispCcy, fxMain)}</span>
                         ) : null}
                       </div>
                     </div>
@@ -4859,12 +5082,12 @@ function Portfolio() {
                       {hasPrice ? (
                         <>
                           <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8" }}>
-                            {value >= 100000000 ? `₩${(value/100000000).toFixed(2)}억` : `₩${Math.round(value/10000).toLocaleString()}만`}
+                            {fmtDisp(value, dispCcy, fxMain)}
                           </div>
                           <div style={{ fontSize: 11, fontWeight: 700, color: ret >= 0 ? "#22d3a0" : "#f87171" }}>
                             {ret >= 0 ? "▲" : "▼"}{Math.abs(ret).toFixed(1)}%
                             <span style={{ fontWeight: 400, marginLeft: 3, color: ret >= 0 ? "#34d39966" : "#f8717166" }}>
-                              {gain >= 0 ? "+" : ""}{Math.round(gain/10000).toLocaleString()}만
+                              {fmtDispSigned(gain, dispCcy, fxMain)}
                             </span>
                           </div>
                         </>
@@ -5257,11 +5480,17 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.0.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.1.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.0.0 변경사항 (섹터 대개편)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.0 변경사항 (통화·예수금)</div>
+            <div>· 외화 종목 평가액 0원 버그 수정 — 평가액·수익금이 환율로 정상 환산됨(USD·JPY 모두)</div>
+            <div>· 전체 표시 ₩/$ 토글 — 총평가액 옆 버튼으로 종목 리스트·총자산·원형그래프 통화 전환(외화 보유 시 노출)</div>
+            <div>· 종목추가·매수·매도·수정 단가 입력에 통화 선택(외화 종목만 ₩/현지) — 원화로 입력해도 종목 통화로 환산 저장</div>
+            <div>· 외화 예수금 추가 — 계좌별 원화 예수금 + 외화(USD/JPY) 예수금 별도 관리. 외화 예수금은 "환산값 (원래통화)"로 이중 표기</div>
+            <div>· 매수/매도 시 예수금 자동 증감을 거래 통화에 맞춰 처리(원화 종목→원화 예수금, 외화 종목→해당 외화 예수금)</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.0.0 변경사항 (섹터 대개편)</div>
             <div>· 섹터 분류를 "국가 + 24테마" 체계로 전면 재작성 — 미국/글로벌/중국/일본/인도 접두 자동 판별(국내는 접두 없음). 예: NVDA→미국반도체, 005930→반도체</div>
             <div>· 우선순위 캐스케이드 순서 버그 수정 — 반도체 &gt; AI, 전력 &gt; AI, 친환경에너지 &gt; 에너지, 배당 &gt; 지수 등 24테마 우선순위 확정(첫 매치 승). 기존 "AI반도체→AI" 오분류 해결</div>
             <div>· "테크"를 최약 폴백으로 후순위화 — 앞에 수식어가 붙으면 그게 우선(우주테크→우주항공, 방산테크→방산, AI테크→AI). 단독 "테크/소프트웨어/IT/핀테크"만 테크</div>
