@@ -39,18 +39,49 @@ const STORAGE_KEY = "portfolio_v1";
 const GEMINI_MODEL      = "gemini-2.5-flash";       // 이미지 분석용 (비전)
 const GEMINI_MODEL_FAST = "gemini-2.5-flash-lite";  // 텍스트/검색용 (빠름)
 
+// V2.0.0 — 24테마 + 기타. 국가 접두(미국/글로벌/중국/일본/인도)는 stripCountry로 떼고 테마 색만 본다.
 const SECTOR_COLORS = {
-  "기술": "#00d4ff", "반도체": "#7c3aed", "AI": "#f59e0b",
-  "에너지": "#10b981", "금융": "#3b82f6", "헬스케어": "#ec4899",
-  "소비재": "#f97316", "부동산": "#84cc16", "방산": "#ef4444",
-  "배당": "#22c55e", "채권": "#0ea5e9",
+  "지수": "#94a3b8", "채권": "#0ea5e9", "반도체": "#7c3aed",
+  "AI·로보틱스": "#f59e0b", "미국빅테크": "#00d4ff", "테크": "#38bdf8",
+  "전력인프라": "#eab308", "원전": "#a3e635", "친환경에너지": "#22c55e",
+  "에너지": "#059669", "원자재": "#d97706", "2차전지·전기차": "#14b8a6",
+  "자동차": "#6366f1", "조선·방산·우주항공": "#ef4444", "헬스케어": "#ec4899",
+  "금융": "#3b82f6", "인프라": "#a855f7", "산업재": "#f97316",
+  "엔터·미디어": "#e879f9", "소비재": "#fb923c", "화학·소재": "#2dd4bf",
+  "지주사": "#8b5cf6", "REITs": "#fb7185", "배당": "#4ade80",
   "기타": "#6b7280",
 };
 
+// 구버전 라벨 → 신규 24테마 키 매핑(과거 저장 데이터 호환)
+const SECTOR_COLOR_ALIASES = {
+  "기술": "테크", "IT": "테크", "소프트웨어": "테크",
+  "AI": "AI·로보틱스", "로봇": "AI·로보틱스", "로보틱스": "AI·로보틱스",
+  "방산": "조선·방산·우주항공", "조선": "조선·방산·우주항공", "우주항공": "조선·방산·우주항공",
+  "부동산": "REITs", "리츠": "REITs",
+  "원자력": "원전", "우라늄": "원전",
+  "2차전지": "2차전지·전기차", "이차전지": "2차전지·전기차", "전기차": "2차전지·전기차",
+  "금": "원자재", "금/원자재": "원자재", "금·원자재": "원자재", "원자재/금": "원자재", "소재": "화학·소재", "화학": "화학·소재",
+  "신흥국": "지수", "국내지수": "지수", "미국지수": "지수", "지수추종": "지수",
+  "현금": "기타", "통신": "인프라", "건설": "인프라",
+  "엔터": "엔터·미디어", "미디어": "엔터·미디어", "게임": "엔터·미디어",
+  "전력": "전력인프라",
+};
+
 function getSectorColor(sector) {
-  for (const [key, color] of Object.entries(SECTOR_COLORS)) {
-    if (sector?.includes(key)) return color;
-  }
+  if (!sector) return SECTOR_COLORS["기타"];
+  // 1. 원본 라벨 정확 매칭
+  if (SECTOR_COLORS[sector]) return SECTOR_COLORS[sector];
+  // 2. 국가 접두 제거 후 정확 매칭(미국전력인프라 → 전력인프라)
+  const base = (typeof stripCountry === "function") ? stripCountry(sector) : sector;
+  if (SECTOR_COLORS[base]) return SECTOR_COLORS[base];
+  // 3. 레거시 별칭(구버전 저장 라벨)
+  if (SECTOR_COLOR_ALIASES[base] && SECTOR_COLORS[SECTOR_COLOR_ALIASES[base]]) return SECTOR_COLORS[SECTOR_COLOR_ALIASES[base]];
+  if (SECTOR_COLOR_ALIASES[sector] && SECTOR_COLORS[SECTOR_COLOR_ALIASES[sector]]) return SECTOR_COLORS[SECTOR_COLOR_ALIASES[sector]];
+  // 4. 부분 매칭 폴백 — 긴 키 우선(테크가 미국빅테크에 먹히지 않게)
+  const keys = Object.keys(SECTOR_COLORS).sort((a, b) => b.length - a.length);
+  for (const key of keys) { if (base.includes(key) || sector.includes(key)) return SECTOR_COLORS[key]; }
+  const akeys = Object.keys(SECTOR_COLOR_ALIASES).sort((a, b) => b.length - a.length);
+  for (const key of akeys) { if (base.includes(key) || sector.includes(key)) return SECTOR_COLORS[SECTOR_COLOR_ALIASES[key]]; }
   return SECTOR_COLORS["기타"];
 }
 
@@ -1322,25 +1353,494 @@ function guessRegion(name) {
   return "한국";
 }
 
-function getSectorLabel(sector, name) {
-  const n = (name||"").toUpperCase();
-  if (n.includes("채권")||n.includes("미국채")||n.includes("국채")||n.includes("국공채")||n.includes("회사채")||n.includes("단기채")||n.includes("CD금리")||n.includes("KOFR")||n.includes("금리액티브")||n.includes("MMF")||n.includes("머니마켓")||n.includes("TDF")||n.includes("타겟데이트")||n.includes("자산배분")) return "채권";
-  if (n.includes("배당")) return "배당";
-  if (n.includes("삼성전자")) return "반도체";
-  if (n.includes("AI")||n.includes("인공지능")||n.includes("로보")) return "AI·로보틱스";
-  if (n.includes("반도체")) return "반도체";
-  if (n.includes("빅테크")||n.includes("테크TOP")) return "미국빅테크";
-  if (n.includes("S&P")||n.includes("나스닥")) return "미국지수";
-  if (n.includes("전력")||n.includes("인프라")) return "전력인프라";
-  if (n.includes("원자력")) return "원자력";
-  if (n.includes("방산")||n.includes("조선")) return "방산·조선";
-  if (n.includes("2차전지")) return "2차전지";
-  if (n.includes("금현물")||n.includes("구리실물")) return "금·원자재";
-  if (n.includes("차이나")||n.includes("인도빌리언")) return "신흥국";
-  if (n.includes("코스닥")||n.includes("코스피")||n.includes("밸류업")||n.includes("증권")) return "국내지수";
-  if (sector && sector !== "기타") return sector;
+// ============================================================
+// V2.0.0 섹터 분류 엔진 — "국가 + 테마"
+//  - ETF = 이름 키워드 캐스케이드(우선순위 배열, 첫 매치 승)
+//  - 개별주 = 캐스케이드 미스 → STOCK_SECTOR_DB → 사용자선택 → 캐싱 LLM 폴백
+//  - 채권혼합형 = 비중 분할(한 종목이 채권+주식테마 두 버킷에 계상)
+// ============================================================
+
+const STOCK_SECTOR_DB = {
+
+  // ══════════════════════ 🇺🇸 미국 ══════════════════════
+
+  // ── 반도체 ──
+  "NVDA": { n:"엔비디아",            s:"반도체", x:"NASDAQ" },
+  "AVGO": { n:"브로드컴",            s:"반도체", x:"NASDAQ" },
+  "AMD":  { n:"AMD",                 s:"반도체", x:"NASDAQ" },
+  "QCOM": { n:"퀄컴",                s:"반도체", x:"NASDAQ" },
+  "INTC": { n:"인텔",                s:"반도체", x:"NASDAQ" },
+  "TXN":  { n:"텍사스인스트루먼츠",  s:"반도체", x:"NASDAQ" },
+  "MU":   { n:"마이크론",            s:"반도체", x:"NASDAQ" },
+  "AMAT": { n:"어플라이드머티리얼즈",s:"반도체", x:"NASDAQ" },
+  "LRCX": { n:"램리서치",            s:"반도체", x:"NASDAQ" },
+  "KLAC": { n:"KLA",                 s:"반도체", x:"NASDAQ" },
+  "ADI":  { n:"아날로그디바이스",    s:"반도체", x:"NASDAQ" },
+  "MRVL": { n:"마벨",                s:"반도체", x:"NASDAQ" },
+  "NXPI": { n:"NXP",                 s:"반도체", x:"NASDAQ" },
+  "MCHP": { n:"마이크로칩",          s:"반도체", x:"NASDAQ" },
+  "TSM":  { n:"TSMC",                s:"반도체", x:"NYSE"   }, // ADR
+  "ASML": { n:"ASML",                s:"반도체", x:"NASDAQ" }, // ADR
+  "ARM":  { n:"암(ARM)",             s:"반도체", x:"NASDAQ" },
+
+  // ── AI·로보틱스 ──
+  "GOOGL":{ n:"알파벳(구글)",        s:"AI·로보틱스", x:"NASDAQ" },
+  "GOOG": { n:"알파벳(구글)",        s:"AI·로보틱스", x:"NASDAQ" },
+  "META": { n:"메타",                s:"AI·로보틱스", x:"NASDAQ" },
+  "PLTR": { n:"팔란티어",            s:"AI·로보틱스", x:"NASDAQ" },
+
+  // ── 테크 ──
+  "AAPL": { n:"애플",                s:"테크", x:"NASDAQ" },
+  "MSFT": { n:"마이크로소프트",      s:"테크", x:"NASDAQ" },
+  "AMZN": { n:"아마존",              s:"테크", x:"NASDAQ" },
+  "ORCL": { n:"오라클",              s:"테크", x:"NYSE"   },
+  "CRM":  { n:"세일즈포스",          s:"테크", x:"NYSE"   },
+  "ADBE": { n:"어도비",              s:"테크", x:"NASDAQ" },
+  "NOW":  { n:"서비스나우",          s:"테크", x:"NYSE"   },
+  "CSCO": { n:"시스코",              s:"테크", x:"NASDAQ" },
+  "IBM":  { n:"IBM",                 s:"테크", x:"NYSE"   },
+  "INTU": { n:"인튜이트",            s:"테크", x:"NASDAQ" },
+  "ACN":  { n:"액센츄어",            s:"테크", x:"NYSE"   },
+  "PYPL": { n:"페이팔",              s:"테크", x:"NASDAQ" }, // 핀테크
+  "SNOW": { n:"스노우플레이크",      s:"테크", x:"NYSE"   },
+  "PANW": { n:"팔로알토네트웍스",    s:"테크", x:"NASDAQ" },
+  "CRWD": { n:"크라우드스트라이크",  s:"테크", x:"NASDAQ" },
+  "ANET": { n:"아리스타네트웍스",    s:"테크", x:"NYSE"   },
+  "UBER": { n:"우버",                s:"테크", x:"NYSE"   },
+  "SHOP": { n:"쇼피파이",            s:"테크", x:"NASDAQ" },
+
+  // ── 2차전지·전기차 ──
+  "TSLA": { n:"테슬라",              s:"2차전지·전기차", x:"NASDAQ" },
+  "RIVN": { n:"리비안",              s:"2차전지·전기차", x:"NASDAQ" },
+  "LCID": { n:"루시드",              s:"2차전지·전기차", x:"NASDAQ" },
+
+  // ── 자동차 ──
+  "F":    { n:"포드",                s:"자동차", x:"NYSE" },
+  "GM":   { n:"제너럴모터스",        s:"자동차", x:"NYSE" },
+
+  // ── 금융 ──
+  "JPM":  { n:"JP모건",              s:"금융", x:"NYSE" },
+  "BAC":  { n:"뱅크오브아메리카",    s:"금융", x:"NYSE" },
+  "WFC":  { n:"웰스파고",            s:"금융", x:"NYSE" },
+  "GS":   { n:"골드만삭스",          s:"금융", x:"NYSE" },
+  "MS":   { n:"모건스탠리",          s:"금융", x:"NYSE" },
+  "C":    { n:"씨티그룹",            s:"금융", x:"NYSE" },
+  "V":    { n:"비자",                s:"금융", x:"NYSE" }, // 카드
+  "MA":   { n:"마스터카드",          s:"금융", x:"NYSE" }, // 카드
+  "AXP":  { n:"아메리칸익스프레스",  s:"금융", x:"NYSE" },
+  "BLK":  { n:"블랙록",              s:"금융", x:"NYSE" },
+  "SCHW": { n:"찰스슈왑",            s:"금융", x:"NYSE" },
+  "SPGI": { n:"S&P글로벌",           s:"금융", x:"NYSE" },
+  "BRK.B":{ n:"버크셔해서웨이",      s:"금융", x:"NYSE" }, // ⚠ 지주사 성격도
+
+  // ── 헬스케어 ──
+  "LLY":  { n:"일라이릴리",          s:"헬스케어", x:"NYSE"   },
+  "UNH":  { n:"유나이티드헬스",      s:"헬스케어", x:"NYSE"   },
+  "JNJ":  { n:"존슨앤존슨",          s:"헬스케어", x:"NYSE"   },
+  "ABBV": { n:"애브비",              s:"헬스케어", x:"NYSE"   },
+  "MRK":  { n:"머크",                s:"헬스케어", x:"NYSE"   },
+  "PFE":  { n:"화이자",              s:"헬스케어", x:"NYSE"   },
+  "TMO":  { n:"써모피셔",            s:"헬스케어", x:"NYSE"   },
+  "ABT":  { n:"애보트",              s:"헬스케어", x:"NYSE"   },
+  "DHR":  { n:"다나허",              s:"헬스케어", x:"NYSE"   },
+  "AMGN": { n:"암젠",                s:"헬스케어", x:"NASDAQ" },
+  "ISRG": { n:"인튜이티브서지컬",    s:"헬스케어", x:"NASDAQ" }, // 수술로봇이지만 의료기기로
+  "VRTX": { n:"버텍스",              s:"헬스케어", x:"NASDAQ" },
+  "REGN": { n:"리제네론",            s:"헬스케어", x:"NASDAQ" },
+  "GILD": { n:"길리어드",            s:"헬스케어", x:"NASDAQ" },
+  "BMY":  { n:"브리스톨마이어스",    s:"헬스케어", x:"NYSE"   },
+  "MDT":  { n:"메드트로닉",          s:"헬스케어", x:"NYSE"   },
+
+  // ── 소비재 ──
+  "WMT":  { n:"월마트",              s:"소비재", x:"NYSE"   },
+  "COST": { n:"코스트코",            s:"소비재", x:"NASDAQ" },
+  "PG":   { n:"P&G",                 s:"소비재", x:"NYSE"   },
+  "KO":   { n:"코카콜라",            s:"소비재", x:"NYSE"   },
+  "PEP":  { n:"펩시코",              s:"소비재", x:"NASDAQ" },
+  "MCD":  { n:"맥도날드",            s:"소비재", x:"NYSE"   },
+  "NKE":  { n:"나이키",              s:"소비재", x:"NYSE"   },
+  "SBUX": { n:"스타벅스",            s:"소비재", x:"NASDAQ" },
+  "HD":   { n:"홈디포",              s:"소비재", x:"NYSE"   },
+  "LOW":  { n:"로우스",              s:"소비재", x:"NYSE"   },
+  "TGT":  { n:"타겟",                s:"소비재", x:"NYSE"   },
+  "PM":   { n:"필립모리스",          s:"소비재", x:"NYSE"   },
+  "MO":   { n:"알트리아",            s:"소비재", x:"NYSE"   },
+  "CL":   { n:"콜게이트",            s:"소비재", x:"NYSE"   },
+  "MDLZ": { n:"몬델리즈",            s:"소비재", x:"NASDAQ" },
+
+  // ── 에너지 ──
+  "XOM":  { n:"엑슨모빌",            s:"에너지", x:"NYSE" },
+  "CVX":  { n:"셰브론",              s:"에너지", x:"NYSE" },
+  "COP":  { n:"코노코필립스",        s:"에너지", x:"NYSE" },
+  "SLB":  { n:"슐럼버거",            s:"에너지", x:"NYSE" },
+  "EOG":  { n:"EOG리소시스",         s:"에너지", x:"NYSE" },
+
+  // ── 전력인프라 (유틸리티 포함) ──
+  "NEE":  { n:"넥스트에라에너지",    s:"전력인프라", x:"NYSE"   },
+  "SO":   { n:"서던컴퍼니",          s:"전력인프라", x:"NYSE"   },
+  "DUK":  { n:"듀크에너지",          s:"전력인프라", x:"NYSE"   },
+  "CEG":  { n:"컨스텔레이션에너지",  s:"전력인프라", x:"NASDAQ" },
+  "VST":  { n:"비스트라",            s:"전력인프라", x:"NYSE"   },
+  "GEV":  { n:"GE버노바",            s:"전력인프라", x:"NYSE"   },
+  "ETN":  { n:"이튼",                s:"전력인프라", x:"NYSE"   }, // 전력관리
+  "PWR":  { n:"콴타서비시스",        s:"전력인프라", x:"NYSE"   }, // 전력망 건설
+
+  // ── 조선·방산·우주항공 ──
+  "LMT":  { n:"록히드마틴",          s:"조선·방산·우주항공", x:"NYSE"   },
+  "RTX":  { n:"RTX",                 s:"조선·방산·우주항공", x:"NYSE"   },
+  "NOC":  { n:"노스럽그루먼",        s:"조선·방산·우주항공", x:"NYSE"   },
+  "GD":   { n:"제너럴다이내믹스",    s:"조선·방산·우주항공", x:"NYSE"   },
+  "BA":   { n:"보잉",                s:"조선·방산·우주항공", x:"NYSE"   },
+  "GE":   { n:"GE에어로스페이스",    s:"조선·방산·우주항공", x:"NYSE"   },
+  "SPCX": { n:"스페이스X",           s:"조선·방산·우주항공", x:"NASDAQ" }, // ⚠ xAI 합병=AI 복합
+  "LHX":  { n:"L3해리스",            s:"조선·방산·우주항공", x:"NYSE"   },
+  "HON":  { n:"허니웰",              s:"조선·방산·우주항공", x:"NASDAQ" }, // 항공우주 비중
+  "HWM":  { n:"하우멧에어로스페이스",s:"조선·방산·우주항공", x:"NYSE"   },
+  "HII":  { n:"헌팅턴잉걸스",        s:"조선·방산·우주항공", x:"NYSE"   }, // 군함
+  "DRS":  { n:"레오나르도DRS",       s:"조선·방산·우주항공", x:"NASDAQ" },
+  "RKLB": { n:"로켓랩",              s:"조선·방산·우주항공", x:"NASDAQ" },
+  "RDW":  { n:"레드와이어",          s:"조선·방산·우주항공", x:"NYSE"   },
+  "LUNR": { n:"인튜이티브머신스",    s:"조선·방산·우주항공", x:"NASDAQ" },
+  "PL":   { n:"플래닛랩스",          s:"조선·방산·우주항공", x:"NYSE"   },
+
+  // ── 인프라 (건설/중장비/통신) ──
+  "CAT":  { n:"캐터필러",            s:"인프라", x:"NYSE"   }, // 중장비
+  "DE":   { n:"디어",                s:"인프라", x:"NYSE"   }, // 중장비
+  "VZ":   { n:"버라이즌",            s:"인프라", x:"NYSE"   }, // 통신
+  "T":    { n:"AT&T",                s:"인프라", x:"NYSE"   }, // 통신
+  "TMUS": { n:"티모바일",            s:"인프라", x:"NASDAQ" }, // 통신
+
+  // ── 산업재 ──
+  "UPS":  { n:"UPS",                 s:"산업재", x:"NYSE"   }, // 물류
+  "UNP":  { n:"유니온퍼시픽",        s:"산업재", x:"NYSE"   }, // 운송
+
+  // ── 엔터·미디어 ──
+  "NFLX": { n:"넷플릭스",            s:"엔터·미디어", x:"NASDAQ" },
+  "DIS":  { n:"디즈니",              s:"엔터·미디어", x:"NYSE"   },
+  "CMCSA":{ n:"컴캐스트",            s:"엔터·미디어", x:"NASDAQ" },
+  "WBD":  { n:"워너브라더스디스커버리",s:"엔터·미디어", x:"NASDAQ" },
+
+  // ── 화학·소재 ──
+  "LIN":  { n:"린데",                s:"화학·소재", x:"NASDAQ" },
+  "SHW":  { n:"셔윈윌리엄스",        s:"화학·소재", x:"NYSE"   },
+  "APD":  { n:"에어프로덕츠",        s:"화학·소재", x:"NYSE"   },
+  "DOW":  { n:"다우",                s:"화학·소재", x:"NYSE"   },
+
+  // ── 원자재 (광업) ──
+  "FCX":  { n:"프리포트맥모란",      s:"원자재", x:"NYSE" }, // 구리
+  "NEM":  { n:"뉴몬트",              s:"원자재", x:"NYSE" }, // 금
+
+  // ── REITs ──
+  "O":    { n:"리얼티인컴",          s:"REITs", x:"NYSE"   }, // 월배당 대표
+  "PLD":  { n:"프로로지스",          s:"REITs", x:"NYSE"   },
+  "AMT":  { n:"아메리칸타워",        s:"REITs", x:"NYSE"   },
+  "EQIX": { n:"에퀴닉스",            s:"REITs", x:"NASDAQ" }, // 데이터센터 리츠
+  "DLR":  { n:"디지털리얼티",        s:"REITs", x:"NYSE"   },
+
+
+  // ══════════════════════ 🇰🇷 한국 ══════════════════════
+
+  // ── 반도체 ──
+  "005930": { n:"삼성전자",          s:"반도체", x:"KOSPI"  },
+  "000660": { n:"SK하이닉스",        s:"반도체", x:"KOSPI"  },
+  "042700": { n:"한미반도체",        s:"반도체", x:"KOSPI"  },
+  "000990": { n:"DB하이텍",          s:"반도체", x:"KOSPI"  },
+  "240810": { n:"원익IPS",           s:"반도체", x:"KOSDAQ" },
+  "058470": { n:"리노공업",          s:"반도체", x:"KOSDAQ" },
+  "357780": { n:"솔브레인",          s:"반도체", x:"KOSDAQ" },
+  "403870": { n:"HPSP",              s:"반도체", x:"KOSDAQ" },
+  "005290": { n:"동진쎄미켐",        s:"반도체", x:"KOSDAQ" },
+  "036930": { n:"주성엔지니어링",    s:"반도체", x:"KOSDAQ" },
+  "440110": { n:"파두",              s:"반도체", x:"KOSDAQ" },
+  "067310": { n:"하나마이크론",      s:"반도체", x:"KOSDAQ" },
+  "131970": { n:"두산테스나",        s:"반도체", x:"KOSDAQ" },
+  "084370": { n:"유진테크",          s:"반도체", x:"KOSDAQ" },
+  "095340": { n:"ISC",               s:"반도체", x:"KOSDAQ" },
+  "039030": { n:"이오테크닉스",      s:"반도체", x:"KOSDAQ" },
+
+  // ── 2차전지·전기차 ──
+  "373220": { n:"LG에너지솔루션",    s:"2차전지·전기차", x:"KOSPI"  },
+  "006400": { n:"삼성SDI",           s:"2차전지·전기차", x:"KOSPI"  },
+  "005490": { n:"POSCO홀딩스",       s:"2차전지·전기차", x:"KOSPI"  }, // (사용자 지정)
+  "247540": { n:"에코프로비엠",      s:"2차전지·전기차", x:"KOSDAQ" },
+  "086520": { n:"에코프로",          s:"2차전지·전기차", x:"KOSDAQ" },
+  "003670": { n:"포스코퓨처엠",      s:"2차전지·전기차", x:"KOSPI"  },
+  "066970": { n:"엘앤에프",          s:"2차전지·전기차", x:"KOSDAQ" },
+  "005070": { n:"코스모신소재",      s:"2차전지·전기차", x:"KOSPI"  },
+
+  // ── 자동차 ──
+  "005380": { n:"현대차",            s:"자동차", x:"KOSPI" },
+  "000270": { n:"기아",              s:"자동차", x:"KOSPI" },
+  "012330": { n:"현대모비스",        s:"자동차", x:"KOSPI" },
+  "011210": { n:"현대위아",          s:"자동차", x:"KOSPI" },
+  "204320": { n:"HL만도",            s:"자동차", x:"KOSPI" },
+
+  // ── 금융 ──
+  "105560": { n:"KB금융",            s:"금융", x:"KOSPI" },
+  "055550": { n:"신한지주",          s:"금융", x:"KOSPI" },
+  "086790": { n:"하나금융지주",      s:"금융", x:"KOSPI" },
+  "316140": { n:"우리금융지주",      s:"금융", x:"KOSPI" },
+  "138040": { n:"메리츠금융지주",    s:"금융", x:"KOSPI" },
+  "032830": { n:"삼성생명",          s:"금융", x:"KOSPI" },
+  "000810": { n:"삼성화재",          s:"금융", x:"KOSPI" },
+  "005830": { n:"DB손해보험",        s:"금융", x:"KOSPI" },
+  "071050": { n:"한국금융지주",      s:"금융", x:"KOSPI" },
+  "323410": { n:"카카오뱅크",        s:"금융", x:"KOSPI" }, // (사용자 지정)
+  "029780": { n:"삼성카드",          s:"금융", x:"KOSPI" },
+
+  // ── 헬스케어 ──
+  "207940": { n:"삼성바이오로직스",  s:"헬스케어", x:"KOSPI"  },
+  "068270": { n:"셀트리온",          s:"헬스케어", x:"KOSPI"  },
+  "196170": { n:"알테오젠",          s:"헬스케어", x:"KOSDAQ" },
+  "326030": { n:"SK바이오팜",        s:"헬스케어", x:"KOSPI"  },
+  "302440": { n:"SK바이오사이언스",  s:"헬스케어", x:"KOSPI"  },
+  "128940": { n:"한미약품",          s:"헬스케어", x:"KOSPI"  },
+  "000100": { n:"유한양행",          s:"헬스케어", x:"KOSPI"  },
+
+  // ── 테크 (인터넷/SW) ──
+  "035420": { n:"NAVER",             s:"테크", x:"KOSPI"  },
+  "035720": { n:"카카오",            s:"테크", x:"KOSPI"  },
+  "377300": { n:"카카오페이",        s:"테크", x:"KOSPI"  }, // 핀테크
+
+  // ── 엔터·미디어 (게임 포함: 콘텐츠 제작 = 엔터·미디어) ──
+  "352820": { n:"하이브",            s:"엔터·미디어", x:"KOSPI"  },
+  "041510": { n:"에스엠",            s:"엔터·미디어", x:"KOSDAQ" },
+  "122870": { n:"와이지엔터테인먼트",s:"엔터·미디어", x:"KOSDAQ" },
+  "035900": { n:"JYP Ent.",          s:"엔터·미디어", x:"KOSDAQ" },
+  "130960": { n:"CJ ENM",            s:"엔터·미디어", x:"KOSDAQ" },
+  "259960": { n:"크래프톤",          s:"엔터·미디어", x:"KOSPI"  }, // 게임
+  "036570": { n:"엔씨소프트",        s:"엔터·미디어", x:"KOSPI"  }, // 게임
+  "251270": { n:"넷마블",            s:"엔터·미디어", x:"KOSPI"  }, // 게임
+
+  // ── 조선·방산·우주항공 ──
+  "329180": { n:"HD현대중공업",      s:"조선·방산·우주항공", x:"KOSPI" },
+  "009540": { n:"HD한국조선해양",    s:"조선·방산·우주항공", x:"KOSPI" },
+  "042660": { n:"한화오션",          s:"조선·방산·우주항공", x:"KOSPI" },
+  "010140": { n:"삼성중공업",        s:"조선·방산·우주항공", x:"KOSPI" },
+  "012450": { n:"한화에어로스페이스",s:"조선·방산·우주항공", x:"KOSPI" },
+  "047810": { n:"한국항공우주",      s:"조선·방산·우주항공", x:"KOSPI" },
+  "064350": { n:"현대로템",          s:"조선·방산·우주항공", x:"KOSPI" },
+  "272210": { n:"한화시스템",        s:"조선·방산·우주항공", x:"KOSPI" },
+  "079550": { n:"LIG디펜스앤에어로스페이스", s:"조선·방산·우주항공", x:"KOSPI" }, // 前 LIG넥스원
+  "103140": { n:"풍산",              s:"조선·방산·우주항공", x:"KOSPI" }, // 신동(구리)+방산 겸업 → 방산
+
+  // ── 화학·소재 ──
+  "051910": { n:"LG화학",            s:"화학·소재", x:"KOSPI" },
+  "011170": { n:"롯데케미칼",        s:"화학·소재", x:"KOSPI" },
+  "011780": { n:"금호석유",          s:"화학·소재", x:"KOSPI" },
+
+  // ── 원자재 (철강/비철) ──
+  "010130": { n:"고려아연",          s:"원자재", x:"KOSPI" },
+  "004020": { n:"현대제철",          s:"원자재", x:"KOSPI" },
+
+  // ── 에너지 ──
+  "096770": { n:"SK이노베이션",      s:"에너지", x:"KOSPI" }, // ⚠ 정유+배터리
+  "010950": { n:"S-Oil",             s:"에너지", x:"KOSPI" },
+
+  // ── 전력인프라 / 원전 ──
+  "015760": { n:"한국전력",          s:"전력인프라", x:"KOSPI" },
+  "034020": { n:"두산에너빌리티",    s:"원전",       x:"KOSPI" }, // ⚠ 원전+발전+풍력
+
+  // ── 소비재 ──
+  "051900": { n:"LG생활건강",        s:"소비재", x:"KOSPI"  },
+  "090430": { n:"아모레퍼시픽",      s:"소비재", x:"KOSPI"  },
+  "097950": { n:"CJ제일제당",        s:"소비재", x:"KOSPI"  },
+  "271560": { n:"오리온",            s:"소비재", x:"KOSPI"  },
+  "023530": { n:"롯데쇼핑",          s:"소비재", x:"KOSPI"  },
+  "282330": { n:"BGF리테일",         s:"소비재", x:"KOSPI"  },
+  "004370": { n:"농심",              s:"소비재", x:"KOSPI"  },
+  "033780": { n:"KT&G",              s:"소비재", x:"KOSPI"  }, // 담배
+  "161890": { n:"한국콜마",          s:"소비재", x:"KOSDAQ" }, // 화장품
+
+  // ── 인프라 (건설/통신) ──
+  "017670": { n:"SK텔레콤",          s:"인프라", x:"KOSPI" }, // 통신
+  "030200": { n:"KT",                s:"인프라", x:"KOSPI" }, // 통신
+  "032640": { n:"LG유플러스",        s:"인프라", x:"KOSPI" }, // 통신
+  "000720": { n:"현대건설",          s:"인프라", x:"KOSPI" }, // 건설
+  "047040": { n:"대우건설",          s:"인프라", x:"KOSPI" }, // 건설
+
+  // ── 지주사 ──
+  "003550": { n:"LG",                s:"지주사", x:"KOSPI" },
+  "034730": { n:"SK",                s:"지주사", x:"KOSPI" },
+  "267250": { n:"HD현대",            s:"지주사", x:"KOSPI" },
+  "004990": { n:"롯데지주",          s:"지주사", x:"KOSPI" },
+  "000880": { n:"한화",              s:"지주사", x:"KOSPI" },
+  "001040": { n:"CJ",                s:"지주사", x:"KOSPI" },
+  "078930": { n:"GS",                s:"지주사", x:"KOSPI" },
+  "028260": { n:"삼성물산",          s:"지주사", x:"KOSPI" }, // ⚠ 사실상 삼성 지주+건설
+
+};
+
+// 거래소 → 국가 매핑 (라벨 국가 접두 + 시세조회 라우팅 겸용)
+const EXCHANGE_COUNTRY = {
+  "NASDAQ": "미국", "NYSE": "미국", "AMEX": "미국",
+  "KOSPI": "",     "KOSDAQ": "",            // 국내는 접두 없음
+  "TSE": "일본", "HKEX": "중국", "SSE": "중국", "SZSE": "중국",
+};
+
+// 캐싱 LLM 분류 결과(종목코드/이름 기준). getSectorLabel이 동기로 읽고, 백그라운드가 채움.
+const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v1";
+let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
+
+// 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
+const SECTOR_THEMES = ["REITs","배당","반도체","원전","전력인프라","친환경에너지","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","지수","채권"];
+const SECTOR_THEME_SET = new Set(SECTOR_THEMES);
+// 국가 접두 후보(라벨에서 떼어내 베이스 테마를 얻을 때 사용)
+const COUNTRY_PREFIXES = ["미국","글로벌","중국","일본","인도"];
+// 한국 ETF 브랜드 접두 — 이게 붙은 종목은 ETF로 보고 개별주 DB/LLM 폴백을 타지 않음
+const ETF_BRAND_RE = /^(KODEX|TIGER|ACE|RISE|PLUS|KBSTAR|ARIRANG|HANARO|TIMEFOLIO|TIME|SOL|SMART|TREX|KOSEF|KTOP|KIWOOM|WOORI|HEROES|히어로즈|마이다스|파워|FOCUS|마이티|BNK)\s/i;
+
+// 이름에 따라 무조건 기타로 두는 자산(개별주 LLM 폴백도 안 탐)
+function isExplicitOther(name) {
+  const n = (name || "").toUpperCase();
+  return n.includes("TDF") || n.includes("타겟데이트") || n.includes("서학개미")
+      || n.includes("자산배분") || n.includes("생애주기") || n.includes("배분형");
+}
+function isETFName(name) { return ETF_BRAND_RE.test((name || "").trim()); }
+function countryFromCurrency(cur) { return cur === "USD" ? "미국" : (cur === "JPY" ? "일본" : ""); }
+function stripCountry(label) {
+  for (const p of COUNTRY_PREFIXES) { if (label && label.startsWith(p)) return label.slice(p.length); }
+  return label || "";
+}
+
+// 이름 → 국가 판별 (지수명이 곧 국가인 경우 포함: 나스닥·다우·러셀·S&P=미국, 닛케이=일본, Nifty=인도)
+function detectCountry(name) {
+  const n = (name || "").toUpperCase();
+  if (/미국|필라|S&P|나스닥|다우존스|러셀|RUSSELL/.test(n)) return "미국";
+  if (/차이나|중국|CHINA/.test(n)) return "중국";
+  if (/닛케이|NIKKEI/.test(n)) return "일본";
+  if (/인도|NIFTY/.test(n)) return "인도";
+  if (/글로벌|GLOBAL/.test(n)) return "글로벌";
+  return ""; // 국내 = 접두 없음
+}
+
+// ETF 키워드 캐스케이드 — 위에서 아래로, 첫 매치 승. 베이스 테마(국가 접두 없음) 반환, 미매치 null.
+function cascadeTheme(name) {
+  const n = (name || "").toUpperCase();
+  const has = (...kw) => kw.some(k => n.includes(k.toUpperCase()));
+  if (has("부동산","리츠","REIT")) return "REITs";                                  // 1
+  if (has("배당","고배당","커버드콜")) return "배당";                                // 2
+  if (has("반도체","SEMICONDUCTOR")) return "반도체";                               // 3
+  if (has("원자력","원전","SMR","우라늄")) return "원전";                            // 4
+  if (has("전력","전력인프라","데이터센터","ESS","유틸리티")) return "전력인프라";     // 5
+  if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","그린")) return "친환경에너지"; // 6
+  if (has("에너지","원유","오일","가스")) return "에너지";                            // 7
+  if (has("금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철강","철광석","광업","광산","원자재")) return "원자재"; // 8
+  if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차"; // 9
+  if (has("자동차")) return "자동차";                                                // 10
+  if (has("AI","인공지능","로봇","로보틱스","로벗","피지컬AI")) return "AI·로보틱스";   // 11
+  if (has("빅테크","미국테크TOP10")) return "미국빅테크";  // 12 (ETF 전용, 항상 미국)
+  if (has("조선","방산","우주항공","우주","항공","드론","방위")) return "조선·방산·우주항공";  // 13
+  if (has("헬스케어","바이오","제약","바이오시밀러","생명과학","의료기기")) return "헬스케어";  // 14
+  if (has("금융","은행","증권","보험","카드")) return "금융";  // 15
+  if (has("인프라","건설","중장비","건설장비","토목","SOC","통신")) return "인프라";  // 16
+  if (has("산업재","운송","물류")) return "산업재";  // 17
+  if (has("엔터","엔터테인먼트","미디어","영화","드라마","콘텐츠","방송","언론","게임")) return "엔터·미디어";  // 18
+  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어")) return "소비재";  // 19
+  if (has("화학","소재")) return "화학·소재";  // 20
+  if (has("지주")) return "지주사";  // 21
+  // "테크"는 가장 약한 폴백 — 앞에 수식어(우주/방산/AI/반도체 등)가 붙으면 위에서 먼저 잡히도록 후순위로 둠
+  if (has("소프트웨어","IT","테크","정보기술","핀테크")) return "테크";  // 22
+  if (has("코스피","코스닥","나스닥","다우존스","S&P500","S&P","닛케이","NIFTY50","러셀","코스피200","밸류업")) return "지수";  // 23
+  if (has("국채","회사채","CD금리","KOFR","단기채","금리액티브","MMF")) return "채권";  // 24
+  return null;
+}
+
+// 종목코드로 개별주 DB 조회 (6자리코드 .KS/.KQ 접미 허용)
+function lookupStockDB(ticker) {
+  if (!ticker) return null;
+  if (STOCK_SECTOR_DB[ticker]) return STOCK_SECTOR_DB[ticker];
+  const m = String(ticker).match(/^(\d{6})(?:\.(KS|KQ))?$/);
+  if (m && STOCK_SECTOR_DB[m[1]]) return STOCK_SECTOR_DB[m[1]];
+  return null;
+}
+
+// ETF명/종목명에 박힌 대표 기업명 → (국가 c, 테마 s). 사용자 승인한 최소 목록.
+// 캐스케이드(테마 키워드)로도, 개별주 DB로도 안 잡히는 "기업명만 박힌 ETF"용. 필요하면 여기에 한 줄씩 추가.
+// c="" 는 국내(접두 없음). s="기타" 는 그룹 묶음 등 단일 테마로 못 묶는 경우.
+const COMPANY_SECTOR_MAP = [
+  { kw: ["삼성전자"], c: "", s: "반도체" },
+  { kw: ["SK하이닉스", "하이닉스"], c: "", s: "반도체" },
+  { kw: ["현대차"], c: "", s: "자동차" },
+  { kw: ["삼성그룹"], c: "", s: "기타" },
+  { kw: ["SK그룹"], c: "", s: "기타" },
+  { kw: ["엔비디아", "NVIDIA"], c: "미국", s: "반도체" },
+  { kw: ["테슬라", "TESLA"], c: "미국", s: "2차전지·전기차" },
+];
+// 가장 긴(=구체적인) 키워드 우선 매칭
+function lookupCompany(name) {
+  const n = (name || "").toUpperCase();
+  let best = null, bestLen = 0;
+  for (const e of COMPANY_SECTOR_MAP) {
+    for (const k of e.kw) {
+      if (k.length > bestLen && n.includes(k.toUpperCase())) { best = e; bestLen = k.length; }
+    }
+  }
+  return best;
+}
+
+// 단일 라벨 산출(채권혼합 분할 전 단계). 국가 접두 + 베이스 테마.
+function classifyOne(sector, name, ticker, currency) {
+  const raw = name || "";
+  if (isExplicitOther(raw)) return "기타";
+  // 1. ETF 키워드 캐스케이드
+  const theme = cascadeTheme(raw);
+  if (theme) {
+    if (COUNTRY_PREFIXES.some(p => theme.startsWith(p))) return theme; // 미국빅테크 등 이미 국가 포함
+    return detectCountry(raw) + theme;
+  }
+  // 2. ETF명/종목명에 박힌 대표 기업명(삼성전자→국내 반도체, 테슬라→미국 2차전지·전기차, 삼성그룹→기타 등)
+  const comp = lookupCompany(raw);
+  if (comp) return comp.s === "기타" ? "기타" : (comp.c + comp.s);
+  // 3. 캐스케이드·기업명 미스 → 개별주 경로. ETF면 그대로 기타(DB/LLM 안 탐)
+  if (isETFName(raw)) return "기타";
+  // 2a. 개별주 DB (국가는 거래소, 없으면 통화)
+  const db = lookupStockDB(ticker);
+  if (db) {
+    const c = (EXCHANGE_COUNTRY[db.x] != null) ? EXCHANGE_COUNTRY[db.x] : countryFromCurrency(currency);
+    return c + db.s;
+  }
+  // 2b. 사용자가 직접 고른 새 테마(국가 접두 떼고 24개 중 하나)면 존중
+  const userBase = stripCountry(sector || "");
+  if (sector && SECTOR_THEME_SET.has(userBase)) {
+    return COUNTRY_PREFIXES.some(p => sector.startsWith(p)) ? sector : (countryFromCurrency(currency) + userBase);
+  }
+  // 2c. 캐싱 LLM 결과
+  const cached = STOCK_LLM_CACHE[ticker] || STOCK_LLM_CACHE[raw];
+  if (cached && cached.s) {
+    const c = (cached.c != null) ? cached.c : countryFromCurrency(currency);
+    return c + cached.s;
+  }
+  // 2d. 미분류 → 기타(백그라운드 LLM이 채움)
   return "기타";
 }
+
+// 한 종목의 섹터 기여 분할 [{label, ratio}]. 채권혼합형은 채권 + 주식테마로 분할(한 종목이 두 버킷).
+function getSectorContributions(h) {
+  const name = (h && h.name) || "";
+  const sector = h && h.sector;
+  const ticker = h && h.ticker;
+  const currency = h && h.currency;
+  if (name.includes("혼합") && !isExplicitOther(name)) {
+    let bondRatio = 0.5; // 숫자 없으면 50:50
+    const m = name.match(/혼합\s*(\d{1,3})/); // "혼합" 바로 뒤 숫자만(TOP10·100·150 등은 무시)
+    if (m) { const v = parseInt(m[1], 10); if (v >= 1 && v <= 100) bondRatio = v / 100; }
+    const stockLabel = classifyOne(sector, name, ticker, currency); // 주식 절반 테마(배당 우선 등)
+    const out = [];
+    if (bondRatio > 0) out.push({ label: "채권", ratio: bondRatio });
+    if (bondRatio < 1) out.push({ label: stockLabel, ratio: 1 - bondRatio });
+    return out;
+  }
+  return [{ label: classifyOne(sector, name, ticker, currency), ratio: 1 }];
+}
+
+// 단일 대표 라벨(가장 큰 기여). 기존 호출부 호환(sector,name)도 동작.
+function getSectorLabel(sector, name, ticker, currency) {
+  const c = getSectorContributions({ sector, name, ticker, currency });
+  if (!c.length) return "기타";
+  return c.reduce((a, b) => (b.ratio > a.ratio ? b : a)).label;
+}
+
 
 function SvgPieChart({ data, colors, totalValue }) {
   const [hov, setHov] = useState(null);
@@ -1433,8 +1933,7 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
   const sectorMap={}, regionMap={};
   merged.forEach(h=>{
     const sv=holdingValueKRW(h,fx);
-    const sk=getSectorLabel(h.sector,h.name);
-    sectorMap[sk]=(sectorMap[sk]||0)+sv;
+    getSectorContributions(h).forEach(c=>{ sectorMap[c.label]=(sectorMap[c.label]||0)+sv*c.ratio; });
     const rk=guessRegion(h.name);
     regionMap[rk]=(regionMap[rk]||0)+sv;
   });
@@ -1442,13 +1941,15 @@ function PortfolioPieCharts({ portfolio, filterAccount }) {
 
   const toArr=(m)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value:Math.round(value)}));
   const sectorData=toArr(sectorMap), regionData=toArr(regionMap);
+  // 섹터 차트는 24테마 고정 팔레트(보유목록 색바와 동일), 현금은 회색
+  const sectorColors=sectorData.map(d=>d.name.includes("현금")?"#6b7280":getSectorColor(d.name));
 
   return (
     <>
       <div style={{background:"#0f0f18",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#f59e0b",fontWeight:700,marginBottom:14,letterSpacing:2}}>섹터별 구성</div>
-        <SvgPieChart data={sectorData} colors={PIE_COLORS} totalValue={grand}/>
-        <PieLegend data={sectorData} colors={PIE_COLORS} grand={grand}/>
+        <SvgPieChart data={sectorData} colors={sectorColors} totalValue={grand}/>
+        <PieLegend data={sectorData} colors={sectorColors} grand={grand}/>
       </div>
       <div style={{background:"#0f0f18",border:"1px solid #1e293b",borderRadius:12,padding:16,marginBottom:14}}>
         <div style={{fontSize:13,color:"#0ea5e9",fontWeight:700,marginBottom:14,letterSpacing:2}}>지역별 구성</div>
@@ -2402,31 +2903,51 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
   const handleAdd = () => {
     const cp = parseFloat(String(currentPriceInput).replace(/,/g,""));
     const finalCurrentPrice = (showPriceInput && cp > 0) ? cp : null;
+    // 자동 분류 섹터와 사용자 선택이 다르면 확인. normKey: 미국빅테크는 통째로, 그 외는 국가접두 제거.
+    const normKey = (label) => {
+      if (!label) return "";
+      if (label === "미국빅테크" || stripCountry(label) === "빅테크") return "미국빅테크";
+      return stripCountry(label);
+    };
+    const resolveSector = (nm, tk, cur) => {
+      const autoLabel = getSectorLabel("", nm, tk, cur);
+      const autoKey = normKey(autoLabel);
+      const userKey = normKey(sector);
+      if (autoKey && autoKey !== "기타" && autoKey !== userKey) {
+        if (window.confirm(`${nm}은(는) ${autoKey} 섹터로 확인됩니다.\n${autoKey}로 변경할까요?`)) return autoKey;
+      }
+      return sector;
+    };
     if (directMode) {
       if (!directName.trim()) { alert("종목명을 입력해주세요."); return; }
       if (!avgPrice || !shares) { alert("평균단가와 수량을 입력해주세요."); return; }
       if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
-      onAdd({ ticker: "", yahoo_ticker: null, name: directName.trim(),
+      const nm = directName.trim();
+      const finalSector = resolveSector(nm, "", currency);
+      onAdd({ ticker: "", yahoo_ticker: null, name: nm,
         avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
-        shares: parseFloat(shares) || 0, currency, sector, account: finalAccount, current_price: finalCurrentPrice });
+        shares: parseFloat(shares) || 0, currency, sector: finalSector, account: finalAccount, current_price: finalCurrentPrice });
       return;
     }
     if (!selected && !searchQ.trim()) { alert("종목을 검색해서 선택해주세요."); return; }
     if (!avgPrice || !shares) { alert("평균단가와 수량을 입력해주세요."); return; }
     if (!finalAccount) { alert("계좌를 선택하거나 신규 계좌명을 입력해주세요."); return; }
+    const nm2 = selected?.name || searchQ.trim();
+    const tk2 = (selected?.ticker || searchQ.trim()).replace(/\.(KS|KQ)$/, "");
+    const finalSector2 = resolveSector(nm2, tk2, currency);
     onAdd({
-      ticker: (selected?.ticker || searchQ.trim()).replace(/\.(KS|KQ)$/, ""),
+      ticker: tk2,
       yahoo_ticker: selected?.ticker || null,
-      name: selected?.name || searchQ.trim(),
+      name: nm2,
       avg_price: parseFloat(String(avgPrice).replace(/,/g,"")) || 0,
       shares: parseFloat(shares) || 0,
-      currency, sector,
+      currency, sector: finalSector2,
       account: finalAccount,
       current_price: finalCurrentPrice,
     });
   };
 
-  const SECTORS = ["기타","국내지수","미국지수","반도체","AI·로보틱스","미국빅테크","전력인프라","원자력","방산·조선","2차전지","금·원자재","배당","채권","신흥국"];
+  const SECTORS = ["기타","지수","채권","반도체","AI·로보틱스","미국빅테크","테크","전력인프라","원전","친환경에너지","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
@@ -2916,6 +3437,56 @@ function Portfolio() {
   const [acctModal, setAcctModal] = useState(null); // { addToExisting, initialFiles } | null (계좌명 입력 모달)
 
   const imgInputRef      = useRef(null);
+
+  // V2.0.0 — 캐스케이드·시드DB·사용자선택 어디에도 안 걸린 개별주를 백그라운드에서 LLM 1회 분류(종목별 localStorage 캐싱).
+  const classifyMissingSectors = useCallback(async (pf) => {
+    if (!pf || !Array.isArray(pf.holdings)) return;
+    const seen = new Set();
+    const targets = [];
+    for (const h of pf.holdings) {
+      if (!h || !(h.shares > 0)) continue;
+      const nm = h.name || "";
+      const tk = h.ticker || "";
+      const key = tk || nm;
+      if (!key || seen.has(key)) continue;
+      if (isExplicitOther(nm)) continue;                                     // TDF·서학개미 등 → 기타 확정
+      if (cascadeTheme(nm)) continue;                                        // ETF 키워드로 이미 분류됨
+      if (isETFName(nm)) continue;                                           // 브랜드 ETF → 기타
+      if (lookupStockDB(tk)) continue;                                       // 시드 DB 보유
+      if (h.sector && SECTOR_THEME_SET.has(stripCountry(h.sector))) continue; // 사용자 지정 섹터 존중
+      if (STOCK_LLM_CACHE[tk] || STOCK_LLM_CACHE[nm]) continue;              // 이미 캐싱됨
+      seen.add(key);
+      targets.push({ key, name: nm, ticker: tk });
+    }
+    if (!targets.length) return; // 분류할 종목 없음 → 즉시 종료(리렌더 안 함, 루프 방지)
+    try {
+      const list = targets.map((t, i) => `${i + 1}. ${t.name}${t.ticker ? ` (${t.ticker})` : ""}`).join("\n");
+      const sys = `너는 주식 섹터 분류기다. 입력 종목을 반드시 다음 24개 섹터 중 정확히 하나로만 분류한다.\n[${SECTOR_THEMES.join(", ")}]\n투자 관점 규칙: 아마존=테크, 구글·메타=AI·로보틱스, 팔란티어=AI·로보틱스, 게임주=엔터·미디어, 카카오뱅크=금융, 카카오페이=테크, 통신사=인프라, 지주회사=지주사.\n오직 JSON만 출력한다. 설명·마크다운 금지: {"result":[{"key":"입력한 종목명 또는 코드 그대로","sector":"24개 중 하나"}]}`;
+      const usr = `다음 종목을 분류해줘:\n${list}`;
+      const txt = await callGemini({ system: sys, user: usr, maxTokens: 1200, useSearch: false, temperature: 0 });
+      let json = (txt || "").replace(/```json|```/g, "").trim();
+      const si = json.indexOf("{"), ei = json.lastIndexOf("}");
+      if (si >= 0 && ei > si) json = json.slice(si, ei + 1);
+      const parsed = JSON.parse(json);
+      const arr = Array.isArray(parsed.result) ? parsed.result : [];
+      let wrote = 0;
+      for (const r of arr) {
+        if (!r || !r.sector || !SECTOR_THEME_SET.has(r.sector)) continue;
+        const hit = targets.find(t => t.key === r.key || (t.ticker && t.ticker === r.key) || t.name === r.key);
+        if (!hit) continue;
+        STOCK_LLM_CACHE[hit.key] = { s: r.sector }; // 국가는 통화로 폴백(classifyOne에서 처리)
+        wrote++;
+      }
+      if (wrote > 0) {
+        try { localStorage.setItem(STOCK_LLM_CACHE_KEY, JSON.stringify(STOCK_LLM_CACHE)); } catch (e) {}
+        setPortfolio(p => (p ? { ...p } : p)); // 강제 리렌더로 새 섹터 반영(다음 호출 땐 전부 캐시 hit → 종료)
+      }
+    } catch (e) {
+      console.warn("백그라운드 섹터 분류 실패:", e);
+    }
+  }, []);
+
+  useEffect(() => { if (portfolio) classifyMissingSectors(portfolio); }, [portfolio, classifyMissingSectors]);
 
   // 이미지 > Claude Vision
   const analyzeImage = async (file) => {
@@ -4262,7 +4833,7 @@ function Portfolio() {
               const ret   = cost > 0 ? ((value-cost)/cost)*100 : 0;
               const gain  = value - cost;
               const hasPrice = !!h.current_price;
-              const sectorColor = getSectorColor(h.sector || "기타");
+              const sectorColor = getSectorColor(getSectorLabel(h.sector, h.name, h.ticker, h.currency));
               const rowBg = !hasPrice ? "transparent" : ret > 0 ? "#34d39906" : ret < 0 ? "#f8717106" : "transparent";
               return (
                 <div key={i} style={{ padding: "11px 14px", borderBottom: "1px solid #0d1228", display: "flex", justifyContent: "space-between", alignItems: "center", background: rowBg }}>
@@ -4686,11 +5257,20 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v1.11.2</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.0.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.2 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.0.0 변경사항 (섹터 대개편)</div>
+            <div>· 섹터 분류를 "국가 + 24테마" 체계로 전면 재작성 — 미국/글로벌/중국/일본/인도 접두 자동 판별(국내는 접두 없음). 예: NVDA→미국반도체, 005930→반도체</div>
+            <div>· 우선순위 캐스케이드 순서 버그 수정 — 반도체 &gt; AI, 전력 &gt; AI, 친환경에너지 &gt; 에너지, 배당 &gt; 지수 등 24테마 우선순위 확정(첫 매치 승). 기존 "AI반도체→AI" 오분류 해결</div>
+            <div>· "테크"를 최약 폴백으로 후순위화 — 앞에 수식어가 붙으면 그게 우선(우주테크→우주항공, 방산테크→방산, AI테크→AI). 단독 "테크/소프트웨어/IT/핀테크"만 테크</div>
+            <div>· ETF명에 박힌 대표 기업명 분류 — 삼성전자·SK하이닉스→국내 반도체, 엔비디아→미국 반도체, 테슬라→미국 2차전지·전기차, 현대차→국내 자동차, 삼성그룹·SK그룹→기타. 채권혼합형도 주식 절반이 정확히 분류됨(예: 삼성전자SK하이닉스채권혼합50 → 채권 50%·반도체 50%)</div>
+            <div>· 채권혼합형 비중 분할 — 이름의 "혼합N" 숫자로 채권:주식 비율 분할(숫자 없으면 50:50), 한 종목이 채권+주식테마 두 버킷에 계상. 도넛·리밸런싱 비중에 반영(TDF는 분할 안 함)</div>
+            <div>· 개별주 분류 강화 — 시드 DB(미국139+한국99=238종목) 우선, 미수록 종목은 백그라운드 LLM이 24섹터로 1회 분류해 종목별 캐싱(다음부턴 즉시)</div>
+            <div>· 종목추가 섹터 선택을 새 25개(기타+24테마)로 교체. 자동 분류 결과와 다르게 고르면 "○○ 섹터로 확인됩니다. 변경할까요?" 확인</div>
+            <div>· 도넛/보유목록 색상을 24테마 팔레트로 통일, 구버전 저장 라벨(기술·방산·부동산 등)도 자동 매핑</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.2 변경사항</div>
             <div>· 계좌 탭 순서편집 드래그 감도 개선 — 끌리는 탭이 손가락/커서를 부드럽게 따라오고, 나머지 탭이 미끄러지며 자리를 내주도록 변경(기존엔 중앙을 지날 때 툭 바뀌어 어색했음)</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.11.1 변경사항</div>
             <div>· 계좌 탭 순서편집 방식 개선 — 탭 바의 "⇄ 순서" 버튼으로 편집모드 진입 후 각 탭의 ⠿ 핸들을 잡고 드래그해 순서 변경, "✓ 완료"로 종료. 포인터 방식이라 PC·모바일(크롬) 모두 동작 (기존 드래그가 모바일에서 안 되고 PC도 어색하던 문제 해결)</div>
@@ -5526,8 +6106,7 @@ function RebalanceGuide() {
       if (!h.shares || h.shares <= 0) return;
       if (h.currency === "USD") usd = true;
       const v = holdingValueKRW(h, fx);
-      const sk = getSectorLabel(h.sector, h.name);
-      map[sk] = (map[sk] || 0) + v;
+      getSectorContributions(h).forEach(c => { map[c.label] = (map[c.label] || 0) + v * c.ratio; });
     });
     const cash = getCashFor(portfolio, "all");
     if (cash > 0) map["현금"] = (map["현금"] || 0) + cash;
@@ -5578,7 +6157,8 @@ function RebalanceGuide() {
           const w = grand > 0 ? (holdingValueKRW(h, fx) / grand * 100) : 0;
           const ret = (h.current_price && h.avg_price) ? ((h.current_price / h.avg_price - 1) * 100) : null;
           const retStr = ret == null ? "수익률 미상" : `수익률 ${ret >= 0 ? "+" : ""}${ret.toFixed(1)}%`;
-          return `- ${h.name} (${getSectorLabel(h.sector, h.name)}, 비중 ${w.toFixed(1)}%, ${retStr})`;
+          const secStr = getSectorContributions(h).map(c => c.ratio < 1 ? `${c.label} ${Math.round(c.ratio*100)}%` : c.label).join("·");
+          return `- ${h.name} (${secStr}, 비중 ${w.toFixed(1)}%, ${retStr})`;
         }).join("\n");
       const curList = Object.keys(curSectorPct).sort((a,b)=>curSectorPct[b]-curSectorPct[a]).map(s => `${s} ${curSectorPct[s]}%`).join(", ");
       // 포폴 총수익률
