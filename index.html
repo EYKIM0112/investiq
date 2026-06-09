@@ -2576,6 +2576,42 @@ function InputField({ label, value, onChange, inputMode = "text" }) {
   );
 }
 
+// 외화 예수금 입력 모달 — 통화(USD/JPY) 선택 + 금액 입력
+function FxCashModal({ account, initialCcy = "USD", currentFx = {}, onClose, onSave }) {
+  const [ccy, setCcy] = useState(initialCcy === "JPY" ? "JPY" : "USD");
+  const [amount, setAmount] = useState(String(currentFx[initialCcy === "JPY" ? "JPY" : "USD"] || ""));
+  const pickCcy = (c) => { setCcy(c); setAmount(String(currentFx[c] || "")); };
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", padding:18 }}>
+      <div style={{ width:"100%", maxWidth:360, background:"#0f0f18", border:"1px solid #1e293b", borderRadius:16, padding:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+          <div style={{ fontSize:15, fontWeight:800, color:"#e2e8f0" }}>외화 예수금</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:22, cursor:"pointer", lineHeight:1 }}>×</button>
+        </div>
+        <div style={{ fontSize:13, color:"#94a3b8", marginBottom:16 }}>{account}</div>
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>통화</div>
+        <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+          {["USD","JPY"].map(c => (
+            <button key={c} onClick={()=>pickCcy(c)} style={{
+              flex:1, padding:"11px", borderRadius:8, border:"none", cursor:"pointer", fontSize:14, fontWeight:700,
+              background: ccy===c ? "#4f6ef7" : "#16162a", color: ccy===c ? "#fff" : "#64748b",
+            }}>{c==="USD"?"$ USD":"¥ JPY"}</button>
+          ))}
+        </div>
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>금액 ({ccy})</div>
+        <div style={{ display:"flex", gap:8, marginBottom:18 }}>
+          <input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal" placeholder="0" autoFocus
+            style={{ flex:1, minWidth:0, background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
+          <div style={{ padding:"0 16px", borderRadius:8, background:"#16162a", border:"1px solid #334155", color:"#94a3b8", fontSize:15, fontWeight:700, display:"flex", alignItems:"center", minWidth:44, justifyContent:"center" }}>{ccySymbol(ccy)}</div>
+        </div>
+        <button onClick={()=>onSave(ccy, parseFloat(String(amount).replace(/,/g,""))||0)} style={{
+          width:"100%", padding:"14px", borderRadius:12, border:"none", background:"linear-gradient(135deg,#22d3a0,#0891b2)", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer",
+        }}>저장</button>
+      </div>
+    </div>
+  );
+}
+
 function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash = 0, defaultAccount = "" }) {
   const isBuy  = mode === "buy";
   const isSell = mode === "sell";
@@ -3592,6 +3628,7 @@ function Portfolio() {
   const [autoUpdated, setAutoUpdated] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(null); // "buy" | "sell" | null
   const [cashPrompt, setCashPrompt] = useState(null); // 매수/매도 후 예수금 처리 선택 모달
+  const [fxCashModal, setFxCashModal] = useState(null); // 외화 예수금 입력 모달 { account, ccy } | null
   const [imgPreview, setImgPreview] = useState(null); // { file, url, addToExisting } | null
   const [dragAcc, setDragAcc] = useState(null); // 드래그 중인 계좌 탭
   const [dragDX, setDragDX] = useState(0); // 드래그 중 가로 이동량(px)
@@ -4646,6 +4683,18 @@ function Portfolio() {
           }}
         />
       )}
+      {fxCashModal && (
+        <FxCashModal
+          account={fxCashModal.account}
+          initialCcy={fxCashModal.ccy || "USD"}
+          currentFx={(portfolio?.cashFxByAccount || {})[fxCashModal.account] || {}}
+          onClose={() => setFxCashModal(null)}
+          onSave={(ccy, amt) => {
+            const p = { ...portfolio, cashFxByAccount: setCashFx(portfolio, fxCashModal.account, ccy, amt), updatedAt: new Date().toISOString() };
+            savePortfolio(p); setPortfolio(p); setFxCashModal(null);
+          }}
+        />
+      )}
       {cashPrompt && (() => {
         const { scenario, account, amount, curCash, updated, apply, ccy = "KRW" } = cashPrompt;
         const sym = ccySymbol(ccy);
@@ -5021,10 +5070,8 @@ function Portfolio() {
                       <div style={{ fontSize: 10, color: "#64748b" }}>{viewMode === "all" ? "계좌 합계" : (totalValue > 0 ? `${((krwVal/totalValue)*100).toFixed(1)}%` : "")}</div>
                     </div>
                     {viewMode !== "all" && (
-                      <button onClick={() => {
-                        const input = prompt(`${viewMode} ${ccy} 예수금 입력 (${ccy}):`, getCashFx(portfolio, viewMode, ccy) || 0);
-                        if (input !== null) { const p = { ...portfolio, cashFxByAccount: setCashFx(portfolio, viewMode, ccy, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
-                      }} style={{ background: "none", border: "1px solid #1a2040", borderRadius: 6, color: "#64748b", fontSize: 11, cursor: "pointer", padding: "2px 5px" }}>✎</button>
+                      <button onClick={() => setFxCashModal({ account: viewMode, ccy })}
+                        style={{ background: "none", border: "1px solid #1a2040", borderRadius: 6, color: "#64748b", fontSize: 11, cursor: "pointer", padding: "2px 5px" }}>✎</button>
                     )}
                   </div>
                 </div>
@@ -5039,14 +5086,8 @@ function Portfolio() {
                     if (input !== null) { const p = { ...portfolio, cashByAccount: setCashFor(portfolio, viewMode, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
                   }} style={{ background: "none", border: "none", color: "#4f6ef7", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 원화 현금 잔고 추가</button>
                 )}
-                <button onClick={() => {
-                  const ccyIn = prompt("외화 통화 입력 (USD 또는 JPY):", "USD");
-                  if (ccyIn === null) return;
-                  const c = ccyIn.trim().toUpperCase();
-                  if (c !== "USD" && c !== "JPY") { alert("USD 또는 JPY만 지원합니다."); return; }
-                  const input = prompt(`${viewMode} ${c} 예수금 입력 (${c}):`, getCashFx(portfolio, viewMode, c) || 0);
-                  if (input !== null) { const p = { ...portfolio, cashFxByAccount: setCashFx(portfolio, viewMode, c, parseFloat(String(input).replace(/,/g,""))||0), updatedAt: new Date().toISOString() }; savePortfolio(p); setPortfolio(p); }
-                }} style={{ background: "none", border: "none", color: "#22c55e", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 외화 현금 잔고 추가</button>
+                <button onClick={() => setFxCashModal({ account: viewMode, ccy: "USD" })}
+                  style={{ background: "none", border: "none", color: "#22c55e", fontSize: 11, cursor: "pointer", padding: 0 }}>+ 외화 현금 잔고 추가</button>
               </div>
             )}
 
@@ -5480,11 +5521,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.1.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.1.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.0 변경사항 (통화·예수금)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.1 변경사항</div>
+            <div>· 외화 예수금 추가/수정을 통화 선택 모달로 개선(USD/JPY 버튼 선택 → 금액 입력). 통화 직접 타이핑 방식 제거</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.0 변경사항 (통화·예수금)</div>
             <div>· 외화 종목 평가액 0원 버그 수정 — 평가액·수익금이 환율로 정상 환산됨(USD·JPY 모두)</div>
             <div>· 전체 표시 ₩/$ 토글 — 총평가액 옆 버튼으로 종목 리스트·총자산·원형그래프 통화 전환(외화 보유 시 노출)</div>
             <div>· 종목추가·매수·매도·수정 단가 입력에 통화 선택(외화 종목만 ₩/현지) — 원화로 입력해도 종목 통화로 환산 저장</div>
