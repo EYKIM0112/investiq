@@ -49,7 +49,7 @@ const SECTOR_COLORS = {
   "금융": "#3b82f6", "인프라": "#a855f7", "산업재": "#f97316",
   "엔터·미디어": "#e879f9", "소비재": "#fb923c", "화학·소재": "#2dd4bf",
   "지주사": "#8b5cf6", "REITs": "#fb7185", "배당": "#4ade80",
-  "성장주": "#f472b6", "가치주": "#60a5fa", "신흥국지수": "#facc15", "선진국지수": "#cbd5e1", "가상화폐": "#f7931a",
+  "성장주": "#f472b6", "가치주": "#60a5fa", "신흥국지수": "#facc15", "선진국지수": "#cbd5e1", "가상화폐": "#f7931a", "파킹형": "#7dd3fc",
   "기타": "#6b7280",
 };
 
@@ -1774,7 +1774,7 @@ const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v1";
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
-const SECTOR_THEMES = ["REITs","배당","반도체","원전","전력인프라","친환경에너지","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권"];
+const SECTOR_THEMES = ["REITs","배당","반도체","원전","전력인프라","친환경에너지","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권","파킹형"];
 const SECTOR_THEME_SET = new Set(SECTOR_THEMES);
 // 국가 접두 후보(라벨에서 떼어내 베이스 테마를 얻을 때 사용)
 const COUNTRY_PREFIXES = ["미국","글로벌","중국","일본","인도"];
@@ -1786,6 +1786,10 @@ function withCountry(base, country) {
   if (SELF_CONTAINED_SECTORS.has(base) || COUNTRY_PREFIXES.some(p => base.startsWith(p))) return base;
   return (country || "") + base;
 }
+// 한국 단축코드: 구형 6자리 숫자(069500) + 신형 영숫자 혼합(0193T0). 끝 .KS/.KQ 허용.
+const KR_CODE_RE = /^\d{4}[0-9A-Z]\d$/;
+const krCodeOf = (t) => { const c = String(t || "").replace(/\.(KS|KQ)$/i, ""); return KR_CODE_RE.test(c) ? c : null; };
+const isKrCode = (t) => krCodeOf(t) !== null;
 // 한국 ETF 브랜드 접두 — 이게 붙은 종목은 ETF로 보고 개별주 DB/LLM 폴백을 타지 않음
 const ETF_BRAND_RE = /^(KODEX|TIGER|ACE|RISE|PLUS|KBSTAR|ARIRANG|HANARO|TIMEFOLIO|TIME|SOL|SMART|TREX|KOSEF|KTOP|KIWOOM|WOORI|HEROES|히어로즈|마이다스|파워|FOCUS|마이티|BNK)\s/i;
 
@@ -1848,7 +1852,8 @@ function cascadeTheme(name) {
   // "테크"는 가장 약한 폴백 — 앞에 수식어가 붙으면 위에서 먼저 잡히도록 후순위.
   if (has("소프트웨어","IT","테크","정보기술","핀테크","TECHNOLOGY","SOFTWARE")) return "테크";  // 26
   if (has("코스피","코스닥","나스닥","다우존스","S&P500","S&P","닛케이","NIFTY50","러셀","코스피200","밸류업","NASDAQ","RUSSELL","DOW","TOTAL STOCK","TOTAL MARKET","LARGE-CAP","LARGE CAP","MID-CAP","MIDCAP","SMALL-CAP","SMALL CAP","TOPIX")) return "지수";  // 27
-  if (has("국채","회사채","CD금리","KOFR","단기채","금리액티브","MMF","TREASURY","BOND","AGGREGATE")) return "채권";  // 28
+  if (has("CD금리","KOFR","머니마켓","MMF","SOFR금리","초단기금리")) return "파킹형";  // 27.5 (CD·KOFR·MMF·금리형 = 파킹)
+  if (has("국채","국고채","회사채","통안채","단기채","종합채권","채권","TREASURY","BOND","AGGREGATE")) return "채권";  // 28
   return null;
 }
 
@@ -1923,6 +1928,31 @@ const ETF_DB = {
   "292150":{n:"TIGER 코리아TOP10",c:"KRW",s:"지수"},
   "310970":{n:"TIGER MSCI KOREA TR",c:"KRW",s:"지수"},
   "102110":{n:"TIGER 200",c:"KRW",s:"지수"},
+  // 코스닥·코스피 지수 (레버리지 포함)
+  "229200":{n:"KODEX 코스닥150",c:"KRW",s:"지수"},
+  "233740":{n:"KODEX 코스닥150레버리지",c:"KRW",s:"지수"},
+  "232080":{n:"TIGER 코스닥150",c:"KRW",s:"지수"},
+  "270810":{n:"RISE 코스닥150",c:"KRW",s:"지수"},
+  "122630":{n:"KODEX 레버리지",c:"KRW",s:"지수"},
+  "278530":{n:"KODEX 200TR",c:"KRW",s:"지수"},
+  "148020":{n:"RISE 200",c:"KRW",s:"지수"},
+  "294400":{n:"KIWOOM 200TR",c:"KRW",s:"지수"},
+  "105190":{n:"ACE 200",c:"KRW",s:"지수"},
+  "152100":{n:"PLUS 200",c:"KRW",s:"지수"},
+  "494890":{n:"KODEX 200액티브",c:"KRW",s:"지수"},
+  // 미국지수 (추가)
+  "360200":{n:"ACE 미국S&P500",c:"KRW",s:"미국지수"},
+  "379780":{n:"RISE 미국S&P500",c:"KRW",s:"미국지수"},
+  "449180":{n:"KODEX 미국S&P500(H)",c:"KRW",s:"미국지수"},
+  "367380":{n:"ACE 미국나스닥100",c:"KRW",s:"미국지수"},
+  "426030":{n:"TIME 미국나스닥100액티브",c:"KRW",s:"미국지수"},
+  // 중국·인도 지수
+  "283580":{n:"KODEX 차이나CSI300",c:"KRW",s:"중국지수"},
+  "192090":{n:"TIGER 차이나CSI300",c:"KRW",s:"중국지수"},
+  "371160":{n:"TIGER 차이나항셍테크",c:"KRW",s:"중국지수"},
+  "372330":{n:"KODEX 차이나항셍테크",c:"KRW",s:"중국지수"},
+  "453810":{n:"KODEX 인도Nifty50",c:"KRW",s:"인도지수"},
+  "453870":{n:"TIGER 인도니프티50",c:"KRW",s:"인도지수"},
   // 한국 상장 미국 지수 (통화 KRW지만 대상은 미국 → 미국지수)
   "360750":{n:"TIGER 미국S&P500",c:"KRW",s:"미국지수"},
   "379800":{n:"KODEX 미국S&P500",c:"KRW",s:"미국지수"},
@@ -1935,10 +1965,68 @@ const ETF_DB = {
   "091230":{n:"TIGER 반도체",c:"KRW",s:"반도체"},
   "091160":{n:"KODEX 반도체",c:"KRW",s:"반도체"},
   "471760":{n:"TIGER AI반도체핵심공정",c:"KRW",s:"반도체"},
+  "381180":{n:"TIGER 미국필라델피아반도체나스닥",c:"KRW",s:"미국반도체"},
+  "0167A0":{n:"SOL AI반도체TOP2플러스",c:"KRW",s:"반도체"},
+  "395270":{n:"HANARO Fn K-반도체",c:"KRW",s:"반도체"},
+  "395160":{n:"KODEX AI반도체TOP2플러스",c:"KRW",s:"반도체"},
+  "0162Z0":{n:"RISE 삼성전자SK하이닉스채권혼합50",c:"KRW",s:"반도체"},
+  "0193T0":{n:"KODEX SK하이닉스단일종목레버리지",c:"KRW",s:"반도체"},
+  "0193W0":{n:"KODEX 삼성전자단일종목레버리지",c:"KRW",s:"반도체"},
+  "0195S0":{n:"TIGER SK하이닉스단일종목레버리지",c:"KRW",s:"반도체"},
+  "494310":{n:"KODEX 반도체레버리지",c:"KRW",s:"반도체"},
+  "446770":{n:"ACE 글로벌반도체TOP4 Plus",c:"KRW",s:"반도체"},
+  "488080":{n:"TIGER 반도체TOP10레버리지",c:"KRW",s:"반도체"},
+  "442580":{n:"PLUS 글로벌HBM반도체",c:"KRW",s:"반도체"},
+  "390390":{n:"KODEX 미국반도체",c:"KRW",s:"미국반도체"},
+  "497570":{n:"TIGER 미국필라델피아AI반도체나스닥",c:"KRW",s:"미국반도체"},
+  "448330":{n:"KODEX 삼성전자채권혼합",c:"KRW",s:"반도체"},
+  "0195R0":{n:"TIGER 삼성전자단일종목레버리지",c:"KRW",s:"반도체"},
+  "469150":{n:"ACE AI반도체TOP3+",c:"KRW",s:"반도체"},
+  "0177N0":{n:"KODEX 삼성전자SK하이닉스채권혼합50",c:"KRW",s:"반도체"},
+  "455850":{n:"SOL AI반도체소부장",c:"KRW",s:"반도체"},
+  "423920":{n:"TIGER 미국필라델피아반도체레버리지(합성)",c:"KRW",s:"미국반도체"},
+  "0177R0":{n:"TIGER 반도체TOP10커버드콜액티브",c:"KRW",s:"배당"},
+  "471990":{n:"KODEX AI반도체핵심장비",c:"KRW",s:"반도체"},
+  "396520":{n:"TIGER 차이나반도체FACTSET",c:"KRW",s:"중국반도체"},
+  "474590":{n:"WON 반도체밸류체인액티브",c:"KRW",s:"반도체"},
+  "483320":{n:"ACE 엔비디아밸류체인액티브",c:"KRW",s:"미국반도체"},
+  "388420":{n:"RISE 비메모리반도체액티브",c:"KRW",s:"반도체"},
   // 2차전지·방산
   "305720":{n:"KODEX 2차전지산업",c:"KRW",s:"2차전지·전기차"},
+  "305540":{n:"TIGER 2차전지테마",c:"KRW",s:"2차전지·전기차"},
+  "364980":{n:"TIGER 2차전지TOP10",c:"KRW",s:"2차전지·전기차"},
+  "462330":{n:"KODEX 2차전지산업레버리지",c:"KRW",s:"2차전지·전기차"},
+  "462010":{n:"TIGER 2차전지소재Fn",c:"KRW",s:"2차전지·전기차"},
+  "394670":{n:"TIGER 글로벌리튬&2차전지SOLACTIVE(합성)",c:"KRW",s:"2차전지·전기차"},
+  "422420":{n:"RISE 2차전지액티브",c:"KRW",s:"2차전지·전기차"},
   "463250":{n:"TIGER K방산&우주",c:"KRW",s:"조선·방산·우주항공"},
   "445290":{n:"KODEX K-로봇액티브",c:"KRW",s:"AI·로보틱스"},
+  // 방산·조선·우주항공 (레버리지 포함, 수식어 무시·기반테마)
+  "449450":{n:"PLUS K방산",c:"KRW",s:"조선·방산·우주항공"},
+  "0080G0":{n:"KODEX 방산TOP10",c:"KRW",s:"조선·방산·우주항공"},
+  "478150":{n:"TIME 글로벌우주테크&방산액티브",c:"KRW",s:"조선·방산·우주항공"},
+  "466920":{n:"SOL 조선TOP3플러스",c:"KRW",s:"조선·방산·우주항공"},
+  "139230":{n:"TIGER 200 중공업",c:"KRW",s:"조선·방산·우주항공"},
+  "0115D0":{n:"KODEX 조선TOP10",c:"KRW",s:"조선·방산·우주항공"},
+  "0080Y0":{n:"SOL 조선TOP3플러스레버리지",c:"KRW",s:"조선·방산·우주항공"},
+  "0183J0":{n:"TIGER 미국우주테크",c:"KRW",s:"미국조선·방산·우주항공"},
+  "0167Z0":{n:"KODEX 미국우주항공",c:"KRW",s:"미국조선·방산·우주항공"},
+  "0131V0":{n:"1Q 미국우주항공테크",c:"KRW",s:"미국조선·방산·우주항공"},
+  "421320":{n:"PLUS 우주항공",c:"KRW",s:"조선·방산·우주항공"},
+  "0180V0":{n:"ACE 미국우주테크액티브",c:"KRW",s:"미국조선·방산·우주항공"},
+  "0181L0":{n:"SOL 미국우주항공TOP10",c:"KRW",s:"미국조선·방산·우주항공"},
+  // AI·로보틱스 (휴머노이드·글로벌AI 등)
+  "0190C0":{n:"RISE 현대차고정피지컬AI",c:"KRW",s:"AI·로보틱스"},
+  "0148J0":{n:"TIGER 코리아휴머노이드로봇산업",c:"KRW",s:"AI·로보틱스"},
+  "469070":{n:"RISE AI&로봇",c:"KRW",s:"AI·로보틱스"},
+  "0053L0":{n:"TIGER 차이나휴머노이드로봇",c:"KRW",s:"중국AI·로보틱스"},
+  "0038A0":{n:"KODEX 미국휴머노이드로봇",c:"KRW",s:"미국AI·로보틱스"},
+  "471040":{n:"KoAct 글로벌AI&로봇액티브",c:"KRW",s:"AI·로보틱스"},
+  "0048K0":{n:"KODEX 차이나휴머노이드로봇",c:"KRW",s:"중국AI·로보틱스"},
+  "456600":{n:"TIME 글로벌AI인공지능액티브",c:"KRW",s:"AI·로보틱스"},
+  "466950":{n:"TIGER 글로벌AI액티브",c:"KRW",s:"AI·로보틱스"},
+  "0040Y0":{n:"SOL 팔란티어커버드콜OTM채권혼합",c:"KRW",s:"미국배당"},
+  "0043Y0":{n:"TIME 차이나AI테크액티브",c:"KRW",s:"중국AI·로보틱스"},
   "494670":{n:"TIGER 조선TOP10",c:"KRW",s:"조선·방산·우주항공"},
   // 자동차·헬스케어
   "091180":{n:"KODEX 자동차",c:"KRW",s:"자동차"},
@@ -1951,11 +2039,62 @@ const ETF_DB = {
   // 원전·전력·채권
   "434730":{n:"HANARO 원자력iSelect",c:"KRW",s:"원전"},
   "491820":{n:"HANARO 전력설비투자",c:"KRW",s:"전력인프라"},
-  "459580":{n:"KODEX CD금리액티브(합성)",c:"KRW",s:"채권"},
+  "459580":{n:"KODEX CD금리액티브(합성)",c:"KRW",s:"파킹형"},
   // 배당
   "466940":{n:"TIGER 은행고배당TOP10",c:"KRW",s:"배당"},
   "482730":{n:"TIGER 미국S&P500타겟데일리커버드콜",c:"KRW",s:"미국배당"},
   "458730":{n:"TIGER 미국배당다우존스",c:"KRW",s:"미국배당"},
+  // 배당 (커버드콜·고배당. 미국 자산은 미국배당)
+  "498400":{n:"KODEX 200타겟위클리커버드콜",c:"KRW",s:"배당"},
+  "161510":{n:"PLUS 고배당주",c:"KRW",s:"배당"},
+  "486290":{n:"TIGER 미국나스닥100타겟데일리커버드콜",c:"KRW",s:"미국배당"},
+  "472150":{n:"TIGER 배당커버드콜액티브",c:"KRW",s:"배당"},
+  "441640":{n:"KODEX 미국배당커버드콜액티브",c:"KRW",s:"미국배당"},
+  "446720":{n:"SOL 미국배당다우존스",c:"KRW",s:"미국배당"},
+  "441800":{n:"TIME Korea플러스배당액티브",c:"KRW",s:"배당"},
+  "402970":{n:"ACE 미국배당다우존스",c:"KRW",s:"미국배당"},
+  "475720":{n:"RISE 200위클리커버드콜",c:"KRW",s:"배당"},
+  "494300":{n:"KODEX 미국나스닥100데일리커버드콜OTM",c:"KRW",s:"미국배당"},
+  "490590":{n:"RISE 미국AI밸류체인데일리고정커버드콜",c:"KRW",s:"미국배당"},
+  "498410":{n:"KODEX 금융고배당TOP10타겟위클리커버드콜",c:"KRW",s:"배당"},
+  "458760":{n:"TIGER 미국배당다우존스타겟커버드콜2호",c:"KRW",s:"미국배당"},
+  "0167B0":{n:"SOL 200타겟위클리커버드콜",c:"KRW",s:"배당"},
+  "0105E0":{n:"SOL 코리아고배당",c:"KRW",s:"배당"},
+  "489250":{n:"KODEX 미국배당다우존스",c:"KRW",s:"미국배당"},
+  "483280":{n:"KODEX 미국AI테크TOP10타겟커버드콜",c:"KRW",s:"미국배당"},
+  "474220":{n:"TIGER 미국테크TOP10타겟커버드콜",c:"KRW",s:"미국배당"},
+  "491620":{n:"RISE 미국테크100데일리고정커버드콜",c:"KRW",s:"미국배당"},
+  "0144L0":{n:"KODEX 미국성장커버드콜액티브",c:"KRW",s:"미국배당"},
+  "0052D0":{n:"TIGER 코리아배당다우존스",c:"KRW",s:"배당"},
+  "279530":{n:"KODEX 고배당주",c:"KRW",s:"배당"},
+  "441680":{n:"TIGER 미국나스닥100커버드콜(합성)",c:"KRW",s:"미국배당"},
+  "484880":{n:"SOL 금융지주플러스고배당",c:"KRW",s:"배당"},
+  // 채권 (종합·단기·통안·국고·회사채. 미국국채=미국채권, 국채커버드콜=미국배당)
+  "273130":{n:"KODEX 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
+  "385540":{n:"RISE 종합채권(A-이상)액티브",c:"KRW",s:"채권"},
+  "214980":{n:"KODEX 단기채권PLUS",c:"KRW",s:"채권"},
+  "453850":{n:"ACE 미국30년국채액티브(H)",c:"KRW",s:"미국채권"},
+  "157450":{n:"TIGER 단기통안채",c:"KRW",s:"채권"},
+  "436140":{n:"SOL 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
+  "0139F0":{n:"TIGER 12월자동연장금융채(AA-이상)액티브",c:"KRW",s:"채권"},
+  "0117L0":{n:"KODEX 26-12 금융채(AA-이상)액티브",c:"KRW",s:"채권"},
+  "356540":{n:"ACE 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
+  "451540":{n:"TIGER 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
+  "385560":{n:"RISE KIS국고채30Enhanced",c:"KRW",s:"채권"},
+  "476550":{n:"TIGER 미국30년국채커버드콜액티브(H)",c:"KRW",s:"미국배당"},
+  "481060":{n:"KODEX 미국30년국채타겟커버드콜(합성 H)",c:"KRW",s:"미국배당"},
+  "153130":{n:"KODEX 단기채권",c:"KRW",s:"채권"},
+  "272580":{n:"TIGER 단기채권액티브",c:"KRW",s:"채권"},
+  "484790":{n:"KODEX 미국30년국채액티브(H)",c:"KRW",s:"미국채권"},
+  "365780":{n:"ACE 국고채10년",c:"KRW",s:"채권"},
+  "329750":{n:"TIGER 미국달러단기채권액티브",c:"KRW",s:"미국채권"},
+  "114260":{n:"KODEX 국고채3년",c:"KRW",s:"채권"},
+  "438330":{n:"TIGER 우량회사채액티브",c:"KRW",s:"채권"},
+  "471230":{n:"KODEX 국고채10년액티브",c:"KRW",s:"채권"},
+  "0007F0":{n:"KODEX 27-12 회사채(AA-이상)액티브",c:"KRW",s:"채권"},
+  "473290":{n:"KODEX 26-12 회사채(AA-이상)액티브",c:"KRW",s:"채권"},
+  "451000":{n:"PLUS 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
+  "458250":{n:"TIGER 미국30년국채스트립액티브(합성 H)",c:"KRW",s:"미국채권"},
 };
 // ETF DB 조회: 티커(미국 알파벳 / 한국 6자리) 우선, 없으면 이름 정확일치
 function lookupETF(ticker, name) {
@@ -1968,6 +2107,28 @@ function lookupETF(ticker, name) {
     for (const k in ETF_DB) { if (ETF_DB[k].n === nm) return ETF_DB[k]; }
   }
   return null;
+}
+// ETF_DB 항목 → 검색결과 형식(야후/네이버 결과와 동일 형태). exchange로 KRX/JPX/미국 구분.
+function etfToResult(code, e) {
+  const ex = e.c === "KRW" ? "KRX" : (e.c === "JPY" ? "JPX" : "NMS");
+  return { symbol: code, shortname: e.n, longname: e.n, name: e.n, quoteType: "ETF", exchange: ex, typeDisp: "ETF", _fromDB: true, _ccy: e.c };
+}
+// 검색어(티커/코드/이름)로 ETF_DB 조회. 결과 있으면 검색 API를 건너뛸 수 있음.
+function searchETFDB(query) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const qU = q.toUpperCase().replace(/\.(KS|KQ|T)$/i, "");
+  const seen = new Set(), out = [];
+  if (ETF_DB[qU]) { out.push(etfToResult(qU, ETF_DB[qU])); seen.add(qU); }
+  const qNorm = q.replace(/\s+/g, "").toLowerCase();
+  if (qNorm.length >= 2) {
+    for (const k in ETF_DB) {
+      if (seen.has(k)) continue;
+      const nNorm = ETF_DB[k].n.replace(/\s+/g, "").toLowerCase();
+      if (nNorm.includes(qNorm)) { out.push(etfToResult(k, ETF_DB[k])); seen.add(k); }
+    }
+  }
+  return out;
 }
 
 // ETF명/종목명에 박힌 대표 기업명 → (국가 c, 테마 s). 사용자 승인한 최소 목록.
@@ -2320,6 +2481,9 @@ function StockSearchRow({ country = "KR", onSelect }) {
     const query = q.trim();
     if (!query) return;
     setSearching(true); setResults([]);
+    // ETF_DB 우선 — DB에 있으면 검색 API 스킵
+    const _db = searchETFDB(query).filter(h => !country || country==="ALL" || (country==="KR"&&h._ccy==="KRW") || (country==="US"&&h._ccy==="USD") || (country==="JP"&&h._ccy==="JPY"));
+    if (_db.length > 0) { setResults(_db.slice(0,6)); setSearching(false); return; }
     const ETF_BRANDS = ["KODEX","TIGER","ACE","RISE","PLUS","KBSTAR","ARIRANG","HANARO","TIMEFOLIO","SOL","SMART","TREX","KOSEF","KTOP"];
     let found = [];
     try {
@@ -2781,6 +2945,9 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
     if (!q || q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
     const qTrimmed = q.trim();
+    // ETF_DB 우선 — DB에 있으면 검색 API 스킵
+    const _db = searchETFDB(qTrimmed).filter(h => !ctry || ctry==="ALL" || (ctry==="KR"&&h._ccy==="KRW") || (ctry==="US"&&h._ccy==="USD") || (ctry==="JP"&&h._ccy==="JPY"));
+    if (_db.length > 0) { setSearchResults(_db.slice(0,6)); setSearching(false); return; }
     let results = [];
     const searchYahoo = async (query, filterFn) => {
       const base = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
@@ -3267,7 +3434,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
     });
   };
 
-  const SECTORS = ["기타","지수","신흥국지수","선진국지수","채권","반도체","AI·로보틱스","미국빅테크","테크","성장주","가치주","가상화폐","전력인프라","원전","친환경에너지","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
+  const SECTORS = ["기타","지수","신흥국지수","선진국지수","채권","파킹형","반도체","AI·로보틱스","미국빅테크","테크","성장주","가치주","가상화폐","전력인프라","원전","친환경에너지","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
@@ -5648,11 +5815,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.2</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.1 변경사항 (한국 ETF DB)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.2 변경사항 (ETF DB 확장)</div>
+            <div>· 한국 ETF 127종 추가 (지수·반도체·2차전지·방산조선우주·AI로봇·배당·채권) — 총 207종</div>
+            <div>· 파킹형 섹터 신규 (CD·KOFR·MMF·금리형). 단기채·통안채·국고채는 채권</div>
+            <div>· 한국 영문 혼합 단축코드(예: 0193T0) 지원, 레버리지·인버스는 기반 테마로 분류</div>
+            <div>· 검색 시 DB 등록 종목은 네이버/야후 API 스킵</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.1 변경사항 (한국 ETF DB)</div>
             <div>· 한국 ETF 30종 추가 — 순자산 상위 + 테마별(반도체·2차전지·방산·조선·자동차·헬스케어·금융·리츠·원전·전력·골드·미국지수·미국배당 등). 모든 코드 공식·교차검증</div>
             <div>· 한국 상장 미국 ETF(TIGER 미국S&P500 등)는 통화가 원화여도 "미국지수"로 정확 분류</div>
             <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.0 변경사항 (ETF 섹터 분류)</div>
