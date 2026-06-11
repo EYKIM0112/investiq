@@ -49,6 +49,7 @@ const SECTOR_COLORS = {
   "금융": "#3b82f6", "인프라": "#a855f7", "산업재": "#f97316",
   "엔터·미디어": "#e879f9", "소비재": "#fb923c", "화학·소재": "#2dd4bf",
   "지주사": "#8b5cf6", "REITs": "#fb7185", "배당": "#4ade80",
+  "성장주": "#f472b6", "가치주": "#60a5fa", "신흥국지수": "#facc15", "선진국지수": "#cbd5e1", "가상화폐": "#f7931a",
   "기타": "#6b7280",
 };
 
@@ -1773,10 +1774,18 @@ const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v1";
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
-const SECTOR_THEMES = ["REITs","배당","반도체","원전","전력인프라","친환경에너지","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","지수","채권"];
+const SECTOR_THEMES = ["REITs","배당","반도체","원전","전력인프라","친환경에너지","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권"];
 const SECTOR_THEME_SET = new Set(SECTOR_THEMES);
 // 국가 접두 후보(라벨에서 떼어내 베이스 테마를 얻을 때 사용)
 const COUNTRY_PREFIXES = ["미국","글로벌","중국","일본","인도"];
+// 국가 접두를 붙이지 않는 자체완결 섹터(이름 자체에 지역/성격이 박혀 있거나 국적 개념이 약함)
+const SELF_CONTAINED_SECTORS = new Set(["미국빅테크","가상화폐"]);
+// 베이스 테마에 국가 접두를 적절히 적용
+function withCountry(base, country) {
+  if (!base || base === "기타") return "기타";
+  if (SELF_CONTAINED_SECTORS.has(base) || COUNTRY_PREFIXES.some(p => base.startsWith(p))) return base;
+  return (country || "") + base;
+}
 // 한국 ETF 브랜드 접두 — 이게 붙은 종목은 ETF로 보고 개별주 DB/LLM 폴백을 타지 않음
 const ETF_BRAND_RE = /^(KODEX|TIGER|ACE|RISE|PLUS|KBSTAR|ARIRANG|HANARO|TIMEFOLIO|TIME|SOL|SMART|TREX|KOSEF|KTOP|KIWOOM|WOORI|HEROES|히어로즈|마이다스|파워|FOCUS|마이티|BNK)\s/i;
 
@@ -1808,31 +1817,38 @@ function detectCountry(name) {
 function cascadeTheme(name) {
   const n = (name || "").toUpperCase();
   const has = (...kw) => kw.some(k => n.includes(k.toUpperCase()));
-  if (has("부동산","리츠","REIT")) return "REITs";                                  // 1
-  if (has("배당","고배당","커버드콜")) return "배당";                                // 2
-  if (has("반도체","SEMICONDUCTOR")) return "반도체";                               // 3
-  if (has("원자력","원전","SMR","우라늄")) return "원전";                            // 4
-  if (has("전력","전력인프라","데이터센터","ESS","유틸리티")) return "전력인프라";     // 5
-  if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","그린")) return "친환경에너지"; // 6
-  if (has("에너지","원유","오일","가스")) return "에너지";                            // 7
-  if (has("금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철강","철광석","광업","광산","원자재")) return "원자재"; // 8
-  if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차"; // 9
-  if (has("자동차")) return "자동차";                                                // 10
-  if (has("AI","인공지능","로봇","로보틱스","로벗","피지컬AI")) return "AI·로보틱스";   // 11
-  if (has("빅테크","미국테크TOP10")) return "미국빅테크";  // 12 (ETF 전용, 항상 미국)
-  if (has("조선","방산","우주항공","우주","항공","드론","방위")) return "조선·방산·우주항공";  // 13
-  if (has("헬스케어","바이오","제약","바이오시밀러","생명과학","의료기기")) return "헬스케어";  // 14
-  if (has("금융","은행","증권","보험","카드")) return "금융";  // 15
-  if (has("인프라","건설","중장비","건설장비","토목","SOC","통신")) return "인프라";  // 16
-  if (has("산업재","운송","물류")) return "산업재";  // 17
-  if (has("엔터","엔터테인먼트","미디어","영화","드라마","콘텐츠","방송","언론","게임")) return "엔터·미디어";  // 18
-  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어")) return "소비재";  // 19
-  if (has("화학","소재")) return "화학·소재";  // 20
-  if (has("지주")) return "지주사";  // 21
-  // "테크"는 가장 약한 폴백 — 앞에 수식어(우주/방산/AI/반도체 등)가 붙으면 위에서 먼저 잡히도록 후순위로 둠
-  if (has("소프트웨어","IT","테크","정보기술","핀테크")) return "테크";  // 22
-  if (has("코스피","코스닥","나스닥","다우존스","S&P500","S&P","닛케이","NIFTY50","러셀","코스피200","밸류업")) return "지수";  // 23
-  if (has("국채","회사채","CD금리","KOFR","단기채","금리액티브","MMF")) return "채권";  // 24
+  if (has("비트코인","이더리움","리플","가상화폐","암호화폐","코인","BITCOIN","ETHEREUM","CRYPTO","BLOCKCHAIN","XRP","SOLANA"," BTC"," ETH")) return "가상화폐";  // 0 (코인 ETF는 DB 미등록, 스샷/검색 인식분만)
+  if (has("부동산","리츠","REIT","REAL ESTATE")) return "REITs";  // 1
+  if (has("배당","고배당","커버드콜","DIVIDEND")) return "배당";  // 2
+  if (has("반도체","SEMICONDUCTOR")) return "반도체";  // 3
+  if (has("원자력","원전","SMR","우라늄","URANIUM","NUCLEAR")) return "원전";  // 4
+  if (has("전력","전력인프라","데이터센터","ESS","유틸리티","UTILITIES","UTILITY")) return "전력인프라";  // 5
+  if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","그린","CLEAN ENERGY","SOLAR","RENEWABLE")) return "친환경에너지";  // 6
+  if (has("에너지","원유","오일","가스","ENERGY","OIL")) return "에너지";  // 7
+  if (has("금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철강","철광석","광업","광산","원자재")) return "원자재";  // 8
+  if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차";  // 9
+  if (has("자동차","AUTOMOBILE")) return "자동차";  // 10
+  if (has("AI","인공지능","로봇","로보틱스","로벗","피지컬AI","ROBOTICS","ARTIFICIAL INTELLIGENCE")) return "AI·로보틱스";  // 11
+  if (has("빅테크","미국테크TOP10","BIG TECH")) return "미국빅테크";  // 12 (ETF 전용, 항상 미국)
+  if (has("조선","방산","우주항공","우주","항공","드론","방위","DEFENSE","AEROSPACE")) return "조선·방산·우주항공";  // 13
+  if (has("헬스케어","바이오","제약","바이오시밀러","생명과학","의료기기","HEALTH CARE","HEALTHCARE","BIOTECH","PHARMA","MEDICAL")) return "헬스케어";  // 14
+  if (has("금융","은행","증권","보험","카드","FINANCIAL","BANK")) return "금융";  // 15
+  if (has("인프라","건설","중장비","건설장비","토목","SOC","통신","INFRASTRUCTURE","TELECOM")) return "인프라";  // 16
+  if (has("산업재","운송","물류","INDUSTRIAL")) return "산업재";  // 17
+  if (has("엔터","엔터테인먼트","미디어","영화","드라마","콘텐츠","방송","언론","게임","MEDIA","ENTERTAINMENT","COMMUNICATION","GAMING")) return "엔터·미디어";  // 18
+  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어","CONSUMER","STAPLES","DISCRETIONARY")) return "소비재";  // 19
+  if (has("화학","소재","MATERIALS","CHEMICAL")) return "화학·소재";  // 20
+  if (has("지주","HOLDING")) return "지주사";  // 21
+  // 성장주·가치주는 ETF 전용 팩터. 지수보다 먼저 잡아 "S&P500 Growth"→성장주가 되게 함.
+  if (has("성장주","성장","GROWTH")) return "성장주";  // 22 (한글 ETF는 "...성장"으로 표기)
+  if (has("가치주","가치","VALUE")) return "가치주";  // 23 (한글 ETF는 "...가치"로 표기)
+  // 지역 묶음 지수: 특정국이 아닌 신흥국/선진국 묶음.
+  if (has("신흥국","이머징","EMERGING")) return "신흥국지수";  // 24
+  if (has("선진국","DEVELOPED","EAFE")) return "선진국지수";  // 25
+  // "테크"는 가장 약한 폴백 — 앞에 수식어가 붙으면 위에서 먼저 잡히도록 후순위.
+  if (has("소프트웨어","IT","테크","정보기술","핀테크","TECHNOLOGY","SOFTWARE")) return "테크";  // 26
+  if (has("코스피","코스닥","나스닥","다우존스","S&P500","S&P","닛케이","NIFTY50","러셀","코스피200","밸류업","NASDAQ","RUSSELL","DOW","TOTAL STOCK","TOTAL MARKET","LARGE-CAP","LARGE CAP","MID-CAP","MIDCAP","SMALL-CAP","SMALL CAP","TOPIX")) return "지수";  // 27
+  if (has("국채","회사채","CD금리","KOFR","단기채","금리액티브","MMF","TREASURY","BOND","AGGREGATE")) return "채권";  // 28
   return null;
 }
 
@@ -1842,6 +1858,115 @@ function lookupStockDB(ticker) {
   if (STOCK_SECTOR_DB[ticker]) return STOCK_SECTOR_DB[ticker];
   const m = String(ticker).match(/^(\d{6})(?:\.(KS|KQ))?$/);
   if (m && STOCK_SECTOR_DB[m[1]]) return STOCK_SECTOR_DB[m[1]];
+  return null;
+}
+
+// ===== ETF DB — 티커→(이름 n, 통화 c, 섹터 s). 국가/통화 자동 + 검색 API 스킵용. =====
+// s는 공식분류가 아니라 우리 키워드 규칙(cascadeTheme)으로 뽑은 값. c(통화)로 국가 자동: USD→미국, KRW→국내(네이버), JPY→일본.
+// 성장주/가치주/신흥국지수/선진국지수는 국가 접두가 붙음(미국성장주, 한국성장주 등) — withCountry가 처리.
+// 한국 ETF는 6자리 코드 정확성이 생명 → 교차검증된 것만 등재(미검증 코드 금지). 추가는 아래에 한 줄씩.
+const ETF_DB = {
+  // --- 미국 ETF (USD) : AUM 상위 + 테마 가중 ---
+  "VOO":{n:"Vanguard S&P 500 ETF",c:"USD",s:"미국지수"},
+  "IVV":{n:"iShares Core S&P 500 ETF",c:"USD",s:"미국지수"},
+  "SPY":{n:"SPDR S&P 500 ETF Trust",c:"USD",s:"미국지수"},
+  "QQQ":{n:"Invesco QQQ Trust",c:"USD",s:"미국지수"},
+  "QQQM":{n:"Invesco NASDAQ 100 ETF",c:"USD",s:"미국지수"},
+  "VTI":{n:"Vanguard Total Stock Market ETF",c:"USD",s:"미국지수"},
+  "RSP":{n:"Invesco S&P 500 Equal Weight ETF",c:"USD",s:"미국지수"},
+  "IJH":{n:"iShares Core S&P Mid-Cap ETF",c:"USD",s:"미국지수"},
+  "IWM":{n:"iShares Russell 2000 ETF",c:"USD",s:"미국지수"},
+  "DIA":{n:"SPDR Dow Jones Industrial Average ETF",c:"USD",s:"미국지수"},
+  "VUG":{n:"Vanguard Growth ETF",c:"USD",s:"미국성장주"},
+  "IWF":{n:"iShares Russell 1000 Growth ETF",c:"USD",s:"미국성장주"},
+  "SCHG":{n:"Schwab U.S. Large-Cap Growth ETF",c:"USD",s:"미국성장주"},
+  "SPYG":{n:"SPDR Portfolio S&P 500 Growth ETF",c:"USD",s:"미국성장주"},
+  "VTV":{n:"Vanguard Value ETF",c:"USD",s:"미국가치주"},
+  "IWD":{n:"iShares Russell 1000 Value ETF",c:"USD",s:"미국가치주"},
+  "IVE":{n:"iShares S&P 500 Value ETF",c:"USD",s:"미국가치주"},
+  "VEA":{n:"Vanguard FTSE Developed Markets ETF",c:"USD",s:"미국선진국지수"},
+  "IEFA":{n:"iShares Core MSCI EAFE ETF",c:"USD",s:"미국선진국지수"},
+  "EFA":{n:"iShares MSCI EAFE ETF",c:"USD",s:"미국선진국지수"},
+  "VWO":{n:"Vanguard FTSE Emerging Markets ETF",c:"USD",s:"미국신흥국지수"},
+  "IEMG":{n:"iShares Core MSCI Emerging Markets ETF",c:"USD",s:"미국신흥국지수"},
+  "SCHD":{n:"Schwab US Dividend Equity ETF",c:"USD",s:"미국배당"},
+  "VYM":{n:"Vanguard High Dividend Yield ETF",c:"USD",s:"미국배당"},
+  "VIG":{n:"Vanguard Dividend Appreciation ETF",c:"USD",s:"미국배당"},
+  "DGRO":{n:"iShares Core Dividend Growth ETF",c:"USD",s:"미국배당"},
+  "SMH":{n:"VanEck Semiconductor ETF",c:"USD",s:"미국반도체"},
+  "SOXX":{n:"iShares Semiconductor ETF",c:"USD",s:"미국반도체"},
+  "VGT":{n:"Vanguard Information Technology ETF",c:"USD",s:"미국테크"},
+  "XLK":{n:"Technology Select Sector SPDR Fund",c:"USD",s:"미국테크"},
+  "XLV":{n:"Health Care Select Sector SPDR Fund",c:"USD",s:"미국헬스케어"},
+  "XLF":{n:"Financial Select Sector SPDR Fund",c:"USD",s:"미국금융"},
+  "XLE":{n:"Energy Select Sector SPDR Fund",c:"USD",s:"미국에너지"},
+  "VNQ":{n:"Vanguard Real Estate ETF",c:"USD",s:"미국REITs"},
+  "XLRE":{n:"Real Estate Select Sector SPDR Fund",c:"USD",s:"미국REITs"},
+  "GLD":{n:"SPDR Gold Shares",c:"USD",s:"미국원자재"},
+  "IAU":{n:"iShares Gold Trust",c:"USD",s:"미국원자재"},
+  "SLV":{n:"iShares Silver Trust",c:"USD",s:"미국원자재"},
+  "XLI":{n:"Industrial Select Sector SPDR Fund",c:"USD",s:"미국산업재"},
+  "XLP":{n:"Consumer Staples Select Sector SPDR Fund",c:"USD",s:"미국소비재"},
+  "XLY":{n:"Consumer Discretionary Select Sector SPDR Fund",c:"USD",s:"미국소비재"},
+  "XLU":{n:"Utilities Select Sector SPDR Fund",c:"USD",s:"미국전력인프라"},
+  "XLB":{n:"Materials Select Sector SPDR Fund",c:"USD",s:"미국화학·소재"},
+  "BND":{n:"Vanguard Total Bond Market ETF",c:"USD",s:"미국채권"},
+  "AGG":{n:"iShares Core U.S. Aggregate Bond ETF",c:"USD",s:"미국채권"},
+  "TLT":{n:"iShares 20+ Year Treasury Bond ETF",c:"USD",s:"미국채권"},
+  "SGOV":{n:"iShares 0-3 Month Treasury Bond ETF",c:"USD",s:"미국채권"},
+  "IEF":{n:"iShares 7-10 Year Treasury Bond ETF",c:"USD",s:"미국채권"},
+  "VT":{n:"Vanguard Total World Stock ETF",c:"USD",s:"기타"},
+  "QUAL":{n:"iShares MSCI USA Quality Factor ETF",c:"USD",s:"기타"},
+  // --- 한국 ETF (KRW) : 순자산 상위 + 테마별 대표. 코드는 공식·교차검증된 것만. s는 국가포함 최종섹터. ---
+  // 국내 지수
+  "069500":{n:"KODEX 200",c:"KRW",s:"지수"},
+  "292150":{n:"TIGER 코리아TOP10",c:"KRW",s:"지수"},
+  "310970":{n:"TIGER MSCI KOREA TR",c:"KRW",s:"지수"},
+  "102110":{n:"TIGER 200",c:"KRW",s:"지수"},
+  // 한국 상장 미국 지수 (통화 KRW지만 대상은 미국 → 미국지수)
+  "360750":{n:"TIGER 미국S&P500",c:"KRW",s:"미국지수"},
+  "379800":{n:"KODEX 미국S&P500",c:"KRW",s:"미국지수"},
+  "379810":{n:"KODEX 미국나스닥100",c:"KRW",s:"미국지수"},
+  "448290":{n:"TIGER 미국S&P500(H)",c:"KRW",s:"미국지수"},
+  "448300":{n:"TIGER 미국나스닥100TR(H)",c:"KRW",s:"미국지수"},
+  "133690":{n:"TIGER 미국나스닥100",c:"KRW",s:"미국지수"},
+  // 반도체
+  "396500":{n:"TIGER 반도체TOP10",c:"KRW",s:"반도체"},
+  "091230":{n:"TIGER 반도체",c:"KRW",s:"반도체"},
+  "091160":{n:"KODEX 반도체",c:"KRW",s:"반도체"},
+  "471760":{n:"TIGER AI반도체핵심공정",c:"KRW",s:"반도체"},
+  // 2차전지·방산
+  "305720":{n:"KODEX 2차전지산업",c:"KRW",s:"2차전지·전기차"},
+  "463250":{n:"TIGER K방산&우주",c:"KRW",s:"조선·방산·우주항공"},
+  "445290":{n:"KODEX K-로봇액티브",c:"KRW",s:"AI·로보틱스"},
+  "494670":{n:"TIGER 조선TOP10",c:"KRW",s:"조선·방산·우주항공"},
+  // 자동차·헬스케어
+  "091180":{n:"KODEX 자동차",c:"KRW",s:"자동차"},
+  "143860":{n:"TIGER 헬스케어",c:"KRW",s:"헬스케어"},
+  "091170":{n:"KODEX 은행",c:"KRW",s:"금융"},
+  "329200":{n:"TIGER 리츠부동산인프라",c:"KRW",s:"REITs"},
+  // 원자재·미국빅테크
+  "132030":{n:"KODEX 골드선물(H)",c:"KRW",s:"원자재"},
+  "381170":{n:"TIGER 미국테크TOP10 INDXX",c:"KRW",s:"미국빅테크"},
+  // 원전·전력·채권
+  "434730":{n:"HANARO 원자력iSelect",c:"KRW",s:"원전"},
+  "491820":{n:"HANARO 전력설비투자",c:"KRW",s:"전력인프라"},
+  "459580":{n:"KODEX CD금리액티브(합성)",c:"KRW",s:"채권"},
+  // 배당
+  "466940":{n:"TIGER 은행고배당TOP10",c:"KRW",s:"배당"},
+  "482730":{n:"TIGER 미국S&P500타겟데일리커버드콜",c:"KRW",s:"미국배당"},
+  "458730":{n:"TIGER 미국배당다우존스",c:"KRW",s:"미국배당"},
+};
+// ETF DB 조회: 티커(미국 알파벳 / 한국 6자리) 우선, 없으면 이름 정확일치
+function lookupETF(ticker, name) {
+  if (ticker) {
+    const t = String(ticker).toUpperCase().replace(/\.(KS|KQ|T)$/i, "");
+    if (ETF_DB[t]) return ETF_DB[t];
+  }
+  if (name) {
+    const nm = String(name).trim();
+    for (const k in ETF_DB) { if (ETF_DB[k].n === nm) return ETF_DB[k]; }
+  }
   return null;
 }
 
@@ -1873,35 +1998,35 @@ function lookupCompany(name) {
 function classifyOne(sector, name, ticker, currency) {
   const raw = name || "";
   if (isExplicitOther(raw)) return "기타";
-  // 1. ETF 키워드 캐스케이드
+  // 1. ETF DB (티커/이름) — s에 국가 포함 최종 섹터 저장. 통화 c는 조회 라우팅용(KRW→네이버, USD→야후).
+  const etf = lookupETF(ticker, raw);
+  if (etf) return etf.s;
+  // 2. ETF 키워드 캐스케이드 (DB 미등록 종목)
   const theme = cascadeTheme(raw);
-  if (theme) {
-    if (COUNTRY_PREFIXES.some(p => theme.startsWith(p))) return theme; // 미국빅테크 등 이미 국가 포함
-    return detectCountry(raw) + theme;
-  }
-  // 2. ETF명/종목명에 박힌 대표 기업명(삼성전자→국내 반도체, 테슬라→미국 2차전지·전기차, 삼성그룹→기타 등)
+  if (theme) return withCountry(theme, detectCountry(raw));
+  // 3. ETF명/종목명에 박힌 대표 기업명(삼성전자→국내 반도체, 테슬라→미국 2차전지·전기차, 삼성그룹→기타 등)
   const comp = lookupCompany(raw);
   if (comp) return comp.s === "기타" ? "기타" : (comp.c + comp.s);
-  // 3. 캐스케이드·기업명 미스 → 개별주 경로. ETF면 그대로 기타(DB/LLM 안 탐)
+  // 4. 캐스케이드·기업명 미스 → 개별주 경로. ETF면 그대로 기타(DB/LLM 안 탐)
   if (isETFName(raw)) return "기타";
-  // 2a. 개별주 DB (국가는 거래소, 없으면 통화)
+  // 4a. 개별주 DB (국가는 거래소, 없으면 통화)
   const db = lookupStockDB(ticker);
   if (db) {
     const c = (EXCHANGE_COUNTRY[db.x] != null) ? EXCHANGE_COUNTRY[db.x] : countryFromCurrency(currency);
-    return c + db.s;
+    return withCountry(db.s, c);
   }
-  // 2b. 사용자가 직접 고른 새 테마(국가 접두 떼고 24개 중 하나)면 존중
+  // 4b. 사용자가 직접 고른 새 테마(국가 접두 떼고 매칭)면 존중
   const userBase = stripCountry(sector || "");
   if (sector && SECTOR_THEME_SET.has(userBase)) {
-    return COUNTRY_PREFIXES.some(p => sector.startsWith(p)) ? sector : (countryFromCurrency(currency) + userBase);
+    return COUNTRY_PREFIXES.some(p => sector.startsWith(p)) ? sector : withCountry(userBase, countryFromCurrency(currency));
   }
-  // 2c. 캐싱 LLM 결과
+  // 4c. 캐싱 LLM 결과
   const cached = STOCK_LLM_CACHE[ticker] || STOCK_LLM_CACHE[raw];
   if (cached && cached.s) {
     const c = (cached.c != null) ? cached.c : countryFromCurrency(currency);
-    return c + cached.s;
+    return withCountry(cached.s, c);
   }
-  // 2d. 미분류 → 기타(백그라운드 LLM이 채움)
+  // 4d. 미분류 → 기타(백그라운드 LLM이 채움)
   return "기타";
 }
 
@@ -3142,7 +3267,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
     });
   };
 
-  const SECTORS = ["기타","지수","채권","반도체","AI·로보틱스","미국빅테크","테크","전력인프라","원전","친환경에너지","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
+  const SECTORS = ["기타","지수","신흥국지수","선진국지수","채권","반도체","AI·로보틱스","미국빅테크","테크","성장주","가치주","가상화폐","전력인프라","원전","친환경에너지","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
@@ -4761,7 +4886,9 @@ function Portfolio() {
               } else {
                 isNew = true;
                 const newCcy = trade.currency || "KRW";
-                newHoldings = [...portfolio.holdings, { name:trade.name, ticker:"", shares:trade.shares, avg_price:trade.price, currency:newCcy, sector:getSectorLabel("", trade.name, "", newCcy), account:acct }];
+                const yt = trade.yahooTicker || "";
+                const tk = yt.replace(/\.(KS|KQ)$/, "");
+                newHoldings = [...portfolio.holdings, { name:trade.name, ticker:tk, yahoo_ticker:yt||null, shares:trade.shares, avg_price:trade.price, currency:newCcy, sector:getSectorLabel("", trade.name, tk, newCcy), account:acct }];
               }
               updated = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
               baseMsg = `✅ 매수 반영: ${trade.name} ${trade.shares}주`;
@@ -5521,11 +5648,21 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.1.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.1 변경사항</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.1 변경사항 (한국 ETF DB)</div>
+            <div>· 한국 ETF 30종 추가 — 순자산 상위 + 테마별(반도체·2차전지·방산·조선·자동차·헬스케어·금융·리츠·원전·전력·골드·미국지수·미국배당 등). 모든 코드 공식·교차검증</div>
+            <div>· 한국 상장 미국 ETF(TIGER 미국S&P500 등)는 통화가 원화여도 "미국지수"로 정확 분류</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.0 변경사항 (ETF 섹터 분류)</div>
+            <div>· ETF 분류 DB 도입 — 미국 주요 ETF 50종(VOO·QQQ·SCHD·SMH 등)을 우리 섹터 체계로 등록. 영문 ETF명도 정확히 분류</div>
+            <div>· 섹터 키워드 영문 보강 — Semiconductor→반도체, Dividend→배당, Treasury→채권 등 한·영 동시 인식</div>
+            <div>· 신규 섹터 5종 — 성장주·가치주·신흥국지수·선진국지수(국가 접두 적용: 미국성장주 등) + 가상화폐(코인 인식분)</div>
+            <div>· DB 미등록 종목은 기존처럼 종목명 키워드로 분류, 애매하면 자동 '기타'</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.2 변경사항</div>
+            <div>· 매수(신규 종목) 버그 수정 — 검색으로 확인한 티커가 등록 시 누락되던 문제 해결. 이제 티커 매핑·현재가 자동조회·섹터 분류가 종목추가와 동일하게 동작</div>
+            <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.1 변경사항</div>
             <div>· 외화 예수금 추가/수정을 통화 선택 모달로 개선(USD/JPY 버튼 선택 → 금액 입력). 통화 직접 타이핑 방식 제거</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.1.0 변경사항 (통화·예수금)</div>
             <div>· 외화 종목 평가액 0원 버그 수정 — 평가액·수익금이 환율로 정상 환산됨(USD·JPY 모두)</div>
