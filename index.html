@@ -1974,9 +1974,9 @@ const ETF_DB = {
   "0193W0":{n:"KODEX 삼성전자단일종목레버리지",c:"KRW",s:"반도체"},
   "0195S0":{n:"TIGER SK하이닉스단일종목레버리지",c:"KRW",s:"반도체"},
   "494310":{n:"KODEX 반도체레버리지",c:"KRW",s:"반도체"},
-  "446770":{n:"ACE 글로벌반도체TOP4 Plus",c:"KRW",s:"반도체"},
+  "446770":{n:"ACE 글로벌반도체TOP4 Plus",c:"KRW",s:"글로벌반도체"},
   "488080":{n:"TIGER 반도체TOP10레버리지",c:"KRW",s:"반도체"},
-  "442580":{n:"PLUS 글로벌HBM반도체",c:"KRW",s:"반도체"},
+  "442580":{n:"PLUS 글로벌HBM반도체",c:"KRW",s:"글로벌반도체"},
   "390390":{n:"KODEX 미국반도체",c:"KRW",s:"미국반도체"},
   "497570":{n:"TIGER 미국필라델피아AI반도체나스닥",c:"KRW",s:"미국반도체"},
   "448330":{n:"KODEX 삼성전자채권혼합",c:"KRW",s:"반도체"},
@@ -1997,14 +1997,14 @@ const ETF_DB = {
   "364980":{n:"TIGER 2차전지TOP10",c:"KRW",s:"2차전지·전기차"},
   "462330":{n:"KODEX 2차전지산업레버리지",c:"KRW",s:"2차전지·전기차"},
   "462010":{n:"TIGER 2차전지소재Fn",c:"KRW",s:"2차전지·전기차"},
-  "394670":{n:"TIGER 글로벌리튬&2차전지SOLACTIVE(합성)",c:"KRW",s:"2차전지·전기차"},
+  "394670":{n:"TIGER 글로벌리튬&2차전지SOLACTIVE(합성)",c:"KRW",s:"글로벌2차전지·전기차"},
   "422420":{n:"RISE 2차전지액티브",c:"KRW",s:"2차전지·전기차"},
   "463250":{n:"TIGER K방산&우주",c:"KRW",s:"조선·방산·우주항공"},
   "445290":{n:"KODEX K-로봇액티브",c:"KRW",s:"AI·로보틱스"},
   // 방산·조선·우주항공 (레버리지 포함, 수식어 무시·기반테마)
   "449450":{n:"PLUS K방산",c:"KRW",s:"조선·방산·우주항공"},
   "0080G0":{n:"KODEX 방산TOP10",c:"KRW",s:"조선·방산·우주항공"},
-  "478150":{n:"TIME 글로벌우주테크&방산액티브",c:"KRW",s:"조선·방산·우주항공"},
+  "478150":{n:"TIME 글로벌우주테크&방산액티브",c:"KRW",s:"글로벌조선·방산·우주항공"},
   "466920":{n:"SOL 조선TOP3플러스",c:"KRW",s:"조선·방산·우주항공"},
   "139230":{n:"TIGER 200 중공업",c:"KRW",s:"조선·방산·우주항공"},
   "0115D0":{n:"KODEX 조선TOP10",c:"KRW",s:"조선·방산·우주항공"},
@@ -2021,10 +2021,10 @@ const ETF_DB = {
   "469070":{n:"RISE AI&로봇",c:"KRW",s:"AI·로보틱스"},
   "0053L0":{n:"TIGER 차이나휴머노이드로봇",c:"KRW",s:"중국AI·로보틱스"},
   "0038A0":{n:"KODEX 미국휴머노이드로봇",c:"KRW",s:"미국AI·로보틱스"},
-  "471040":{n:"KoAct 글로벌AI&로봇액티브",c:"KRW",s:"AI·로보틱스"},
+  "471040":{n:"KoAct 글로벌AI&로봇액티브",c:"KRW",s:"글로벌AI·로보틱스"},
   "0048K0":{n:"KODEX 차이나휴머노이드로봇",c:"KRW",s:"중국AI·로보틱스"},
-  "456600":{n:"TIME 글로벌AI인공지능액티브",c:"KRW",s:"AI·로보틱스"},
-  "466950":{n:"TIGER 글로벌AI액티브",c:"KRW",s:"AI·로보틱스"},
+  "456600":{n:"TIME 글로벌AI인공지능액티브",c:"KRW",s:"글로벌AI·로보틱스"},
+  "466950":{n:"TIGER 글로벌AI액티브",c:"KRW",s:"글로벌AI·로보틱스"},
   "0040Y0":{n:"SOL 팔란티어커버드콜OTM채권혼합",c:"KRW",s:"미국배당"},
   "0043Y0":{n:"TIME 차이나AI테크액티브",c:"KRW",s:"중국AI·로보틱스"},
   "494670":{n:"TIGER 조선TOP10",c:"KRW",s:"조선·방산·우주항공"},
@@ -2105,6 +2105,20 @@ function lookupETF(ticker, name) {
   if (name) {
     const nm = String(name).trim();
     for (const k in ETF_DB) { if (ETF_DB[k].n === nm) return ETF_DB[k]; }
+  }
+  return null;
+}
+// lookupETF + 코드(키)까지 반환. 이름은 정확일치 후 공백무시 일치도 시도.
+function lookupETFEntry(ticker, name) {
+  if (ticker) {
+    const t = String(ticker).toUpperCase().replace(/\.(KS|KQ|T)$/i, "");
+    if (ETF_DB[t]) return { code: t, ...ETF_DB[t] };
+  }
+  if (name) {
+    const nm = String(name).trim();
+    for (const k in ETF_DB) { if (ETF_DB[k].n === nm) return { code: k, ...ETF_DB[k] }; }
+    const nn = nm.replace(/\s+/g, "").toLowerCase();
+    for (const k in ETF_DB) { if (ETF_DB[k].n.replace(/\s+/g, "").toLowerCase() === nn) return { code: k, ...ETF_DB[k] }; }
   }
   return null;
 }
@@ -4213,30 +4227,53 @@ function Portfolio() {
         };
       }).filter(h => h.shares > 0 && h.avg_price >= 0);
 
-      // 모든 KRW 종목을 종목명 기반으로 티커 검증·조회 (현금성자산 제외)
+      // ── ETF_DB 우선 조회 (검색 API 스킵) + 진행 표시 ──────────────────────
+      const isCashNm = (nm) => ["현금","mmf","머니마켓","cma","현금성"].some(k => (nm||"").toLowerCase().includes(k));
+      const nonCashCount = newHoldings.filter(h => !isCashNm(h.name)).length;
+      setUploadMsg(`📚 DB 조회 중... (${nonCashCount}종목)`);
+      let _dbHit = 0;
+      newHoldings = newHoldings.map(h => {
+        if (isCashNm(h.name)) return h;
+        const e = lookupETFEntry(h.ticker || h.yahoo_ticker, h.name);
+        if (!e) return h;
+        _dbHit++;
+        const isKR = isKrCode(e.code);
+        return { ...h, _fromDB: true, sector: e.s, currency: e.c,
+          ticker: isKR ? e.code : e.code,
+          yahoo_ticker: isKR ? (e.code + ".KS") : e.code,
+          name: e.n };
+      });
+      setUploadMsg(`📚 ${nonCashCount}종목 중 ${_dbHit}종목 DB에서 확인`);
+      await new Promise(r => setTimeout(r, 600));
+
+      // 모든 KRW 종목을 종목명 기반으로 티커 검증·조회 (현금성자산 + DB확정분 제외)
       const krwToResolve = newHoldings.filter(h =>
+        !h._fromDB &&
         (!h.currency || h.currency === "KRW") &&
-        !["현금","mmf","머니마켓","cma","현금성"].some(k => (h.name||"").toLowerCase().includes(k))
+        !isCashNm(h.name)
       );
       if (krwToResolve.length > 0) {
-        setUploadMsg(`📡 종목코드 조회 중 (${krwToResolve.length}개)...`);
+        setUploadMsg(`🔍 DB에 없는 ${krwToResolve.length}종목 검색 중...`);
         try {
           const resolved = await resolveTickerCodes(krwToResolve);
           const resolvedMap = {};
           resolved.forEach(r => { if (r.name) resolvedMap[r.name] = r; });
+          let _searchHit = 0;
           newHoldings = newHoldings.map(h => {
             const r = resolvedMap[h.name];
             if (!r?.yahoo_ticker) return h;
             const m = r.yahoo_ticker.match(/^(\d{6})\.(KS|KQ)$/);
-            // 1글자 오타 보정으로 공식명을 받은 경우 이름 교정 + 알림 기록
             const corrected = r._officialName && r._officialName !== h.name;
             if (corrected) {
               const note = { from: h.name, to: r._officialName };
               if (batchCtx) batchCtx.corrections.push(note);
               else localCorrections.push(note);
             }
+            _searchHit++;
             return { ...h, yahoo_ticker: r.yahoo_ticker, ticker: m ? m[1] : "", name: corrected ? r._officialName : h.name };
           });
+          setUploadMsg(`🔍 검색에서 ${_searchHit}종목 추가 확인`);
+          await new Promise(r => setTimeout(r, 500));
         } catch(e) { console.warn("ticker 보완 실패:", e); }
       }
 
@@ -4594,10 +4631,8 @@ function Portfolio() {
       // ── [KRW / 네이버 우선] ──────────────────────────────────────────────
       let pricedKRW = [...krwHoldings];
       if (krwHoldings.length > 0) {
-        // 6자리 ticker 있는 것 → 네이버
-        const KR_CODE = /^\d{6}$/;
-        const KR_CODE_EXT = /^(\d{6})\.(KS|KQ)$/; // 000660.KS 형태도 허용
-        const getKrCode = (t) => { const m=String(t||'').match(/^(\d{6})(?:\.(KS|KQ))?$/); return m?m[1]:null; };
+        // 한국 단축코드(구형 6숫자 + 신형 영숫자 0193T0) → 네이버
+        const getKrCode = (t) => krCodeOf(t);
         const withCode    = krwHoldings.filter(h => getKrCode(h.ticker));
         const withoutCode = krwHoldings.filter(h => !getKrCode(h.ticker));
 
@@ -5815,11 +5850,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.2</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.3</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.2 변경사항 (ETF DB 확장)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.3 변경사항 (인식 흐름)</div>
+            <div>· 스샷/엑셀 인식 시 DB 우선 조회 + 진행 표시 (DB에서 N종목 확인 → 나머지 검색)</div>
+            <div>· "글로벌"을 국가 자리로 일관 적용 (글로벌반도체·글로벌2차전지·글로벌AI 등)</div>
+            <div>· 영문 혼합 단축코드 종목도 네이버 현재가 조회 지원</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.2 변경사항 (ETF DB 확장)</div>
             <div>· 한국 ETF 127종 추가 (지수·반도체·2차전지·방산조선우주·AI로봇·배당·채권) — 총 207종</div>
             <div>· 파킹형 섹터 신규 (CD·KOFR·MMF·금리형). 단기채·통안채·국고채는 채권</div>
             <div>· 한국 영문 혼합 단축코드(예: 0193T0) 지원, 레버리지·인버스는 기반 테마로 분류</div>
