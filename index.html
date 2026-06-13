@@ -1857,12 +1857,12 @@ function cascadeTheme(name) {
   return null;
 }
 
-// 종목코드로 개별주 DB 조회 (6자리코드 .KS/.KQ 접미 허용)
+// 종목코드로 개별주 DB 조회 (구형 6숫자 + 신형 영숫자 코드, .KS/.KQ 접미 허용)
 function lookupStockDB(ticker) {
   if (!ticker) return null;
   if (STOCK_SECTOR_DB[ticker]) return STOCK_SECTOR_DB[ticker];
-  const m = String(ticker).match(/^(\d{6})(?:\.(KS|KQ))?$/);
-  if (m && STOCK_SECTOR_DB[m[1]]) return STOCK_SECTOR_DB[m[1]];
+  const code = krCodeOf(ticker);
+  if (code && STOCK_SECTOR_DB[code]) return STOCK_SECTOR_DB[code];
   return null;
 }
 
@@ -2602,7 +2602,7 @@ function StockSearchRow({ country = "KR", onSelect }) {
         // 한국어명 보완
         if (found.length && !found.some(r=>/[가-힣]/.test(r.longname||""))) {
           try {
-            const codes=found.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>/^\d{6}$/.test(c)).join(",");
+            const codes=found.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>isKrCode(c)).join(",");
             if(codes){
               const ctrl=new AbortController(), t=setTimeout(()=>ctrl.abort(),5000);
               const nr=await fetch(`/api/naver?type=names&codes=${codes}`,{signal:ctrl.signal}); clearTimeout(t);
@@ -2738,7 +2738,7 @@ function EditHoldingModal({ holding, onClose, onSave }) {
     setFetchingPrice(true); setShowPriceInput(true);
     try {
       // 1. Naver (KRW 6자리 코드)
-      if (/^\d{6}$/.test(code)) {
+      if (isKrCode(code)) {
         const res = await fetch(`/api/naver?codes=${code}`);
         if (res.ok) {
           const d = await res.json();
@@ -3067,7 +3067,7 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
           for(const url of krUrls){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),8000);const r=await fetch(url,{signal:ctrl.signal});clearTimeout(t);if(!r.ok)continue;const d=await r.json();const q=(d.quotes||[]).filter(x=>["ETF","EQUITY","MUTUALFUND"].includes(x.quoteType)&&(x.symbol?.endsWith(".KS")||x.symbol?.endsWith(".KQ")));if(q.length>0){results=q;break;}}catch(e){}}
         }
         // 5차: 여전히 영어명이면 /api/naver type=names 로 보완
-        if(results.length>0&&!results.some(r=>/[가-힣]/.test(r.longname||""))){try{const kodesStr=results.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>/^\d{6}$/.test(c)).join(",");if(kodesStr){const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const nr=await fetch(`/api/naver?type=names&codes=${kodesStr}`,{signal:ctrl.signal});clearTimeout(t);if(nr.ok){const nd=await nr.json();if(nd.names&&Object.keys(nd.names).length>0)results=results.map(r=>{const code=(r.symbol||"").replace(/\.(KS|KQ)$/,"");const ko=nd.names[code];return ko?{...r,longname:ko,shortname:ko}:r;});}}}catch(e){}}
+        if(results.length>0&&!results.some(r=>/[가-힣]/.test(r.longname||""))){try{const kodesStr=results.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>isKrCode(c)).join(",");if(kodesStr){const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const nr=await fetch(`/api/naver?type=names&codes=${kodesStr}`,{signal:ctrl.signal});clearTimeout(t);if(nr.ok){const nd=await nr.json();if(nd.names&&Object.keys(nd.names).length>0)results=results.map(r=>{const code=(r.symbol||"").replace(/\.(KS|KQ)$/,"");const ko=nd.names[code];return ko?{...r,longname:ko,shortname:ko}:r;});}}}catch(e){}}
       } else {
         const filterFn =
           ctry==="US" ? (q=>!q.symbol?.includes(".")||["NMS","NYQ","NGM","PCX"].includes(q.exchange)) :
@@ -3401,7 +3401,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
           for(const url of krUrls){try{const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),8000);const r=await fetch(url,{signal:ctrl.signal});clearTimeout(t);if(!r.ok)continue;const d=await r.json();const q=(d.quotes||[]).filter(x=>["ETF","EQUITY","MUTUALFUND"].includes(x.quoteType)&&(x.symbol?.endsWith(".KS")||x.symbol?.endsWith(".KQ")));if(q.length>0){results=q;break;}}catch(e){}}
         }
         // 5차: 여전히 영어명이면 /api/naver type=names 로 보완
-        if(results.length>0&&!results.some(r=>/[가-힣]/.test(r.longname||""))){try{const kodesStr=results.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>/^\d{6}$/.test(c)).join(",");if(kodesStr){const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const nr=await fetch(`/api/naver?type=names&codes=${kodesStr}`,{signal:ctrl.signal});clearTimeout(t);if(nr.ok){const nd=await nr.json();if(nd.names&&Object.keys(nd.names).length>0)results=results.map(r=>{const code=(r.symbol||"").replace(/\.(KS|KQ)$/,"");const ko=nd.names[code];return ko?{...r,longname:ko,shortname:ko}:r;});}}}catch(e){}}
+        if(results.length>0&&!results.some(r=>/[가-힣]/.test(r.longname||""))){try{const kodesStr=results.map(r=>(r.symbol||"").replace(/\.(KS|KQ)$/,"")).filter(c=>isKrCode(c)).join(",");if(kodesStr){const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),5000);const nr=await fetch(`/api/naver?type=names&codes=${kodesStr}`,{signal:ctrl.signal});clearTimeout(t);if(nr.ok){const nd=await nr.json();if(nd.names&&Object.keys(nd.names).length>0)results=results.map(r=>{const code=(r.symbol||"").replace(/\.(KS|KQ)$/,"");const ko=nd.names[code];return ko?{...r,longname:ko,shortname:ko}:r;});}}}catch(e){}}
       } else {
         // 해외 종목: Yahoo Finance
         const filterFn =
@@ -3429,7 +3429,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
     const name = selected?.name || (directMode ? directName.trim() : searchQ.trim());
     setFetchingPrice(true); setShowPriceInput(true);
     try {
-      if (/^\d{6}$/.test(ticker)) {
+      if (isKrCode(ticker)) {
         const res = await fetch(`/api/naver?codes=${ticker}`);
         if (res.ok) {
           const d = await res.json();
@@ -4321,7 +4321,7 @@ function Portfolio() {
           newHoldings = newHoldings.map(h => {
             const r = resolvedMap[h.name];
             if (!r?.yahoo_ticker) return h;
-            const m = r.yahoo_ticker.match(/^(\d{6})\.(KS|KQ)$/);
+            const _code = krCodeOf(r.yahoo_ticker);
             const corrected = r._officialName && r._officialName !== h.name;
             if (corrected) {
               const note = { from: h.name, to: r._officialName };
@@ -4329,7 +4329,7 @@ function Portfolio() {
               else localCorrections.push(note);
             }
             _searchHit++;
-            return { ...h, yahoo_ticker: r.yahoo_ticker, ticker: m ? m[1] : "", name: corrected ? r._officialName : h.name };
+            return { ...h, yahoo_ticker: r.yahoo_ticker, ticker: _code || "", name: corrected ? r._officialName : h.name };
           });
           setUploadMsg(`🔍 검색에서 ${_searchHit}종목 추가 확인`);
           await new Promise(r => setTimeout(r, 500));
@@ -6258,7 +6258,7 @@ function DividendCalendar() {
       let entry = null;
 
       // 1차: Yahoo 과거 분배금 이력
-      const yTicker = h.yahoo_ticker || (/^\d{6}$/.test(h.ticker) ? h.ticker + ".KS" : null);
+      const yTicker = h.yahoo_ticker || (isKrCode(h.ticker) ? h.ticker + ".KS" : null);
       if (yTicker) {
         try {
           const res = await fetch(`/api/yahoo?type=dividends&ticker=${encodeURIComponent(yTicker)}&range=3y`);
