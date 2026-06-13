@@ -380,51 +380,53 @@ export default async function handler(req, res) {
     const rawDump    = {};
 
     await Promise.allSettled(idxList.map(async (idxCode, i) => {
-      // 1. basic — 현재가 + 일간 등락률
-      let cur = 0, rate = null;
-      try {
-        const r = await fetch(`https://m.stock.naver.com/api/index/${encodeURIComponent(idxCode)}/basic`, {
-          headers: IDX_HDRS,
-          signal:  AbortSignal.timeout(7000),
-        });
-        if (r.ok) {
-          const d = await r.json();
-          // 첫 항목(또는 debug) 원시 응답 기록 → Vercel 로그 + _debug 에서 실제 필드명 확인
-          if (debug || i === 0) console.warn(`[index-debug] ${idxCode} basic raw: ${JSON.stringify(d).slice(0, 700)}`);
-          if (debug) rawDump[idxCode] = { basic: d };
-          // 개별종목 basic과 동일 API 패밀리 → closePrice/fluctuationsRatio 우선 (stock에서 작동 확인된 필드)
-          cur = Number(d.closePrice ?? d.nowVal ?? d.currentPrice ?? 0);
-          const rRaw = d.fluctuationsRatio ?? d.changeRate ?? d.rate;
-          rate = (rRaw !== undefined && rRaw !== null && rRaw !== "") ? Number(rRaw) : null;
-        } else {
-          console.warn(`[index] ${idxCode} basic HTTP ${r.status}`);
+      // 네이버 지수 응답은 closePrice 등이 "8,123.62" 처럼 쉼표 포함 문자열 → 쉼표 제거 후 Number
+      const num = (v) => Number(String(v ?? "").replace(/,/g, "")) || 0;
+      const enc = encodeURIComponent(idxCode);
+      // 국내지수는 /api/index/, 해외지수는 /api/worldstock/index/ 경로 → 둘 다 시도해 먼저 되는 걸 사용
+      const tryFetch = async (paths) => {
+        for (const url of paths) {
+          try {
+            const r = await fetch(url, { headers: IDX_HDRS, signal: AbortSignal.timeout(7000) });
+            if (r.ok) { const d = await r.json(); return { d, url }; }
+            console.warn(`[index] ${idxCode} HTTP ${r.status} ${url}`);
+          } catch (e) { console.warn(`[index] ${idxCode} ${e.message} ${url}`); }
         }
-      } catch (e) {
-        console.warn(`[index] ${idxCode} basic 오류: ${e.message}`);
+        return null;
+      };
+
+      // 1. basic — 현재가 + 일간 등락률 (확정 필드: closePrice, fluctuationsRatio)
+      let cur = 0, rate = null;
+      const basicRes = await tryFetch([
+        `https://m.stock.naver.com/api/index/${enc}/basic`,
+        `https://m.stock.naver.com/api/worldstock/index/${enc}/basic`,
+      ]);
+      if (basicRes) {
+        const d = basicRes.d;
+        if (debug || i === 0) console.warn(`[index-debug] ${idxCode} basic(${basicRes.url}): ${JSON.stringify(d).slice(0, 700)}`);
+        if (debug) rawDump[idxCode] = { basicUrl: basicRes.url, basic: d };
+        cur = num(d.closePrice);
+        // fluctuationsRatio는 부호 포함 문자열("-4.52"). 값이 있으면 그대로, 없으면 null
+        rate = (d.fluctuationsRatio != null && d.fluctuationsRatio !== "") ? num(d.fluctuationsRatio) : null;
       }
 
-      // 2. price — 5거래일 전 종가로 주간 등락률 계산
+      // 2. price — 5거래일 전(=1주일 전) 종가 대비 주간 등락률.
+      // 응답은 최신순 배열: index 0=당일, index 5=5거래일 전(같은 요일 1주 전).
       let weekChange = null;
-      try {
-        const r = await fetch(`https://m.stock.naver.com/api/index/${encodeURIComponent(idxCode)}/price?pageSize=7&page=1`, {
-          headers: IDX_HDRS,
-          signal:  AbortSignal.timeout(7000),
-        });
-        if (r.ok) {
-          const d = await r.json();
-          if (debug || i === 0) console.warn(`[index-debug] ${idxCode} price raw: ${JSON.stringify(d).slice(0, 700)}`);
-          if (debug) rawDump[idxCode] = { ...(rawDump[idxCode] || {}), price: d };
-          // 응답이 배열인지 래핑 객체인지 미확정 → 둘 다 대응
-          const arr = Array.isArray(d) ? d : (d.priceList || d.prices || d.list || d.result || []);
-          const closes = arr.map(x => Number(x.closePrice ?? x.close ?? x.tradePrice ?? 0)).filter(v => v > 0);
-          // 네이버 price는 최신순 추정 → 배열 마지막(가장 오래된 ≈ 5~6거래일 전)을 주간 기준가로
-          if (closes.length >= 2 && cur > 0) {
-            const weekAgo = closes[closes.length - 1];
-            if (weekAgo > 0) weekChange = Number(((cur - weekAgo) / weekAgo * 100).toFixed(2));
-          }
+      const priceRes = await tryFetch([
+        `https://m.stock.naver.com/api/index/${enc}/price?pageSize=7&page=1`,
+        `https://m.stock.naver.com/api/worldstock/index/${enc}/price?pageSize=7&page=1`,
+      ]);
+      if (priceRes) {
+        const d = priceRes.d;
+        if (debug || i === 0) console.warn(`[index-debug] ${idxCode} price(${priceRes.url}): ${JSON.stringify(d).slice(0, 700)}`);
+        if (debug) rawDump[idxCode] = { ...(rawDump[idxCode] || {}), priceUrl: priceRes.url, price: d };
+        const arr = Array.isArray(d) ? d : (d.priceList || d.prices || d.list || []);
+        const closes = arr.map(x => num(x.closePrice)).filter(v => v > 0);
+        if (closes.length >= 2 && cur > 0) {
+          const weekAgo = closes.length > 5 ? closes[5] : closes[closes.length - 1];
+          if (weekAgo > 0) weekChange = Number(((cur - weekAgo) / weekAgo * 100).toFixed(2));
         }
-      } catch (e) {
-        console.warn(`[index] ${idxCode} price 오류: ${e.message}`);
       }
 
       if (cur > 0) idxResults[idxCode] = { value: cur, changeRate: rate, weekChange };
