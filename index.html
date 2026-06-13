@@ -757,6 +757,33 @@ function MarketInsight({ onRefreshAll }) {
   const fetchWorldIndices = async () => {
     setWorldIdxLoading(true);
     try {
+      const fmtW = (v) => v >= 1000
+        ? v.toLocaleString("en-US", { maximumFractionDigits: 2 })
+        : v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // 세계지수는 야후 previousClose가 부정확/불안정 → 네이버 로이터코드로 대체(실패 시 야후 fallback).
+      const NAVER_WORLD = {
+        "닛케이225": ".N225", "홍콩항생": ".HSI", "상해종합": ".SSEC", "인도Sensex": ".BSESN",
+        "대만가권": ".TWII", "독일DAX": ".GDAXI", "영국FTSE": ".FTSE", "필라델피아반도체": ".SOX",
+      };
+      const naverWorldPromise = (async () => {
+        const map = {};
+        try {
+          const codes = Object.values(NAVER_WORLD).join(",");
+          const nr = await fetch(`/api/naver?type=index&code=${encodeURIComponent(codes)}`);
+          if (nr.ok) {
+            const nd = await nr.json();
+            for (const [nm, code] of Object.entries(NAVER_WORLD)) {
+              const r = nd.results?.[code];
+              if (r && r.value > 0) {
+                const cv = Number(r.changeRate) || 0;
+                map[nm] = { name: nm, value: fmtW(r.value), change: Math.abs(cv).toFixed(2), up: cv >= 0, rawChange: cv };
+              }
+            }
+          }
+        } catch (e) { console.warn("네이버 세계지수 실패:", e.message); }
+        return map;
+      })();
+
       const results = await Promise.allSettled(
         WORLD_INDEX_LIST.map(async ({ name, ticker }) => {
           const res = await fetch(`/api/yahoo?type=chart&ticker=${ticker}`);
@@ -770,16 +797,19 @@ function MarketInsight({ onRefreshAll }) {
           const changeVal = prevClose > 0 ? ((current - prevClose) / prevClose * 100) : 0;
           return {
             name,
-            value: current >= 1000
-              ? current.toLocaleString("en-US", { maximumFractionDigits: 2 })
-              : current.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            value: fmtW(current),
             change: Math.abs(changeVal).toFixed(2),
             up: changeVal >= 0,
             rawChange: changeVal,
           };
         })
       );
-      const ok = results.filter(r => r.status === "fulfilled").map(r => r.value);
+      const yahooOK = results.filter(r => r.status === "fulfilled").map(r => r.value);
+      const naverW  = await naverWorldPromise;
+      // 네이버 우선 → 야후 fallback, WORLD_INDEX_LIST 순서 유지
+      const ok = WORLD_INDEX_LIST
+        .map(({ name }) => naverW[name] || yahooOK.find(r => r.name === name))
+        .filter(Boolean);
       if (ok.length > 0) {
         setWorldIndices(ok);
         localStorage.setItem("investiq_world_idx_v1", JSON.stringify({ data: ok, ts: Date.now() }));
@@ -6600,6 +6630,40 @@ function IndexWidget() {
         { name: "금(Gold)", ticker: "GC%3DF",  isGold: true },
       ];
 
+      // 코스피·코스닥·다우·나스닥·S&P500은 야후 previousClose가 부정확/불안정 → 네이버로 대체(실패 시 야후 fallback).
+      // 환율·금은 지수가 아니라 네이버 index API 대상이 아니므로 야후 유지.
+      // 야후 조회와 동시에 진행하고 merge 단계에서 네이버를 우선 사용.
+      const fmtIdxVal = (v) => v >= 1000
+        ? v.toLocaleString("en-US", { maximumFractionDigits: 2 })
+        : v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const naverIdxPromise = (async () => {
+        const map = {};
+        const pick = { "코스피": "KOSPI", "코스닥": "KOSDAQ", "다우": ".DJI", "나스닥": ".IXIC", "S&P500": ".INX" };
+        try {
+          const nr = await fetch(`/api/naver?type=index&code=${encodeURIComponent(Object.values(pick).join(","))}`);
+          if (nr.ok) {
+            const nd = await nr.json();
+            for (const [nm, code] of Object.entries(pick)) {
+              const r = nd.results?.[code];
+              if (r && r.value > 0) {
+                const cv = Number(r.changeRate) || 0;
+                const wc = (r.weekChange != null) ? Number(r.weekChange) : null;
+                map[nm] = {
+                  name: nm,
+                  value: fmtIdxVal(r.value),
+                  change: String(Math.abs(cv).toFixed(2)),
+                  up: cv >= 0,
+                  weekChange: wc != null ? wc.toFixed(2) : null,
+                  weekUp: wc != null ? wc >= 0 : null,
+                  isFX: false,
+                };
+              }
+            }
+          }
+        } catch (e) { console.warn("네이버 지수 실패:", e.message); }
+        return map;
+      })();
+
       // ── Yahoo Finance 병렬 조회 ──────────────────────────────
       const parseYahooChart = (data, name, opts = {}) => {
         const meta   = data.chart?.result?.[0]?.meta;
@@ -6690,9 +6754,10 @@ function IndexWidget() {
       }
 
       // ── 결과 합치기 ──────────────────────────────────────────
-      // Yahoo 성공 종목 + Gemini fallback 종목 (YAHOO_INDICES 순서 유지)
+      // 네이버(코스피·코스닥·다우·나스닥·S&P) 우선 → Yahoo 성공(환율·금) → Gemini fallback (순서 유지)
+      const naverIdx = await naverIdxPromise;
       const mergedIndices = YAHOO_INDICES
-        .map(({ name }) => yahooOK.find(r => r.name === name) || geminiResults.find(r => r.name === name))
+        .map(({ name }) => naverIdx[name] || yahooOK.find(r => r.name === name) || geminiResults.find(r => r.name === name))
         .filter(Boolean);
 
       const finalResults = [...mergedIndices];
