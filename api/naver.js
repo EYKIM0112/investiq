@@ -353,6 +353,90 @@ export default async function handler(req, res) {
     return res.status(200).json({ names });
   }
 
+  // ── [D] 지수 조회 (type=index) ───────────────────────────
+  // 용도: 야후 meta.previousClose가 한국·아시아 지수에서 부정확 → 네이버로 대체.
+  // 호출: ?type=index&code=KOSPI            (단일)
+  //       ?type=index&code=KOSPI,KOSDAQ     (복수)
+  //       ?type=index&code=KOSPI&debug=1    (원시 응답 _debug에 같이 반환 — 필드명 확정용)
+  // 해외지수도 네이버 고유 심볼만 알면 같은 경로로 동작 (예: .IXIC, NII@NI225 — 미확정).
+  // 응답: { results: { KOSPI: { value:Number, changeRate:Number|null, weekChange:Number|null } } }
+  //   value      = 현재가
+  //   changeRate = 일간 등락률(%)  ← basic API가 직접 제공
+  //   weekChange = 주간 등락률(%)  ← price 이력(5거래일 전 종가) 대비 계산
+  if (type === "index") {
+    const code = req.query.code;
+    if (!code) return res.status(400).json({ error: "code required (예: KOSPI)" });
+    const debug = req.query.debug === "1";
+    const idxList = code.split(",").map(c => c.trim()).filter(Boolean).slice(0, 12);
+
+    const IDX_HDRS = {
+      "User-Agent":      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      "Referer":         "https://m.stock.naver.com/",
+      "Accept":          "application/json",
+      "Accept-Language": "ko-KR,ko;q=0.9",
+    };
+
+    const idxResults = {};
+    const rawDump    = {};
+
+    await Promise.allSettled(idxList.map(async (idxCode, i) => {
+      // 1. basic — 현재가 + 일간 등락률
+      let cur = 0, rate = null;
+      try {
+        const r = await fetch(`https://m.stock.naver.com/api/index/${encodeURIComponent(idxCode)}/basic`, {
+          headers: IDX_HDRS,
+          signal:  AbortSignal.timeout(7000),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          // 첫 항목(또는 debug) 원시 응답 기록 → Vercel 로그 + _debug 에서 실제 필드명 확인
+          if (debug || i === 0) console.warn(`[index-debug] ${idxCode} basic raw: ${JSON.stringify(d).slice(0, 700)}`);
+          if (debug) rawDump[idxCode] = { basic: d };
+          // 개별종목 basic과 동일 API 패밀리 → closePrice/fluctuationsRatio 우선 (stock에서 작동 확인된 필드)
+          cur = Number(d.closePrice ?? d.nowVal ?? d.currentPrice ?? 0);
+          const rRaw = d.fluctuationsRatio ?? d.changeRate ?? d.rate;
+          rate = (rRaw !== undefined && rRaw !== null && rRaw !== "") ? Number(rRaw) : null;
+        } else {
+          console.warn(`[index] ${idxCode} basic HTTP ${r.status}`);
+        }
+      } catch (e) {
+        console.warn(`[index] ${idxCode} basic 오류: ${e.message}`);
+      }
+
+      // 2. price — 5거래일 전 종가로 주간 등락률 계산
+      let weekChange = null;
+      try {
+        const r = await fetch(`https://m.stock.naver.com/api/index/${encodeURIComponent(idxCode)}/price?pageSize=7&page=1`, {
+          headers: IDX_HDRS,
+          signal:  AbortSignal.timeout(7000),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          if (debug || i === 0) console.warn(`[index-debug] ${idxCode} price raw: ${JSON.stringify(d).slice(0, 700)}`);
+          if (debug) rawDump[idxCode] = { ...(rawDump[idxCode] || {}), price: d };
+          // 응답이 배열인지 래핑 객체인지 미확정 → 둘 다 대응
+          const arr = Array.isArray(d) ? d : (d.priceList || d.prices || d.list || d.result || []);
+          const closes = arr.map(x => Number(x.closePrice ?? x.close ?? x.tradePrice ?? 0)).filter(v => v > 0);
+          // 네이버 price는 최신순 추정 → 배열 마지막(가장 오래된 ≈ 5~6거래일 전)을 주간 기준가로
+          if (closes.length >= 2 && cur > 0) {
+            const weekAgo = closes[closes.length - 1];
+            if (weekAgo > 0) weekChange = Number(((cur - weekAgo) / weekAgo * 100).toFixed(2));
+          }
+        }
+      } catch (e) {
+        console.warn(`[index] ${idxCode} price 오류: ${e.message}`);
+      }
+
+      if (cur > 0) idxResults[idxCode] = { value: cur, changeRate: rate, weekChange };
+    }));
+
+    console.warn(`[index] 최종 결과: ${JSON.stringify(idxResults)}`);
+    res.setHeader("Cache-Control", debug ? "no-store" : "public, s-maxage=180, stale-while-revalidate=300");
+    const out = { results: idxResults };
+    if (debug) out._debug = rawDump;
+    return res.status(200).json(out);
+  }
+
   // ── [C] 현재가 조회 (codes=...) ──────────────────────────
   if (!codes) return res.status(400).json({ error: "codes or type=search required" });
 
