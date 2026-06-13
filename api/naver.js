@@ -383,7 +383,9 @@ export default async function handler(req, res) {
       // 네이버 지수 응답은 closePrice 등이 "8,123.62" 처럼 쉼표 포함 문자열 → 쉼표 제거 후 Number
       const num = (v) => Number(String(v ?? "").replace(/,/g, "")) || 0;
       const enc = encodeURIComponent(idxCode);
-      // 국내지수는 /api/index/, 해외지수는 /api/worldstock/index/ 경로 → 둘 다 시도해 먼저 되는 걸 사용
+      // 국내지수: m.stock.naver.com/api/index/{KOSPI|KOSDAQ}
+      // 해외지수: api.stock.naver.com/index/{로이터코드 예 .IXIC} (필드명은 국내와 동일)
+      // → 둘 다 시도해 먼저 되는 경로 사용
       const tryFetch = async (paths) => {
         for (const url of paths) {
           try {
@@ -399,7 +401,7 @@ export default async function handler(req, res) {
       let cur = 0, rate = null;
       const basicRes = await tryFetch([
         `https://m.stock.naver.com/api/index/${enc}/basic`,
-        `https://m.stock.naver.com/api/worldstock/index/${enc}/basic`,
+        `https://api.stock.naver.com/index/${enc}/basic`,
       ]);
       if (basicRes) {
         const d = basicRes.d;
@@ -415,7 +417,7 @@ export default async function handler(req, res) {
       let weekChange = null;
       const priceRes = await tryFetch([
         `https://m.stock.naver.com/api/index/${enc}/price?pageSize=7&page=1`,
-        `https://m.stock.naver.com/api/worldstock/index/${enc}/price?pageSize=7&page=1`,
+        `https://api.stock.naver.com/index/${enc}/price?pageSize=7&page=1`,
       ]);
       if (priceRes) {
         const d = priceRes.d;
