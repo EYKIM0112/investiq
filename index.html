@@ -5905,6 +5905,7 @@ function Settings() {
           { done: true,  text: "Vercel 서버리스 API (Gemini/Yahoo 프록시)" },
           { done: true,  text: "계좌별 수익률 히스토리 분리" },
           { done: true,  text: "네이버 금융 기반 한국 ETF 현재가 조회" },
+          { done: true,  text: "주요 지수 네이버 전환 (한국·미국·유럽·아시아 13종, 등락률 정확도 개선)" },
           { done: true,  text: "원/달러 환율 위젯" },
           { done: true,  text: "스크린샷 자동 인식 및 종목 등록" },
           { done: true,  text: "종목 검색 (티커·한국어명 동시 지원)" },
@@ -5939,11 +5940,15 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.4</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.5</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.4 변경사항 (ETF DB 확장)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.5 변경사항 (지수 소스 네이버 전환)</div>
+            <div>· 메인·세계 지수 13종(코스피·코스닥·다우·나스닥·S&P500·닛케이·항셍·상해·인도·대만·독일DAX·영국FTSE·필라델피아반도체)을 야후 → 네이버로 전환. 야후 전일종가 오류로 한국·아시아 등락률이 부풀려지던 문제 해결</div>
+            <div>· 일간 등락률은 네이버 기준, 주간 등락률은 5거래일 전 종가 대비로 계산. 야후·Gemini는 fallback으로 유지</div>
+            <div>· 환율·금은 야후 메인 유지, 야후 실패 시에만 네이버 마켓인덱스로 보조 (HTML 파싱 리스크 최소화)</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.4 변경사항 (ETF DB 확장)</div>
             <div>· 한국 ETF 54종 추가 (친환경·신재생, 미국빅테크, 전기차, 소부장, 바이오·제약·헬스케어) — 총 261종</div>
             <div>· 바이오·제약은 헬스케어로, 소부장은 기반 테마로(반도체소부장→반도체 등) 분류</div>
             <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.3 변경사항 (인식 흐름)</div>
