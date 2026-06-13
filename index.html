@@ -6753,11 +6753,54 @@ function IndexWidget() {
         } catch(e) { console.warn("지수 Gemini fallback 실패:", e.message); }
       }
 
+      // ── 환율·금: 야후 메인, 야후 실패 시에만 네이버 마켓인덱스(HTML)로 보조 ──
+      // HTML 파싱은 "조용히 틀린 값" 리스크가 있어 메인으로 안 씀. 야후가 죽었을 때만 호출(스크래핑/차단 노출 최소화).
+      let naverMi = {};
+      const miNeed = [];
+      if (yahooFail.includes("원/달러"))  miNeed.push("FX_USDKRW");
+      if (yahooFail.includes("금(Gold)")) miNeed.push("CMDT_GC");
+      if (miNeed.length > 0) {
+        try {
+          const nr = await fetch(`/api/naver?type=marketindex&code=${encodeURIComponent(miNeed.join(","))}`);
+          if (nr.ok) {
+            const nd = await nr.json();
+            const fx = nd.results?.["FX_USDKRW"];
+            if (fx && fx.value > 0) {
+              const cv = Number(fx.changeRate) || 0;
+              const wc = (fx.weekChange != null) ? Number(fx.weekChange) : null;
+              naverMi["원/달러"] = {
+                name: "원/달러",
+                value: Math.round(fx.value).toLocaleString("ko-KR") + "원",
+                change: String(Math.abs(cv).toFixed(2)),
+                up: cv <= 0,
+                weekChange: wc != null ? wc.toFixed(2) : null,
+                weekUp: wc != null ? (wc <= 0) : null,
+                isFX: true,
+              };
+            }
+            const gd = nd.results?.["CMDT_GC"];
+            if (gd && gd.value > 0) {
+              const cv = Number(gd.changeRate) || 0;
+              const wc = (gd.weekChange != null) ? Number(gd.weekChange) : null;
+              naverMi["금(Gold)"] = {
+                name: "금(Gold)",
+                value: "$" + gd.value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                change: String(Math.abs(cv).toFixed(2)),
+                up: cv >= 0,
+                weekChange: wc != null ? wc.toFixed(2) : null,
+                weekUp: wc != null ? (wc >= 0) : null,
+                isFX: false,
+              };
+            }
+          }
+        } catch (e) { console.warn("네이버 마켓인덱스 보조 실패:", e.message); }
+      }
+
       // ── 결과 합치기 ──────────────────────────────────────────
-      // 네이버(코스피·코스닥·다우·나스닥·S&P) 우선 → Yahoo 성공(환율·금) → Gemini fallback (순서 유지)
+      // 지수: 네이버 우선. 환율·금: 야후 우선 → 네이버 보조. (naverIdx와 naverMi는 서로 겹치지 않아 한 줄로 처리)
       const naverIdx = await naverIdxPromise;
       const mergedIndices = YAHOO_INDICES
-        .map(({ name }) => naverIdx[name] || yahooOK.find(r => r.name === name) || geminiResults.find(r => r.name === name))
+        .map(({ name }) => naverIdx[name] || yahooOK.find(r => r.name === name) || naverMi[name] || geminiResults.find(r => r.name === name))
         .filter(Boolean);
 
       const finalResults = [...mergedIndices];
