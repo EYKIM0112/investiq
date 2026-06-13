@@ -441,6 +441,74 @@ export default async function handler(req, res) {
     return res.status(200).json(out);
   }
 
+  // ── [E] 시장지표 조회 (type=marketindex) ─────────────────
+  // 환율·금은 지수가 아니라 finance.naver.com/marketindex (응답이 HTML 표) → 파싱.
+  // 호출: ?type=marketindex&code=FX_USDKRW,CMDT_GC  (+&debug=1)
+  //   FX_   → exchangeDailyQuote (매매기준율)
+  //   CMDT_ → worldDailyQuote (fdtc=2, 종가)
+  // 파싱: 각 행에서 "날짜(YYYY.MM.DD) 뒤 첫 숫자" = 종가 (소수 유무 무관, td 클래스명 비의존).
+  // 응답: { results: { FX_USDKRW:{value,changeRate,weekChange}, CMDT_GC:{...} } }
+  if (type === "marketindex") {
+    const code = req.query.code;
+    if (!code) return res.status(400).json({ error: "code required (예: FX_USDKRW)" });
+    const debug = req.query.debug === "1";
+    const miList = code.split(",").map(c => c.trim()).filter(Boolean).slice(0, 8);
+
+    const MI_HDRS = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Referer":    "https://finance.naver.com/marketindex/",
+      "Accept":     "text/html,application/xhtml+xml,*/*",
+    };
+    const buildUrl = (c) => {
+      if (c.startsWith("FX_"))   return `https://finance.naver.com/marketindex/exchangeDailyQuote.naver?marketindexCd=${encodeURIComponent(c)}&page=1`;
+      if (c.startsWith("CMDT_")) return `https://finance.naver.com/marketindex/worldDailyQuote.naver?marketindexCd=${encodeURIComponent(c)}&fdtc=2&page=1`;
+      return null;
+    };
+
+    const miResults = {};
+    const rawDump   = {};
+
+    await Promise.allSettled(miList.map(async (c, i) => {
+      const url = buildUrl(c);
+      if (!url) { console.warn(`[marketindex] ${c} 알 수 없는 코드(FX_/CMDT_ 접두 필요)`); return; }
+      try {
+        const r = await fetch(url, { headers: MI_HDRS, signal: AbortSignal.timeout(7000) });
+        if (!r.ok) { console.warn(`[marketindex] ${c} HTTP ${r.status}`); return; }
+        const html = await r.text();
+        if (debug || i === 0) console.warn(`[marketindex-debug] ${c}: ${html.replace(/\s+/g, " ").slice(0, 400)}`);
+        if (debug) rawDump[c] = html.replace(/\s+/g, " ").slice(0, 1500);
+        // 행마다 날짜 뒤 첫 숫자 추출 (FX=매매기준율, CMDT=종가). 소수 유무 무관 → 정수 값도 안전. 최신순 배열.
+        const closes = [];
+        for (const row of html.split(/<tr[\s>]/i)) {
+          const plain = row.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/gi, " ");
+          const dm = plain.match(/\d{4}\.\d{2}\.\d{2}/);
+          if (!dm) continue;
+          const after = plain.slice(plain.indexOf(dm[0]) + dm[0].length);
+          const nm = after.match(/\d[\d,]*(?:\.\d+)?/);
+          if (!nm) continue;
+          const v = Number(nm[0].replace(/,/g, ""));
+          if (v > 0) closes.push(v);
+        }
+        if (closes.length >= 1) {
+          const cur     = closes[0];
+          const prev    = closes[1] || 0;
+          const weekAgo = closes.length > 5 ? closes[5] : closes[closes.length - 1];
+          const changeRate = prev > 0 ? Number(((cur - prev) / prev * 100).toFixed(2)) : null;
+          const weekChange = (closes.length >= 2 && weekAgo > 0) ? Number(((cur - weekAgo) / weekAgo * 100).toFixed(2)) : null;
+          miResults[c] = { value: cur, changeRate, weekChange };
+        }
+      } catch (e) {
+        console.warn(`[marketindex] ${c} 오류: ${e.message}`);
+      }
+    }));
+
+    console.warn(`[marketindex] 최종: ${JSON.stringify(miResults)}`);
+    res.setHeader("Cache-Control", debug ? "no-store" : "public, s-maxage=300, stale-while-revalidate=600");
+    const out2 = { results: miResults };
+    if (debug) out2._debug = rawDump;
+    return res.status(200).json(out2);
+  }
+
   // ── [C] 현재가 조회 (codes=...) ──────────────────────────
   if (!codes) return res.status(400).json({ error: "codes or type=search required" });
 
