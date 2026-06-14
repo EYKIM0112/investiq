@@ -43,11 +43,11 @@ const GEMINI_MODEL_FAST = "gemini-2.5-flash-lite";  // 텍스트/검색용 (빠�
 const SECTOR_COLORS = {
   "지수": "#94a3b8", "채권": "#0ea5e9", "반도체": "#7c3aed",
   "AI·로보틱스": "#f59e0b", "미국빅테크": "#00d4ff", "테크": "#38bdf8",
-  "전력인프라": "#eab308", "원전": "#a3e635", "친환경에너지": "#22c55e",
+  "AI전력·인프라": "#eab308", "원전": "#a3e635", "친환경·그린": "#22c55e",
   "에너지": "#059669", "원자재": "#d97706", "2차전지·전기차": "#14b8a6",
   "자동차": "#6366f1", "조선·방산·우주항공": "#ef4444", "헬스케어": "#ec4899",
-  "금융": "#3b82f6", "인프라": "#a855f7", "산업재": "#f97316",
-  "엔터·미디어": "#e879f9", "소비재": "#fb923c", "화학·소재": "#2dd4bf",
+  "금융": "#3b82f6", "해운·물류": "#f97316",
+  "엔터·미디어": "#e879f9", "여행·호텔": "#0891b2", "소비재": "#fb923c", "화학·소재": "#2dd4bf",
   "지주사": "#8b5cf6", "REITs": "#fb7185", "배당": "#4ade80",
   "성장주": "#f472b6", "가치주": "#60a5fa", "신흥국지수": "#facc15", "선진국지수": "#cbd5e1", "가상화폐": "#f7931a", "파킹형": "#7dd3fc",
   "기타": "#6b7280",
@@ -63,9 +63,11 @@ const SECTOR_COLOR_ALIASES = {
   "2차전지": "2차전지·전기차", "이차전지": "2차전지·전기차", "전기차": "2차전지·전기차",
   "금": "원자재", "금/원자재": "원자재", "금·원자재": "원자재", "원자재/금": "원자재", "소재": "화학·소재", "화학": "화학·소재",
   "신흥국": "지수", "국내지수": "지수", "미국지수": "지수", "지수추종": "지수",
-  "현금": "기타", "통신": "인프라", "건설": "인프라",
+  "현금": "기타", "통신": "AI전력·인프라", "건설": "AI전력·인프라",
   "엔터": "엔터·미디어", "미디어": "엔터·미디어", "게임": "엔터·미디어",
-  "전력": "전력인프라",
+  "여행": "여행·호텔", "호텔": "여행·호텔", "리조트": "여행·호텔", "관광": "여행·호텔", "엔터·미디어·관광": "여행·호텔",
+  "전력": "AI전력·인프라", "산업재": "AI전력·인프라",
+  "운송": "해운·물류", "물류": "해운·물류", "해운": "해운·물류",
 };
 
 function getSectorColor(sector) {
@@ -1597,14 +1599,14 @@ const STOCK_SECTOR_DB = {
   "EOG":  { n:"EOG리소시스",         s:"에너지", x:"NYSE" },
 
   // ── 전력인프라 (유틸리티 포함) ──
-  "NEE":  { n:"넥스트에라에너지",    s:"전력인프라", x:"NYSE"   },
-  "SO":   { n:"서던컴퍼니",          s:"전력인프라", x:"NYSE"   },
-  "DUK":  { n:"듀크에너지",          s:"전력인프라", x:"NYSE"   },
-  "CEG":  { n:"컨스텔레이션에너지",  s:"전력인프라", x:"NASDAQ" },
-  "VST":  { n:"비스트라",            s:"전력인프라", x:"NYSE"   },
-  "GEV":  { n:"GE버노바",            s:"전력인프라", x:"NYSE"   },
-  "ETN":  { n:"이튼",                s:"전력인프라", x:"NYSE"   }, // 전력관리
-  "PWR":  { n:"콴타서비시스",        s:"전력인프라", x:"NYSE"   }, // 전력망 건설
+  "NEE":  { n:"넥스트에라에너지",    s:"AI전력·인프라", x:"NYSE"   },
+  "SO":   { n:"서던컴퍼니",          s:"AI전력·인프라", x:"NYSE"   },
+  "DUK":  { n:"듀크에너지",          s:"AI전력·인프라", x:"NYSE"   },
+  "CEG":  { n:"컨스텔레이션에너지",  s:"AI전력·인프라", x:"NASDAQ" },
+  "VST":  { n:"비스트라",            s:"AI전력·인프라", x:"NYSE"   },
+  "GEV":  { n:"GE버노바",            s:"AI전력·인프라", x:"NYSE"   },
+  "ETN":  { n:"이튼",                s:"AI전력·인프라", x:"NYSE"   }, // 전력관리
+  "PWR":  { n:"콴타서비시스",        s:"AI전력·인프라", x:"NYSE"   }, // 전력망 건설
 
   // ── 조선·방산·우주항공 ──
   "LMT":  { n:"록히드마틴",          s:"조선·방산·우주항공", x:"NYSE"   },
@@ -1625,15 +1627,15 @@ const STOCK_SECTOR_DB = {
   "PL":   { n:"플래닛랩스",          s:"조선·방산·우주항공", x:"NYSE"   },
 
   // ── 인프라 (건설/중장비/통신) ──
-  "CAT":  { n:"캐터필러",            s:"인프라", x:"NYSE"   }, // 중장비
-  "DE":   { n:"디어",                s:"인프라", x:"NYSE"   }, // 중장비
-  "VZ":   { n:"버라이즌",            s:"인프라", x:"NYSE"   }, // 통신
-  "T":    { n:"AT&T",                s:"인프라", x:"NYSE"   }, // 통신
-  "TMUS": { n:"티모바일",            s:"인프라", x:"NASDAQ" }, // 통신
+  "CAT":  { n:"캐터필러",            s:"AI전력·인프라", x:"NYSE"   }, // 중장비
+  "DE":   { n:"디어",                s:"AI전력·인프라", x:"NYSE"   }, // 중장비
+  "VZ":   { n:"버라이즌",            s:"AI전력·인프라", x:"NYSE"   }, // 통신
+  "T":    { n:"AT&T",                s:"AI전력·인프라", x:"NYSE"   }, // 통신
+  "TMUS": { n:"티모바일",            s:"AI전력·인프라", x:"NASDAQ" }, // 통신
 
   // ── 산업재 ──
-  "UPS":  { n:"UPS",                 s:"산업재", x:"NYSE"   }, // 물류
-  "UNP":  { n:"유니온퍼시픽",        s:"산업재", x:"NYSE"   }, // 운송
+  "UPS":  { n:"UPS",                 s:"해운·물류", x:"NYSE"   }, // 물류
+  "UNP":  { n:"유니온퍼시픽",        s:"해운·물류", x:"NYSE"   }, // 운송
 
   // ── 엔터·미디어 ──
   "NFLX": { n:"넷플릭스",            s:"엔터·미디어", x:"NASDAQ" },
@@ -1759,7 +1761,7 @@ const STOCK_SECTOR_DB = {
   "010950": { n:"S-Oil",             s:"에너지", x:"KOSPI" },
 
   // ── 전력인프라 / 원전 ──
-  "015760": { n:"한국전력",          s:"전력인프라", x:"KOSPI" },
+  "015760": { n:"한국전력",          s:"AI전력·인프라", x:"KOSPI" },
   "034020": { n:"두산에너빌리티",    s:"원전",       x:"KOSPI" }, // ⚠ 원전+발전+풍력
 
   // ── 소비재 ──
@@ -1774,11 +1776,11 @@ const STOCK_SECTOR_DB = {
   "161890": { n:"한국콜마",          s:"소비재", x:"KOSDAQ" }, // 화장품
 
   // ── 인프라 (건설/통신) ──
-  "017670": { n:"SK텔레콤",          s:"인프라", x:"KOSPI" }, // 통신
-  "030200": { n:"KT",                s:"인프라", x:"KOSPI" }, // 통신
-  "032640": { n:"LG유플러스",        s:"인프라", x:"KOSPI" }, // 통신
-  "000720": { n:"현대건설",          s:"인프라", x:"KOSPI" }, // 건설
-  "047040": { n:"대우건설",          s:"인프라", x:"KOSPI" }, // 건설
+  "017670": { n:"SK텔레콤",          s:"AI전력·인프라", x:"KOSPI" }, // 통신
+  "030200": { n:"KT",                s:"AI전력·인프라", x:"KOSPI" }, // 통신
+  "032640": { n:"LG유플러스",        s:"AI전력·인프라", x:"KOSPI" }, // 통신
+  "000720": { n:"현대건설",          s:"AI전력·인프라", x:"KOSPI" }, // 건설
+  "047040": { n:"대우건설",          s:"AI전력·인프라", x:"KOSPI" }, // 건설
 
   // ── 지주사 ──
   "003550": { n:"LG",                s:"지주사", x:"KOSPI" },
@@ -1804,12 +1806,12 @@ const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v1";
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
-const SECTOR_THEMES = ["REITs","배당","반도체","원전","전력인프라","친환경에너지","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권","파킹형"];
+const SECTOR_THEMES = ["REITs","배당","반도체","원전","AI전력·인프라","친환경·그린","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","해운·물류","여행·호텔","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권","파킹형"];
 const SECTOR_THEME_SET = new Set(SECTOR_THEMES);
 // 국가 접두 후보(라벨에서 떼어내 베이스 테마를 얻을 때 사용)
 const COUNTRY_PREFIXES = ["미국","글로벌","중국","일본","인도"];
 // 국가 접두를 붙이지 않는 자체완결 섹터(이름 자체에 지역/성격이 박혀 있거나 국적 개념이 약함)
-const SELF_CONTAINED_SECTORS = new Set(["미국빅테크","가상화폐"]);
+const SELF_CONTAINED_SECTORS = new Set(["미국빅테크","가상화폐","원자재","채권","파킹형"]);
 // 베이스 테마에 국가 접두를 적절히 적용
 function withCountry(base, country) {
   if (!base || base === "기타") return "기타";
@@ -1856,34 +1858,35 @@ function cascadeTheme(name) {
   if (has("배당","고배당","커버드콜","DIVIDEND")) return "배당";  // 2
   if (has("반도체","SEMICONDUCTOR")) return "반도체";  // 3
   if (has("원자력","원전","SMR","우라늄","URANIUM","NUCLEAR")) return "원전";  // 4
-  if (has("전력","전력인프라","데이터센터","ESS","유틸리티","UTILITIES","UTILITY")) return "전력인프라";  // 5
-  if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","그린","CLEAN ENERGY","SOLAR","RENEWABLE")) return "친환경에너지";  // 6
-  if (has("에너지","원유","오일","가스","ENERGY","OIL")) return "에너지";  // 7
-  if (has("금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철강","철광석","광업","광산","원자재")) return "원자재";  // 8
-  if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차";  // 9
+  if (has("전력","전력인프라","데이터센터","ESS","유틸리티","UTILITIES","UTILITY","AI인프라","클라우드인프라","네트워크인프라","건설","중장비","건설장비","토목","SOC")) return "AI전력·인프라";  // 5 (구체적 인프라 — 전력·데이터센터·AI/클라우드/네트워크인프라·건설·중장비·토목·SOC. 친환경·에너지·AI로보틱스보다 우선)
+  if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차";  // 6 (친환경보다 우선 — "친환경차"는 대부분 전기차/배터리)
+  if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","친환경","탄소중립","그린","CLEAN ENERGY","SOLAR","RENEWABLE","CARBON NEUTRAL","NET ZERO")) return "친환경·그린";  // 7 (친환경·그린 테마, 국가 접두 적용. 전기차/배터리는 위 6번이 먼저)
+  if (has("에너지","원유","오일","가스","ENERGY","OIL")) return "에너지";  // 8
+  if (has("금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철강","철광석","광업","광산","원자재")) return "원자재";  // 9
   if (has("자동차","AUTOMOBILE")) return "자동차";  // 10
   if (has("AI","인공지능","로봇","로보틱스","로벗","피지컬AI","ROBOTICS","ARTIFICIAL INTELLIGENCE")) return "AI·로보틱스";  // 11
   if (has("빅테크","미국테크TOP10","BIG TECH")) return "미국빅테크";  // 12 (ETF 전용, 항상 미국)
+  if (has("여행","호텔","리조트","크루즈","카지노","레저","항공운송","항공사","TRAVEL","HOTEL","RESORT","CRUISE","CASINO","LEISURE","AIRLINE")) return "여행·호텔";  // 12.5 (여객 항공·관광·숙박·카지노. 조선·방산·해운물류보다 위 — "항공운송">"운송". 호텔리츠는 REITs 1번 먼저)
+  if (has("해운","물류","운송","SHIPPING","LOGISTICS","TRANSPORTATION")) return "해운·물류";  // 12.7 (화물 운송·물류. 여객 항공 제외 → 여행·호텔)
   if (has("조선","방산","우주항공","우주","항공","드론","방위","DEFENSE","AEROSPACE")) return "조선·방산·우주항공";  // 13
   if (has("헬스케어","바이오","제약","바이오시밀러","생명과학","의료기기","HEALTH CARE","HEALTHCARE","BIOTECH","PHARMA","MEDICAL")) return "헬스케어";  // 14
   if (has("금융","은행","증권","보험","카드","FINANCIAL","BANK")) return "금융";  // 15
-  if (has("인프라","건설","중장비","건설장비","토목","SOC","통신","INFRASTRUCTURE","TELECOM")) return "인프라";  // 16
-  if (has("산업재","운송","물류","INDUSTRIAL")) return "산업재";  // 17
-  if (has("엔터","엔터테인먼트","미디어","영화","드라마","콘텐츠","방송","언론","게임","MEDIA","ENTERTAINMENT","COMMUNICATION","GAMING")) return "엔터·미디어";  // 18
-  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어","CONSUMER","STAPLES","DISCRETIONARY")) return "소비재";  // 19
-  if (has("화학","소재","MATERIALS","CHEMICAL")) return "화학·소재";  // 20
-  if (has("지주","HOLDING")) return "지주사";  // 21
+  if (has("인프라","산업재","엔지니어링","통신","INFRASTRUCTURE","INDUSTRIAL","INDSTRL","TELECOM")) return "AI전력·인프라";  // 16 (두루뭉술 인프라·산업재 — 에너지보다 아래라 "천연가스인프라"는 에너지가 가져감)
+  if (has("엔터","엔터테인먼트","미디어","영화","드라마","콘텐츠","컨텐츠","K-POP","KPOP","K팝","방송","언론","게임","스포츠","구단","SNS","ENTERTAINMENT","COMMUNICATION","GAMING","GAME","ESPORTS","SPORTS","SOCIAL MEDIA","FOOTBALL CLUB") || (has("MEDIA") && !n.includes("INTERMEDI"))) return "엔터·미디어";  // 17 (엔터·미디어·게임·스포츠. MEDIA는 INTERMEDIATE/INTERMEDIARY 제외)
+  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어","CONSUMER","STAPLES","DISCRETIONARY")) return "소비재";  // 18
+  if (has("화학","소재","MATERIALS","CHEMICAL")) return "화학·소재";  // 19
+  if (has("지주","HOLDING")) return "지주사";  // 20
   // 성장주·가치주는 ETF 전용 팩터. 지수보다 먼저 잡아 "S&P500 Growth"→성장주가 되게 함.
-  if (has("성장주","성장","GROWTH")) return "성장주";  // 22 (한글 ETF는 "...성장"으로 표기)
-  if (has("가치주","가치","VALUE")) return "가치주";  // 23 (한글 ETF는 "...가치"로 표기)
+  if (has("성장주","성장","GROWTH")) return "성장주";  // 21 (한글 ETF는 "...성장"으로 표기)
+  if (has("가치주","가치","VALUE")) return "가치주";  // 22 (한글 ETF는 "...가치"로 표기)
   // 지역 묶음 지수: 특정국이 아닌 신흥국/선진국 묶음.
-  if (has("신흥국","이머징","EMERGING")) return "신흥국지수";  // 24
-  if (has("선진국","DEVELOPED","EAFE")) return "선진국지수";  // 25
+  if (has("신흥국","이머징","EMERGING")) return "신흥국지수";  // 23
+  if (has("선진국","DEVELOPED","EAFE")) return "선진국지수";  // 24
   // "테크"는 가장 약한 폴백 — 앞에 수식어가 붙으면 위에서 먼저 잡히도록 후순위.
-  if (has("소프트웨어","IT","테크","정보기술","핀테크","TECHNOLOGY","SOFTWARE")) return "테크";  // 26
-  if (has("코스피","코스닥","나스닥","다우존스","S&P500","S&P","닛케이","NIFTY50","러셀","코스피200","밸류업","NASDAQ","RUSSELL","DOW","TOTAL STOCK","TOTAL MARKET","LARGE-CAP","LARGE CAP","MID-CAP","MIDCAP","SMALL-CAP","SMALL CAP","TOPIX")) return "지수";  // 27
-  if (has("CD금리","KOFR","머니마켓","MMF","SOFR금리","초단기금리")) return "파킹형";  // 27.5 (CD·KOFR·MMF·금리형 = 파킹)
-  if (has("국채","국고채","회사채","통안채","단기채","종합채권","채권","TREASURY","BOND","AGGREGATE")) return "채권";  // 28
+  if (has("소프트웨어","IT","테크","정보기술","핀테크","TECHNOLOGY","SOFTWARE")) return "테크";  // 25
+  if (has("코스피","코스닥","나스닥","다우존스","S&P500","S&P","닛케이","NIFTY50","러셀","코스피200","밸류업","NASDAQ","RUSSELL","DOW","TOTAL STOCK","TOTAL MARKET","LARGE-CAP","LARGE CAP","MID-CAP","MIDCAP","SMALL-CAP","SMALL CAP","TOPIX")) return "지수";  // 26
+  if (has("CD금리","KOFR","머니마켓","MMF","SOFR금리","초단기금리")) return "파킹형";  // 26.5 (CD·KOFR·MMF·금리형 = 파킹)
+  if (has("국채","국고채","회사채","통안채","단기채","종합채권","채권","TREASURY","BOND","AGGREGATE")) return "채권";  // 27
   return null;
 }
 
@@ -1940,16 +1943,16 @@ const ETF_DB = {
   "GLD":{n:"SPDR Gold Shares",c:"USD",s:"미국원자재"},
   "IAU":{n:"iShares Gold Trust",c:"USD",s:"미국원자재"},
   "SLV":{n:"iShares Silver Trust",c:"USD",s:"미국원자재"},
-  "XLI":{n:"Industrial Select Sector SPDR Fund",c:"USD",s:"미국산업재"},
+  "XLI":{n:"Industrial Select Sector SPDR Fund",c:"USD",s:"미국AI전력·인프라"},
   "XLP":{n:"Consumer Staples Select Sector SPDR Fund",c:"USD",s:"미국소비재"},
   "XLY":{n:"Consumer Discretionary Select Sector SPDR Fund",c:"USD",s:"미국소비재"},
-  "XLU":{n:"Utilities Select Sector SPDR Fund",c:"USD",s:"미국전력인프라"},
+  "XLU":{n:"Utilities Select Sector SPDR Fund",c:"USD",s:"미국AI전력·인프라"},
   "XLB":{n:"Materials Select Sector SPDR Fund",c:"USD",s:"미국화학·소재"},
-  "BND":{n:"Vanguard Total Bond Market ETF",c:"USD",s:"미국채권"},
-  "AGG":{n:"iShares Core U.S. Aggregate Bond ETF",c:"USD",s:"미국채권"},
-  "TLT":{n:"iShares 20+ Year Treasury Bond ETF",c:"USD",s:"미국채권"},
-  "SGOV":{n:"iShares 0-3 Month Treasury Bond ETF",c:"USD",s:"미국채권"},
-  "IEF":{n:"iShares 7-10 Year Treasury Bond ETF",c:"USD",s:"미국채권"},
+  "BND":{n:"Vanguard Total Bond Market ETF",c:"USD",s:"채권"},
+  "AGG":{n:"iShares Core U.S. Aggregate Bond ETF",c:"USD",s:"채권"},
+  "TLT":{n:"iShares 20+ Year Treasury Bond ETF",c:"USD",s:"채권"},
+  "SGOV":{n:"iShares 0-3 Month Treasury Bond ETF",c:"USD",s:"채권"},
+  "IEF":{n:"iShares 7-10 Year Treasury Bond ETF",c:"USD",s:"채권"},
   "VT":{n:"Vanguard Total World Stock ETF",c:"USD",s:"기타"},
   "QUAL":{n:"iShares MSCI USA Quality Factor ETF",c:"USD",s:"기타"},
   // --- 한국 ETF (KRW) : 순자산 상위 + 테마별 대표. 코드는 공식·교차검증된 것만. s는 국가포함 최종섹터. ---
@@ -1980,7 +1983,7 @@ const ETF_DB = {
   "283580":{n:"KODEX 차이나CSI300",c:"KRW",s:"중국지수"},
   "192090":{n:"TIGER 차이나CSI300",c:"KRW",s:"중국지수"},
   "371160":{n:"TIGER 차이나항셍테크",c:"KRW",s:"중국지수"},
-  "372330":{n:"KODEX 차이나항셍테크",c:"KRW",s:"중국지수"},
+  "372330":{n:"KODEX 차이나항셍테크",c:"KRW",s:"중국테크"},
   "453810":{n:"KODEX 인도Nifty50",c:"KRW",s:"인도지수"},
   "453870":{n:"TIGER 인도니프티50",c:"KRW",s:"인도지수"},
   // 한국 상장 미국 지수 (통화 KRW지만 대상은 미국 → 미국지수)
@@ -2068,7 +2071,7 @@ const ETF_DB = {
   "381170":{n:"TIGER 미국테크TOP10 INDXX",c:"KRW",s:"미국빅테크"},
   // 원전·전력·채권
   "434730":{n:"HANARO 원자력iSelect",c:"KRW",s:"원전"},
-  "491820":{n:"HANARO 전력설비투자",c:"KRW",s:"전력인프라"},
+  "491820":{n:"HANARO 전력설비투자",c:"KRW",s:"AI전력·인프라"},
   "459580":{n:"KODEX CD금리액티브(합성)",c:"KRW",s:"파킹형"},
   // 배당
   "466940":{n:"TIGER 은행고배당TOP10",c:"KRW",s:"배당"},
@@ -2103,7 +2106,7 @@ const ETF_DB = {
   "273130":{n:"KODEX 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
   "385540":{n:"RISE 종합채권(A-이상)액티브",c:"KRW",s:"채권"},
   "214980":{n:"KODEX 단기채권PLUS",c:"KRW",s:"채권"},
-  "453850":{n:"ACE 미국30년국채액티브(H)",c:"KRW",s:"미국채권"},
+  "453850":{n:"ACE 미국30년국채액티브(H)",c:"KRW",s:"채권"},
   "157450":{n:"TIGER 단기통안채",c:"KRW",s:"채권"},
   "436140":{n:"SOL 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
   "0139F0":{n:"TIGER 12월자동연장금융채(AA-이상)액티브",c:"KRW",s:"채권"},
@@ -2115,30 +2118,30 @@ const ETF_DB = {
   "481060":{n:"KODEX 미국30년국채타겟커버드콜(합성 H)",c:"KRW",s:"미국배당"},
   "153130":{n:"KODEX 단기채권",c:"KRW",s:"채권"},
   "272580":{n:"TIGER 단기채권액티브",c:"KRW",s:"채권"},
-  "484790":{n:"KODEX 미국30년국채액티브(H)",c:"KRW",s:"미국채권"},
+  "484790":{n:"KODEX 미국30년국채액티브(H)",c:"KRW",s:"채권"},
   "365780":{n:"ACE 국고채10년",c:"KRW",s:"채권"},
-  "329750":{n:"TIGER 미국달러단기채권액티브",c:"KRW",s:"미국채권"},
+  "329750":{n:"TIGER 미국달러단기채권액티브",c:"KRW",s:"채권"},
   "114260":{n:"KODEX 국고채3년",c:"KRW",s:"채권"},
   "438330":{n:"TIGER 우량회사채액티브",c:"KRW",s:"채권"},
   "471230":{n:"KODEX 국고채10년액티브",c:"KRW",s:"채권"},
   "0007F0":{n:"KODEX 27-12 회사채(AA-이상)액티브",c:"KRW",s:"채권"},
   "473290":{n:"KODEX 26-12 회사채(AA-이상)액티브",c:"KRW",s:"채권"},
   "451000":{n:"PLUS 종합채권(AA-이상)액티브",c:"KRW",s:"채권"},
-  "458250":{n:"TIGER 미국30년국채스트립액티브(합성 H)",c:"KRW",s:"미국채권"},
+  "458250":{n:"TIGER 미국30년국채스트립액티브(합성 H)",c:"KRW",s:"채권"},
   // 친환경·신재생 (2차전지·조선·전력 겹치는 건 해당 테마로)
-  "385510":{n:"KODEX 신재생에너지액티브",c:"KRW",s:"친환경에너지"},
-  "377990":{n:"TIGER Fn신재생에너지",c:"KRW",s:"친환경에너지"},
-  "404120":{n:"TIME K신재생에너지액티브",c:"KRW",s:"친환경에너지"},
-  "391600":{n:"ACE 미국친환경그린테마",c:"KRW",s:"미국친환경에너지"},
+  "385510":{n:"KODEX 신재생에너지액티브",c:"KRW",s:"친환경·그린"},
+  "377990":{n:"TIGER Fn신재생에너지",c:"KRW",s:"친환경·그린"},
+  "404120":{n:"TIME K신재생에너지액티브",c:"KRW",s:"친환경·그린"},
+  "391600":{n:"ACE 미국친환경그린테마",c:"KRW",s:"미국친환경·그린"},
   "385600":{n:"ACE 2차전지&친환경차액티브",c:"KRW",s:"2차전지·전기차"},
-  "381570":{n:"HANARO Fn친환경에너지",c:"KRW",s:"친환경에너지"},
+  "381570":{n:"HANARO Fn친환경에너지",c:"KRW",s:"친환경·그린"},
   "445150":{n:"KODEX 친환경조선해운액티브",c:"KRW",s:"조선·방산·우주항공"},
-  "475070":{n:"KoAct 글로벌친환경전력인프라액티브",c:"KRW",s:"글로벌전력인프라"},
-  "457990":{n:"PLUS 태양광&ESS",c:"KRW",s:"친환경에너지"},
-  "413220":{n:"SOL 차이나태양광CSI(합성)",c:"KRW",s:"중국친환경에너지"},
-  "375760":{n:"HANARO 탄소효율그린뉴딜",c:"KRW",s:"친환경에너지"},
-  "375770":{n:"KODEX 탄소효율그린뉴딜",c:"KRW",s:"친환경에너지"},
-  "376410":{n:"TIGER 탄소효율그린뉴딜",c:"KRW",s:"친환경에너지"},
+  "475070":{n:"KoAct 글로벌친환경전력인프라액티브",c:"KRW",s:"글로벌AI전력·인프라"},
+  "457990":{n:"PLUS 태양광&ESS",c:"KRW",s:"친환경·그린"},
+  "413220":{n:"SOL 차이나태양광CSI(합성)",c:"KRW",s:"중국친환경·그린"},
+  "375760":{n:"HANARO 탄소효율그린뉴딜",c:"KRW",s:"친환경·그린"},
+  "375770":{n:"KODEX 탄소효율그린뉴딜",c:"KRW",s:"친환경·그린"},
+  "376410":{n:"TIGER 탄소효율그린뉴딜",c:"KRW",s:"친환경·그린"},
   // 미국빅테크 (추가)
   "314250":{n:"KODEX 미국빅테크10(H)",c:"KRW",s:"미국빅테크"},
   "490090":{n:"TIGER 미국AI빅테크10",c:"KRW",s:"미국빅테크"},
@@ -2184,6 +2187,51 @@ const ETF_DB = {
   "253290":{n:"RISE 헬스케어채권혼합",c:"KRW",s:"헬스케어"},
   "248270":{n:"TIGER S&P글로벌헬스케어(합성)",c:"KRW",s:"글로벌헬스케어"},
   "227540":{n:"TIGER 200 헬스케어",c:"KRW",s:"헬스케어"},
+
+  // ── 추가: 친환경·그린 (국가 구분 없이 통합) ──
+  "419420":{n:"KODEX 미국클린에너지나스닥",c:"KRW",s:"미국친환경·그린"},
+  "399580":{n:"RISE 글로벌클린에너지",c:"KRW",s:"글로벌친환경·그린"},
+  "396510":{n:"TIGER 차이나클린에너지SOLACTIVE",c:"KRW",s:"중국친환경·그린"},
+  // ── 추가: 미국에너지 (에너지 섹터 기업·인프라) ──
+  "218420":{n:"KODEX 미국S&P500에너지(합성)",c:"KRW",s:"미국에너지"},
+  "474800":{n:"KIWOOM 미국원유에너지기업",c:"KRW",s:"미국에너지"},
+  "219390":{n:"RISE 미국S&P원유생산기업(합성 H)",c:"KRW",s:"미국에너지"},
+  "497780":{n:"KoAct 미국천연가스인프라액티브",c:"KRW",s:"미국에너지"},
+  "0036Z0":{n:"RISE 미국천연가스밸류체인",c:"KRW",s:"미국에너지"},
+  // ── 추가: 에너지 - 원유 WTI 선물 (※ 에너지로 분류. 원자재로 빼려면 알려줘) ──
+  "261220":{n:"KODEX WTI원유선물(H)",c:"KRW",s:"에너지"},
+  "130680":{n:"TIGER 원유선물Enhanced(H)",c:"KRW",s:"에너지"},
+  "580068":{n:"KB S&P 레버리지 WTI원유 선물 ETN B",c:"KRW",s:"에너지"},
+  "610087":{n:"메리츠 WTI원유 선물 ETN(H)",c:"KRW",s:"에너지"},
+  "610088":{n:"메리츠 레버리지 WTI원유 선물 ETN(H)",c:"KRW",s:"에너지"},
+  "530031":{n:"삼성 레버리지 WTI원유 선물 ETN",c:"KRW",s:"에너지"},
+  "530132":{n:"삼성 블룸버그 WTI원유 선물 ETN B",c:"KRW",s:"에너지"},
+  "530133":{n:"삼성 블룸버그 레버리지 WTI원유 선물 ETN B",c:"KRW",s:"에너지"},
+  "500099":{n:"신한 WTI원유 선물 ETN",c:"KRW",s:"에너지"},
+  // ── 추가: 에너지 - 천연가스 선물 (※ 동일. 원자재로 빼려면 알려줘) ──
+  "580086":{n:"KB 솔랙티브 레버리지 천연가스 선물 ETN",c:"KRW",s:"에너지"},
+  "580085":{n:"KB 솔랙티브 천연가스 선물 ETN",c:"KRW",s:"에너지"},
+  "550099":{n:"N2 레버리지 천연가스 선물 ETN",c:"KRW",s:"에너지"},
+  "610095":{n:"메리츠 레버리지 천연가스 선물 ETN(H)",c:"KRW",s:"에너지"},
+  "610094":{n:"메리츠 천연가스 선물 ETN(H)",c:"KRW",s:"에너지"},
+  "520090":{n:"미래에셋 천연가스 선물 ETN B",c:"KRW",s:"에너지"},
+  "520076":{n:"미래에셋 1.5X 천연가스 선물 ETN",c:"KRW",s:"에너지"},
+  "530145":{n:"삼성 레버리지 천연가스 선물 ETN D",c:"KRW",s:"에너지"},
+  "500101":{n:"신한 블룸버그 천연가스 선물 ETN",c:"KRW",s:"에너지"},
+  "500102":{n:"신한 블룸버그 2X 천연가스 선물 ETN B",c:"KRW",s:"에너지"},
+  // ── 추가: 화학·소재 (에너지화학 = 정유·화학 → 화학·소재로 분류) ──
+  "117460":{n:"KODEX 에너지화학",c:"KRW",s:"화학·소재"},
+  "139250":{n:"TIGER 200 에너지화학",c:"KRW",s:"화학·소재"},
+  "243890":{n:"TIGER 200에너지화학레버리지",c:"KRW",s:"화학·소재"},
+  // ── 추가: 테크 (한국·일본) / 미국빅테크 ──
+  "469790":{n:"KIWOOM 코리아테크TOP10",c:"KRW",s:"테크"},
+  "444200":{n:"SOL 코리아메가테크액티브",c:"KRW",s:"테크"},
+  "488290":{n:"MIDAS 일본테크액티브",c:"KRW",s:"일본테크"},
+  "481190":{n:"SOL 미국테크TOP10",c:"KRW",s:"미국빅테크"},
+  "0118S0":{n:"SOL 미국넥스트테크TOP10액티브",c:"KRW",s:"미국빅테크"},
+  // ── 추가: 중국테크 (항셍테크·차이나테크TOP10 = 중국 빅테크 성격 → 테크 + 중국 접두) ──
+  "371870":{n:"ACE 차이나항셍테크",c:"KRW",s:"중국테크"},
+  "0065G0":{n:"KODEX 차이나테크TOP10",c:"KRW",s:"중국테크"},
 };
 // ETF DB 조회: 티커(미국 알파벳 / 한국 6자리) 우선, 없으면 이름 정확일치
 function lookupETF(ticker, name) {
@@ -2245,6 +2293,40 @@ const COMPANY_SECTOR_MAP = [
   { kw: ["SK그룹"], c: "", s: "기타" },
   { kw: ["엔비디아", "NVIDIA"], c: "미국", s: "반도체" },
   { kw: ["테슬라", "TESLA"], c: "미국", s: "2차전지·전기차" },
+  // 연예기획사 (이름에 '엔터'가 없는 것 위주 — 에스엠·와이지·큐브엔터 등은 cascade '엔터'로 잡힘)
+  { kw: ["하이브", "HYBE"], c: "", s: "엔터·미디어" },
+  { kw: ["JYP"], c: "", s: "엔터·미디어" },
+  // 상장 스포츠 구단 → 엔터·미디어 (MANU 등 축약 티커는 'MANUFACTURING' 오인 위험이라 정식 명칭 사용)
+  { kw: ["MANCHESTER UNITED"], c: "미국", s: "엔터·미디어" },
+  { kw: ["JUVENTUS"], c: "", s: "엔터·미디어" },
+  { kw: ["BORUSSIA DORTMUND", "BORUSSIA"], c: "", s: "엔터·미디어" },
+  { kw: ["CELTIC FC", "CELTIC PLC"], c: "", s: "엔터·미디어" },
+  { kw: ["AS ROMA"], c: "", s: "엔터·미디어" },
+  { kw: ["LAZIO"], c: "", s: "엔터·미디어" },
+  { kw: ["AFC AJAX", "AJAX"], c: "", s: "엔터·미디어" },
+  { kw: ["BENFICA"], c: "", s: "엔터·미디어" },
+  // 여행사 → 여행·호텔 (개별주만. ETF는 '여행' 키워드 미사용 — 항공운송 비중 큼)
+  { kw: ["하나투어"], c: "", s: "여행·호텔" },
+  { kw: ["모두투어"], c: "", s: "여행·호텔" },
+  { kw: ["노랑풍선"], c: "", s: "여행·호텔" },
+  { kw: ["참좋은여행"], c: "", s: "여행·호텔" },
+  { kw: ["BOOKING HOLDINGS"], c: "미국", s: "여행·호텔" },
+  { kw: ["EXPEDIA"], c: "미국", s: "여행·호텔" },
+  { kw: ["AIRBNB"], c: "미국", s: "여행·호텔" },
+  { kw: ["TRIPADVISOR"], c: "미국", s: "여행·호텔" },
+  { kw: ["TRIP.COM"], c: "미국", s: "여행·호텔" },
+  // 크루즈 선사 → 여행·호텔
+  { kw: ["CARNIVAL"], c: "미국", s: "여행·호텔" },
+  { kw: ["ROYAL CARIBBEAN"], c: "미국", s: "여행·호텔" },
+  { kw: ["NORWEGIAN CRUISE"], c: "미국", s: "여행·호텔" },
+  { kw: ["크루즈", "CRUISE"], c: "", s: "여행·호텔" },
+  // 호텔·리조트·카지노 → 여행·호텔 (이름에 HOTEL/RESORT 없어 cascade로 안 잡히는 것 위주)
+  { kw: ["MARRIOTT"], c: "미국", s: "여행·호텔" },
+  { kw: ["HILTON"], c: "미국", s: "여행·호텔" },
+  { kw: ["LAS VEGAS SANDS"], c: "미국", s: "여행·호텔" },
+  { kw: ["강원랜드"], c: "", s: "여행·호텔" },
+  { kw: ["파라다이스"], c: "", s: "여행·호텔" },
+  { kw: ["GKL"], c: "", s: "여행·호텔" },
 ];
 // 가장 긴(=구체적인) 키워드 우선 매칭
 function lookupCompany(name) {
@@ -3537,7 +3619,7 @@ function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccoun
     });
   };
 
-  const SECTORS = ["기타","지수","신흥국지수","선진국지수","채권","파킹형","반도체","AI·로보틱스","미국빅테크","테크","성장주","가치주","가상화폐","전력인프라","원전","친환경에너지","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","인프라","산업재","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
+  const SECTORS = ["기타","지수","신흥국지수","선진국지수","채권","파킹형","반도체","AI·로보틱스","미국빅테크","테크","성장주","가치주","가상화폐","AI전력·인프라","원전","친환경·그린","에너지","원자재","2차전지·전기차","자동차","조선·방산·우주항공","헬스케어","금융","해운·물류","여행·호텔","엔터·미디어","소비재","화학·소재","지주사","REITs","배당"];
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#00000088", zIndex:500, display:"flex", alignItems:"flex-end" }} onClick={onClose}>
@@ -5940,11 +6022,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.5</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.6</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.5 변경사항 (지수 소스 네이버 전환)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.6 변경사항 (섹터 분류 체계 개편)</div>
+            <div>· 섹터 통합·분할: 전력인프라+인프라+산업재 → AI전력·인프라 / 운송 관련은 해운·물류(화물)·여행·호텔(여객항공·관광·숙박)·엔터·미디어로 3분할</div>
+            <div>· 친환경에너지 → 친환경·그린(국가 접두). 2차전지·전기차를 친환경보다 우선(친환경차 대부분 전기차). 원자재·채권·파킹형은 국가 표시 제거</div>
+            <div>· 중국테크·화학·소재 재분류, 키워드 캐스케이드 정비(구체적↑·범용↓), MEDIA의 Intermediate 오인 방지</div>
+            <div>· 연예기획사·스포츠구단·여행사·크루즈·호텔 개별주 매핑 추가</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.5 변경사항 (지수 소스 네이버 전환)</div>
             <div>· 메인·세계 지수 13종(코스피·코스닥·다우·나스닥·S&P500·닛케이·항셍·상해·인도·대만·독일DAX·영국FTSE·필라델피아반도체)을 야후 → 네이버로 전환. 야후 전일종가 오류로 한국·아시아 등락률이 부풀려지던 문제 해결</div>
             <div>· 일간 등락률은 네이버 기준, 주간 등락률은 5거래일 전 종가 대비로 계산. 야후·Gemini는 fallback으로 유지</div>
             <div>· 환율·금은 야후 메인 유지, 야후 실패 시에만 네이버 마켓인덱스로 보조 (HTML 파싱 리스크 최소화)</div>
