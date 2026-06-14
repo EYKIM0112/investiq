@@ -1754,7 +1754,7 @@ const STOCK_SECTOR_DB = {
 
   // ── 원자재 (철강/비철) ──
   "010130": { n:"고려아연",          s:"원자재", x:"KOSPI" },
-  "004020": { n:"현대제철",          s:"원자재", x:"KOSPI" },
+  "004020": { n:"현대제철",          s:"화학·소재", x:"KOSPI" },
 
   // ── 에너지 ──
   "096770": { n:"SK이노베이션",      s:"에너지", x:"KOSPI" }, // ⚠ 정유+배터리
@@ -1851,7 +1851,7 @@ function detectCountry(name) {
 
 // ETF 키워드 캐스케이드 — 위에서 아래로, 첫 매치 승. 베이스 테마(국가 접두 없음) 반환, 미매치 null.
 // 원자재 키워드 (배당 예외 가드 + 원자재 분류가 공유). 원자재 키워드가 있으면 커버드콜/배당 키워드가 있어도 원자재 우선 — 배당 섹터 순위(2)는 그대로 두고 원자재에 한해서만 배당을 건너뜀.
-const COMMODITY_KW = ["금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철강","철광석","광업","광산","원자재"].map(s => s.toUpperCase());
+const COMMODITY_KW = ["금현물","금선물","은현물","은선물","GOLD","SILVER","백금","팔라듐","귀금속","비철금속","비철","금속","구리","알루미늄","니켈","아연","주석","COPPER","ALUMINUM","NICKEL","ZINC","농산물","3대농산물","곡물","콩선물","커피","설탕","원당","코코아","AGRICULTURE","GRAIN","SOYBEAN","CORN","WHEAT","SUGAR","COFFEE","COCOA","철광석","광업","광산","원자재"].map(s => s.toUpperCase());
 
 function cascadeTheme(name) {
   const n = (name || "").toUpperCase();
@@ -1860,7 +1860,7 @@ function cascadeTheme(name) {
   if (has("부동산","리츠","REIT","REAL ESTATE")) return "REITs";  // 1
   if (has("배당","고배당","커버드콜","DIVIDEND") && !COMMODITY_KW.some(k => n.includes(k))) return "배당";  // 2 (원자재 키워드 동반 시 배당 제외 → 아래 원자재로)
   if (has("반도체","SEMICONDUCTOR")) return "반도체";  // 3
-  if (has("원자력","원전","SMR","우라늄","URANIUM","NUCLEAR")) return "원전";  // 4
+  if (has("원자력","원전","우라늄","URANIUM","NUCLEAR") || (has("SMR") && !n.includes("CNSMR") && !n.includes("SMRT") && !n.includes("CONSUMER"))) return "원전";  // 4 (SMR은 CNSMR/SMRT/CONSUMER 오인 배제)
   if (has("전력","전력인프라","데이터센터","ESS","유틸리티","UTILITIES","UTILITY","AI인프라","클라우드인프라","네트워크인프라","건설","중장비","건설장비","토목","SOC")) return "AI전력·인프라";  // 5 (구체적 인프라 — 전력·데이터센터·AI/클라우드/네트워크인프라·건설·중장비·토목·SOC. 친환경·에너지·AI로보틱스보다 우선)
   if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차";  // 6 (친환경보다 우선 — "친환경차"는 대부분 전기차/배터리)
   if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","친환경","탄소중립","그린","CLEAN ENERGY","SOLAR","RENEWABLE","CARBON NEUTRAL","NET ZERO")) return "친환경·그린";  // 7 (친환경·그린 테마, 국가 접두 적용. 전기차/배터리는 위 6번이 먼저)
@@ -1876,8 +1876,8 @@ function cascadeTheme(name) {
   if (has("금융","은행","증권","보험","카드","FINANCIAL","BANK")) return "금융";  // 15
   if (has("인프라","산업재","엔지니어링","통신","INFRASTRUCTURE","INDUSTRIAL","INDSTRL","TELECOM")) return "AI전력·인프라";  // 16 (두루뭉술 인프라·산업재 — 에너지보다 아래라 "천연가스인프라"는 에너지가 가져감)
   if (has("엔터","엔터테인먼트","미디어","영화","드라마","콘텐츠","컨텐츠","K-POP","KPOP","K팝","방송","언론","게임","스포츠","구단","SNS","ENTERTAINMENT","COMMUNICATION","GAMING","GAME","ESPORTS","SPORTS","SOCIAL MEDIA","FOOTBALL CLUB") || (has("MEDIA") && !n.includes("INTERMEDI"))) return "엔터·미디어";  // 17 (엔터·미디어·게임·스포츠. MEDIA는 INTERMEDIATE/INTERMEDIARY 제외)
-  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어","CONSUMER","STAPLES","DISCRETIONARY")) return "소비재";  // 18
-  if (has("화학","소재","MATERIALS","CHEMICAL")) return "화학·소재";  // 19
+  if (has("소비재","경기소비재","필수소비재","의류","소비자서비스","유통","소매","식품","음료","담배","주류","화장품","경기방어","CONSUMER","CNSMR","STAPLES","DISCRETIONARY")) return "소비재";  // 18 (CNSMR = Consumer 약자)
+  if (has("화학","소재","철강","MATERIALS","CHEMICAL","STEEL")) return "화학·소재";  // 19 (철강 = 철광석 가공 소재 → 화학·소재. 철광석/광업은 원자재)
   if (has("지주","HOLDING")) return "지주사";  // 20
   // 성장주·가치주는 ETF 전용 팩터. 지수보다 먼저 잡아 "S&P500 Growth"→성장주가 되게 함.
   if (has("성장주","성장","GROWTH")) return "성장주";  // 21 (한글 ETF는 "...성장"으로 표기)
@@ -1985,7 +1985,7 @@ const ETF_DB = {
   // 중국·인도 지수
   "283580":{n:"KODEX 차이나CSI300",c:"KRW",s:"중국지수"},
   "192090":{n:"TIGER 차이나CSI300",c:"KRW",s:"중국지수"},
-  "371160":{n:"TIGER 차이나항셍테크",c:"KRW",s:"중국지수"},
+  "371160":{n:"TIGER 차이나항셍테크",c:"KRW",s:"중국테크"},
   "372330":{n:"KODEX 차이나항셍테크",c:"KRW",s:"중국테크"},
   "453810":{n:"KODEX 인도Nifty50",c:"KRW",s:"인도지수"},
   "453870":{n:"TIGER 인도니프티50",c:"KRW",s:"인도지수"},
@@ -2966,6 +2966,43 @@ function StockSearchRow({ country = "KR", onSelect }) {
       }
     } catch(e){ console.warn("StockSearch 오류:", e); }
     setResults(found.slice(0,6)); setSearching(false);
+  // ── 추가(2026-06-14 v2.3.0): 원전(한국·미국 SMR/Nuclear/Uranium) + 철강소재(화학·소재) + SMR검색 오인분(소비재/자동차) ──
+  "0155M0":{n:"ACE 미국SMR원자력TOP10",c:"KRW",s:"미국원전"},
+  "433500":{n:"ACE 원자력TOP10",c:"KRW",s:"원전"},
+  "0132H0":{n:"KODEX 미국원자력SMR",c:"KRW",s:"미국원전"},
+  "0098F0":{n:"KODEX 원자력SMR",c:"KRW",s:"원전"},
+  "0007G0":{n:"PLUS 글로벌원자력밸류체인",c:"KRW",s:"글로벌원전"},
+  "442320":{n:"RISE 글로벌원자력",c:"KRW",s:"글로벌원전"},
+  "0051G0":{n:"SOL 미국원자력SMR",c:"KRW",s:"미국원전"},
+  "0092B0":{n:"SOL 한국원자력SMR",c:"KRW",s:"원전"},
+  "0091P0":{n:"TIGER 코리아원자력",c:"KRW",s:"원전"},
+  "0123G0":{n:"TIGER 미국AI전력SMR",c:"KRW",s:"미국원전"},
+  "SMRF":{n:"ALPS Nautilus SMR Nuclear & Tech ETF",c:"USD",s:"미국원전"},
+  "NLR":{n:"VanEck Uranium & Nuclear ETF",c:"USD",s:"미국원전"},
+  "NUKX":{n:"Nicholas Nuclear Income ETF",c:"USD",s:"미국원전"},
+  "NUKZ":{n:"Range Nuclear Renaissance ETF",c:"USD",s:"미국원전"},
+  "RCTR":{n:"First Trust Bloomberg Nuclear Power ETF",c:"USD",s:"미국원전"},
+  "TNUK":{n:"Tortoise Nuclear Renaissance ETF",c:"USD",s:"미국원전"},
+  "URAN":{n:"Themes Uranium & Nuclear ETF",c:"USD",s:"미국원전"},
+  "URA":{n:"Global X Uranium ETF",c:"USD",s:"미국원전"},
+  "URAA":{n:"Direxion Daily Uranium Bull 2X ETF",c:"USD",s:"미국원전"},
+  "URNJ":{n:"Sprott Junior Uranium Miners ETF",c:"USD",s:"미국원전"},
+  "URNM":{n:"Sprott Uranium Miners ETF",c:"USD",s:"미국원전"},
+  "UX":{n:"Roundhill Uranium ETF",c:"USD",s:"미국원전"},
+  "SMU":{n:"Tradr 2X Long SMR Daily ETF",c:"USD",s:"미국원전"},
+  "SMUP":{n:"T-REX 2X Long SMR Daily Target ETF",c:"USD",s:"미국원전"},
+  "SMZ":{n:"Tradr 2X Short SMR Daily ETF",c:"USD",s:"미국원전"},
+  "139240":{n:"TIGER 200 철강소재",c:"KRW",s:"화학·소재"},
+  "FXD":{n:"First Trust Cnsmr Discret AlphaDEX ETF",c:"USD",s:"미국소비재"},
+  "FXG":{n:"First Trust Cnsmr Staples AlphaDEX ETF",c:"USD",s:"미국소비재"},
+  "PSCD":{n:"Invesco S&P SmallCap Cnsmr Discret ETF",c:"USD",s:"미국소비재"},
+  "WANT":{n:"Direxion Daily Cnsmr Discret Bull 3X ETF",c:"USD",s:"미국소비재"},
+  "XLSI":{n:"State Street Cnsmr Stp Sel Sect SPDR Prm ETF",c:"USD",s:"미국소비재"},
+  "XLYI":{n:"State Street Cnsmr Disc Sel Sect SPDR Prm ETF",c:"USD",s:"미국소비재"},
+  "XLYX":{n:"Corgi US Cnsmr Discretionary 2xDly ETF",c:"USD",s:"미국소비재"},
+  "EMC":{n:"Global X Emerging Mkts Great Cnsmr ETF",c:"USD",s:"글로벌소비재"},
+  "KEMQ":{n:"KraneShares Em Mkts Cnsmr Tech ETF",c:"USD",s:"글로벌소비재"},
+  "HAIL":{n:"SPDR S&P Kensho Smart Mobility ETF",c:"USD",s:"미국AI·로보틱스"},
   };
 
   const inputS = {flex:1,background:"#020617",border:"1px solid #334155",borderRadius:8,padding:"11px 12px",color:"#e2e8f0",fontSize:14,outline:"none"};
@@ -6257,11 +6294,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.2.6</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.3.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.2.6 변경사항 (섹터 분류 체계 개편)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.3.0 변경사항 (ETF DB 대량 확장)</div>
+            <div>· ETF/ETN 약 270종 신규 등록(소비재·여행·호텔·화학·소재·원전 + 원자재: 금·은·구리·백금·팔라듐·니켈·희토류·Commodity·농산물) — 총 약 560종. 티커를 DB에 직접 등재해 시세 검색 토큰 절감</div>
+            <div>· 철강 → 화학·소재로 이동(철강은 철광석 가공 소재). 철광석·광업·광산은 원자재 유지</div>
+            <div>· 원자재 예외 가드: 원자재 키워드가 있으면 커버드콜·배당보다 원자재 우선(배당 순위는 유지)</div>
+            <div>· SMR 키워드 오인 방지(Cnsmr·Smart 배제), 차이나항셍테크 → 중국테크, KODEX 증권 코드 정정(266410→102970)</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.2.6 변경사항 (섹터 분류 체계 개편)</div>
             <div>· 섹터 통합·분할: 전력인프라+인프라+산업재 → AI전력·인프라 / 운송 관련은 해운·물류(화물)·여행·호텔(여객항공·관광·숙박)·엔터·미디어로 3분할</div>
             <div>· 친환경에너지 → 친환경·그린(국가 접두). 2차전지·전기차를 친환경보다 우선(친환경차 대부분 전기차). 원자재·채권·파킹형은 국가 표시 제거</div>
             <div>· 중국테크·화학·소재 재분류, 키워드 캐스케이드 정비(구체적↑·범용↓), MEDIA의 Intermediate 오인 방지</div>
