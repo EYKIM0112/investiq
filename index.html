@@ -6274,9 +6274,11 @@ function Settings() {
           { done: true,  text: "수익률 벤치마크 비교 (코스피·코스닥·S&P500)" },
           { done: true,  text: "환율 반영 (USD→KRW 환산)" },
           { done: true,  text: "이미지 다중선택 + 인앱 확대 미리보기" },
-          { done: false, text: "🟡 매매 메모/일지 (종목별 매수 이유 기록)" },
-          { done: false, text: "🟢 위험도 점수 (변동성·집중도 점수화)" },
-          { done: false, text: "🟢 세금 계산기 (양도세·금융투자세 예상액)" },
+          { done: false, text: "🟡 베타 테스터 피드백 (인앱 버그·기능요청 폼)" },
+          { done: false, text: "🟢 알림·리마인더 (리밸런싱·목표비중 이탈·배당 지급일)" },
+          { done: false, text: "🟢 성능 최적화 (초기 로딩·단일 파일 경량화)" },
+          { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
+          { done: false, text: "🔵 안드로이드 앱 (PWA 래핑·상용화 — 최종 목표)" },
         ].map((item, i) => (
           <div key={i} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
             <span style={{ fontSize:13, color: item.done ? "#22d3a0" : "#64748b", flexShrink:0, marginTop:1 }}>
