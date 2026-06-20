@@ -6297,11 +6297,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.1</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.2</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.1 변경사항 (수익률비교 개선)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.2 변경사항 (차트 X축 가독성)</div>
+            <div>· 수익률 비교 차트 X축 눈금을 3개 → 5개로 세분화, 연도가 바뀌는 지점에 연도(YY) 표기</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.4.1 변경사항 (수익률비교 개선)</div>
             <div>· 종목별비교: 조회 후 기간 버튼만 눌러도 즉시 갱신(최대기간 1회 조회 후 클라이언트 절단, 추가 API 호출 없음)</div>
             <div>· 차트 X축을 선택 기간 전체로 고정 — 6개월·1년·3년이 동일하게 보이던 문제 해결(상장 기간 짧은 종목은 일부만 그려짐)</div>
             <div>· 조회 실패 종목은 코드·사유를 함께 표시(원인 진단용)</div>
@@ -7744,7 +7746,6 @@ function CmpLineChart({ lines, tStart, tEnd }) {
   const y = r => padT + (rMax === rMin ? 0.5 : (rMax - r) / (rMax - rMin)) * (H - padT - padB);
   const ticks = [];
   for (let i = 0; i <= 4; i++) ticks.push(rMin + (rMax - rMin) * i / 4);
-  const fmtDate = ms => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()}`; };
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
       {ticks.map((r, i) => (
@@ -7754,9 +7755,18 @@ function CmpLineChart({ lines, tStart, tEnd }) {
         </g>
       ))}
       <line x1={padL} y1={y(0)} x2={W - padR} y2={y(0)} stroke="#475569" strokeWidth="1" strokeDasharray="3 3" />
-      {[xLo, (xLo + xHi) / 2, xHi].map((t, i) => (
-        <text key={"x" + i} x={x(t)} y={H - 6} fontSize="8" fill="#64748b" textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"}>{fmtDate(t)}</text>
-      ))}
+      {(() => {
+        const N = 5, xs = [];
+        for (let i = 0; i < N; i++) xs.push(xLo + (xHi - xLo) * i / (N - 1));
+        let prevY = null;
+        return xs.map((t, i) => {
+          const d = new Date(t), yy = d.getFullYear();
+          const showY = (i === 0) || (yy !== prevY); // 첫 라벨 또는 연도가 바뀌는 지점에만 연도(YY) 표기
+          prevY = yy;
+          const txt = showY ? `${String(yy).slice(2)}/${d.getMonth() + 1}/${d.getDate()}` : `${d.getMonth() + 1}/${d.getDate()}`;
+          return <text key={"x" + i} x={x(t)} y={H - 6} fontSize="7.5" fill="#64748b" textAnchor={i === 0 ? "start" : i === N - 1 ? "end" : "middle"}>{txt}</text>;
+        });
+      })()}
       {valid.map((l, i) => (
         <polyline key={"l" + i} fill="none" stroke={l.color} strokeWidth={l.mine ? 2.2 : 1.6} strokeLinejoin="round"
           points={l.series.map(p => `${x(p.t).toFixed(1)},${y(p.ret).toFixed(1)}`).join(" ")} />
