@@ -353,6 +353,37 @@ export default async function handler(req, res) {
     return res.status(200).json({ names });
   }
 
+  // ── [C2] 한국 종목 일별 종가 이력 (type=history) ──────────
+  // ⚠️ 비교(수익률비교 탭) 전용. 평소 현재가 조회 경로(codes·count=2)와 완전히 분리됨.
+  // 호출: ?type=history&code=XXXXXX&count=N   (N=거래일 수, 사용자가 '조회' 누를 때만)
+  // 응답: { code, prices: [{ date:"YYYYMMDD", close:Number }, ...] }  (과거→현재 순)
+  if (type === "history") {
+    const code = req.query.code;
+    if (!code) return res.status(400).json({ error: "code required" });
+    // 무한 조회 방지: 2~2000거래일로 클램프 (기본 260 ≈ 1년)
+    const count = Math.min(2000, Math.max(2, parseInt(req.query.count, 10) || 260));
+
+    const HIST_HDRS = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Referer": "https://finance.naver.com/",
+    };
+    try {
+      const url = `https://fchart.stock.naver.com/sise.nhn?symbol=${encodeURIComponent(code)}&timeframe=day&count=${count}&requestType=0`;
+      const r = await fetch(url, { headers: HIST_HDRS, signal: AbortSignal.timeout(9000) });
+      if (!r.ok) return res.status(502).json({ error: `fchart ${r.status}` });
+      const text = await r.text();
+      // fchart item: data="YYYYMMDD|시가|고가|저가|종가|거래량" — 날짜로 시작하는 패턴으로 파싱(구분자 의존 X)
+      const matches = [...text.matchAll(/(\d{8})\|(\d+)\|(\d+)\|(\d+)\|(\d+)\|(\d+)/g)];
+      const prices = matches
+        .map(m => ({ date: m[1], close: Number(m[5]) }))
+        .filter(p => p.close > 0);
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=3600");
+      return res.status(200).json({ code, prices });
+    } catch (e) {
+      return res.status(500).json({ error: e.message || "fchart 오류" });
+    }
+  }
+
   // ── [D] 지수 조회 (type=index) ───────────────────────────
   // 용도: 야후 meta.previousClose가 한국·아시아 지수에서 부정확 → 네이버로 대체.
   // 호출: ?type=index&code=KOSPI            (단일)
