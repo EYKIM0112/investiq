@@ -6270,12 +6270,11 @@ function Settings() {
           { done: true,  text: "계좌별 수익률 히스토리 분리" },
           { done: true,  text: "배당 캘린더 (예상 배당금·달력 뷰)" },
           { done: true,  text: "리밸런싱 AI 가이드 (추천 비중)" },
-          { done: true,  text: "수익률 벤치마크 비교 (코스피·코스닥·S&P500)" },
+          { done: true,  text: "수익률비교 — 벤치마크(코스피·코스닥·S&P500·나스닥) + 종목별 비교 라인차트" },
           { done: true,  text: "로그인·회원가입 + 초대코드 (Supabase Auth, 베타 대비)" },
           { done: true,  text: "API 프록시 보안 강화 (JWT 인증 — 인증 사용자만 AI 호출)" },
           { done: true,  text: "섹터 분류 체계 + ETF DB 및 개별주 DB 구축" },
           { done: false, text: "🟡 베타 테스터 피드백 (인앱 버그·기능요청 폼)" },
-          { done: false, text: "🟡 종목 수익률 비교 (포폴·외부 종목 누적 토탈리턴, 기간별 차트)" },
           { done: false, text: "🟢 알림·리마인더 (리밸런싱·목표비중 이탈·배당 지급일)" },
           { done: false, text: "🟢 성능 최적화 (초기 로딩·단일 파일 경량화)" },
           { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
@@ -6298,11 +6297,16 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.1</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.0 변경사항 (수익률비교 탭 신설)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.1 변경사항 (수익률비교 개선)</div>
+            <div>· 종목별비교: 조회 후 기간 버튼만 눌러도 즉시 갱신(최대기간 1회 조회 후 클라이언트 절단, 추가 API 호출 없음)</div>
+            <div>· 차트 X축을 선택 기간 전체로 고정 — 6개월·1년·3년이 동일하게 보이던 문제 해결(상장 기간 짧은 종목은 일부만 그려짐)</div>
+            <div>· 조회 실패 종목은 코드·사유를 함께 표시(원인 진단용)</div>
+            <div>· 벤치마크비교: 막대그래프 → 종목별비교와 동일한 라인 차트로 통일(내 포폴 + 지수 누적 수익률 겹침)</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.4.0 변경사항 (수익률비교 탭 신설)</div>
             <div>· '벤치마크' 탭 → '수익률비교'로 확장. 서브탭 '벤치마크비교' / '종목별비교' 분리</div>
             <div>· 벤치마크비교: 비교 지수에 나스닥 추가(코스피·코스닥·S&P500·나스닥)</div>
             <div>· 종목별비교 신설: 내 포폴·외부 종목 2~5개의 누적 수익률을 라인 차트로 비교(기간 1·3·6개월·1년·3년). 조회 시에만 시세 API 호출, LLM 토큰 미사용, 직전 조회 결과 유지</div>
@@ -7563,59 +7567,53 @@ async function fetchIndexCloses(ticker, range, force) {
 
 function BenchmarkCompare() {
   const [period, setPeriod] = useState("3mo");
-  const [store, setStore] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_STORE_KEY) || "{}"); } catch { return {}; } });
+  const [store, setStore] = useState(() => { try { return JSON.parse(localStorage.getItem(BENCH_STORE_KEY) || "null") || {}; } catch { return {}; } });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const P = BENCH_PERIODS.find(p => p.id === period) || BENCH_PERIODS[1];
+  // 내 포폴 raw([{t(ms),c}], 평가액) — 저장된 히스토리에서 즉시 계산(조회·토큰 없음)
+  const myRaw = React.useMemo(() => {
+    let h = [];
+    try { h = JSON.parse(localStorage.getItem("portfolio_history_v1") || "[]"); } catch {}
+    return h.filter(x => x.total_value > 0).map(x => ({ t: x.timestamp, c: x.total_value })).sort((a, b) => a.t - b.t);
+  }, [store]);
 
-  // 내 수익률: 앱에 저장된 포폴 히스토리에서 즉시 계산 (조회/토큰 없음)
-  const my = React.useMemo(() => {
-    let history = [];
-    try { history = JSON.parse(localStorage.getItem("portfolio_history_v1") || "[]"); } catch {}
-    history = history.filter(h => h.total_value > 0).sort((a, b) => a.timestamp - b.timestamp);
-    const now = Date.now();
-    const inWindow = history.filter(h => h.timestamp >= now - P.days * 86400000);
-    if (inWindow.length >= 2 && inWindow[0].total_value > 0) {
-      const base = inWindow[0], cur = inWindow[inWindow.length - 1];
-      return { ret: (cur.total_value / base.total_value - 1) * 100, baseTime: base.timestamp, days: Math.round((now - base.timestamp) / 86400000) };
-    }
-    return { ret: null, baseTime: null, days: null };
-  }, [period, store]);
-
-  const cached = store[period]; // { rows, baselineDate, ts } | undefined
-
-  // 벤치마크 수익률만 새로 조회 (내 수익률은 저장값 그대로 사용)
+  // 벤치마크 조회: 최대기간(1y) raw를 받아 저장 → 기간 버튼은 추가 호출 없이 즉시 절단
   const fetchBench = async () => {
     setLoading(true); setError("");
     try {
-      const myBaseTime = my.baseTime;
-      const rows = [];
+      const rawMap = {};
       for (const b of BENCHMARKS) {
         try {
-          const data = await fetchIndexCloses(b.ticker, period, true);
-          const pairs = (data.timestamps || []).map((t, i) => ({ t, c: data.closes[i] })).filter(p => p.c != null && p.c > 0);
-          if (pairs.length < 2) { rows.push({ name: b.name, color: b.color, ret: null }); continue; }
-          // 지수 수익률 = 선택한 기간 전체 기준 (기간 시작 ~ 현재). 기간 버튼에 따라 달라짐.
-          const curIdx = pairs.length - 1;
-          const cutoff = (Date.now() - P.days * 86400000) / 1000; // 초 단위
-          let baseIdx = pairs.findIndex(p => p.t >= cutoff);
-          if (baseIdx < 0) baseIdx = 0;                              // 데이터가 기간보다 짧으면 처음부터
-          if (baseIdx >= curIdx) baseIdx = Math.max(0, curIdx - 1);  // 같은 바면 직전 바(0% 방지)
-          rows.push({ name: b.name, color: b.color, ret: (pairs[curIdx].c / pairs[baseIdx].c - 1) * 100 });
-        } catch (e) { rows.push({ name: b.name, color: b.color, ret: null }); }
+          const data = await fetchIndexCloses(b.ticker, "1y", true);
+          rawMap[b.ticker] = (data.timestamps || []).map((t, i) => ({ t: t * 1000, c: data.closes[i] })).filter(p => p.c != null && p.c > 0).sort((a, b2) => a.t - b2.t);
+        } catch (e) { rawMap[b.ticker] = null; }
       }
-      const entry = { rows, baselineDate: myBaseTime ? new Date(myBaseTime).toISOString().slice(0, 10) : null, ts: Date.now() };
-      const next = { ...store, [period]: entry };
-      setStore(next);
-      try { localStorage.setItem(BENCH_STORE_KEY, JSON.stringify(next)); } catch {}
+      const entry = { rawMap, ts: Date.now() };
+      setStore(entry);
+      try { localStorage.setItem(BENCH_STORE_KEY, JSON.stringify(entry)); } catch {}
     } catch (e) { setError("벤치마크 조회 실패: " + e.message); }
     setLoading(false);
   };
 
-  const allRows = [{ name: "내 포트폴리오", color: "#22d3a0", ret: my.ret, mine: true }, ...(cached?.rows || [])];
-  const maxAbs = Math.max(1, ...allRows.filter(r => r.ret != null).map(r => Math.abs(r.ret)));
-  const tsStr = cached?.ts ? (() => { const d = new Date(cached.ts); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "";
+  // 기간/조회결과 변경 시 라인 즉시 재계산
+  const view = React.useMemo(() => {
+    const P = BENCH_PERIODS.find(p => p.id === period) || BENCH_PERIODS[1];
+    const anchor = Date.now();
+    const lines = [];
+    const myS = cmpBuildSeries(myRaw, P.days, anchor);
+    lines.push({ name: "내 포트폴리오", color: "#22d3a0", series: myS, finalRet: myS ? myS[myS.length - 1].ret : null, mine: true });
+    BENCHMARKS.forEach(b => {
+      const pairs = store.rawMap ? store.rawMap[b.ticker] : null;
+      const s = pairs ? cmpBuildSeries(pairs, P.days, anchor) : null;
+      lines.push({ name: b.name, color: b.color, series: s, finalRet: s ? s[s.length - 1].ret : null });
+    });
+    return { lines, tStart: anchor - P.days * 86400000, tEnd: anchor, label: P.label };
+  }, [period, store, myRaw]);
+
+  const hasBench = !!store.rawMap;
+  const myDays = myRaw.length >= 2 ? Math.round((Date.now() - myRaw[0].t) / 86400000) : null;
+  const tsStr = store.ts ? (() => { const d = new Date(store.ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })() : "";
 
   return (
     <div className="card">
@@ -7624,7 +7622,6 @@ function BenchmarkCompare() {
         <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>내 수익률은 앱에 저장된 평가액 기록으로 바로 계산합니다. 벤치마크(코스피·코스닥·S&P500·나스닥)는 아래 버튼을 누를 때만 새로 조회합니다.</div>
       </div>
 
-      {/* 기간 선택 — 누르면 내 수익률만 즉시 갱신(벤치마크는 캐시 표시) */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {BENCH_PERIODS.map(p => (
           <button key={p.id} onClick={() => setPeriod(p.id)} disabled={loading} style={{
@@ -7639,28 +7636,18 @@ function BenchmarkCompare() {
         width: "100%", background: loading ? "#22d3a011" : "#22d3a0", color: loading ? "#22d3a0" : "#0a0a14",
         border: "none", borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 800, cursor: loading ? "default" : "pointer",
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 14,
-      }}>{loading ? <><Spinner size={14}/>벤치마크 조회 중...</> : cached ? "🔄 벤치마크 수익률 다시 조회" : "📡 벤치마크 수익률 조회"}</button>
+      }}>{loading ? <><Spinner size={14} />벤치마크 조회 중...</> : hasBench ? "🔄 벤치마크 수익률 다시 조회" : "📡 벤치마크 수익률 조회"}</button>
 
       {error && <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>}
 
-      {/* 비교 카드 — 내 수익률은 항상 표시, 벤치마크는 조회되어 있으면 표시 */}
-      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 14px" }}>
-        {allRows.map((r, i) => (
-          <div key={i} style={{ marginBottom: i < allRows.length - 1 ? 16 : 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-              <span style={{ fontSize: 13, fontWeight: r.mine ? 800 : 600, color: r.mine ? "#22d3a0" : "#cbd5e1" }}>{r.mine ? "⭐ " : ""}{r.name}</span>
-              <span style={{ fontSize: 14, fontWeight: 800, color: r.ret == null ? "#475569" : r.ret >= 0 ? "#22d3a0" : "#ef4444" }}>
-                {r.ret == null ? (r.mine ? "데이터 부족" : "—") : `${r.ret >= 0 ? "+" : ""}${r.ret.toFixed(2)}%`}
-              </span>
-            </div>
-            {r.ret != null && (
-              <div style={{ height: 10, background: "#16162a", borderRadius: 5, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${Math.min(100, Math.abs(r.ret) / maxAbs * 100)}%`, background: r.mine ? "#22d3a0" : r.color, borderRadius: 5, transition: "width 0.4s" }} />
-              </div>
-            )}
-          </div>
-        ))}
-        {!cached && (
+      <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 12px" }}>
+        {view.lines.some(l => l.series) ? (
+          <CmpLineChart lines={view.lines} tStart={view.tStart} tEnd={view.tEnd} />
+        ) : (
+          <div style={{ textAlign: "center", color: "#64748b", fontSize: 13, padding: "20px 0" }}>표시할 데이터가 없습니다. 벤치마크를 조회하거나 평가액 기록을 며칠 쌓아주세요.</div>
+        )}
+        <CmpLegend lines={view.lines} />
+        {!hasBench && (
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #1a1a2e", fontSize: 12, color: "#64748b", textAlign: "center" }}>
             벤치마크 수익률은 아직 조회되지 않았어요. 위 버튼을 눌러 비교해보세요.
           </div>
@@ -7668,27 +7655,37 @@ function BenchmarkCompare() {
       </div>
 
       <div style={{ marginTop: 12, padding: "12px 14px", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 12, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
-        {my.baseTime
-          ? `내 수익률: 기준일 ${new Date(my.baseTime).toISOString().slice(0,10)}부터 현재까지(약 ${my.days}일) 평가액 변동 기준.`
+        {myDays != null
+          ? `내 수익률: 기준일 ${new Date(myRaw[0].t).toISOString().slice(0, 10)}부터 현재까지(약 ${myDays}일) 평가액 변동 기준.`
           : "내 포트폴리오 누적 데이터가 부족해(2개 시점 이상 필요) 내 수익률은 표시되지 않습니다. 가격을 며칠간 갱신하면 비교가 가능해집니다."}
-        {cached && tsStr && ` · 벤치마크 조회 ${tsStr}`}
-        <br/>· 벤치마크 지수는 <b>선택한 기간({P.label}) 전체</b> 수익률, 내 수익률은 <b>보유 기간(약 {my.days ?? "?"}일)</b> 기준입니다. 보유 기간이 선택 기간보다 짧으면 두 값의 직접 비교는 제한적입니다.
-        <br/>· 인덱스는 가격지수 기준(배당 제외), 내 수익률은 평가액 변동 기준입니다.
+        {hasBench && tsStr && ` · 벤치마크 조회 ${tsStr}`}
+        <br />· 차트 X축은 <b>선택한 기간({view.label})</b> 전체입니다. 내 보유 기간(약 {myDays ?? "?"}일)이 더 짧으면 내 라인은 기간 일부에만 그려집니다.
+        <br />· 인덱스는 가격지수 기준(배당 제외), 내 수익률은 평가액 변동 기준입니다.
       </div>
     </div>
   );
 }
 
-// ---------- 종목별 수익률 비교 (조회 버튼 누를 때만 시세 API 호출 · LLM 토큰 미사용) ----------
+// ---------- 수익률 비교 공통 (종목별·벤치마크 공용) ----------
 const STOCKCMP_STORE_KEY = "investiq_stockcmp_v1";
 const CMP_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
 const CMP_PERIODS = [
-  { id: "1mo", label: "1개월", days: 31,   count: 30,  yRange: "1mo" },
-  { id: "3mo", label: "3개월", days: 93,   count: 75,  yRange: "3mo" },
-  { id: "6mo", label: "6개월", days: 186,  count: 140, yRange: "6mo" },
-  { id: "1y",  label: "1년",   days: 372,  count: 270, yRange: "1y" },
-  { id: "3y",  label: "3년",   days: 1115, count: 780, yRange: "5y" }, // Yahoo엔 3y range가 없어 5y로 받고 cutoff로 절단
+  { id: "1mo", label: "1개월", days: 31 },
+  { id: "3mo", label: "3개월", days: 93 },
+  { id: "6mo", label: "6개월", days: 186 },
+  { id: "1y",  label: "1년",   days: 372 },
+  { id: "3y",  label: "3년",   days: 1115 },
 ];
+
+// raw 시세 pairs([{t(ms),c}])에서 (anchorTs - days)~anchorTs 윈도우의 누적 수익률 시계열 [{t,ret}] (시작 = 0%)
+function cmpBuildSeries(pairs, days, anchorTs) {
+  const cutoff = anchorTs - days * 86400000;
+  let win = (pairs || []).filter(p => p.t >= cutoff);
+  if (win.length < 2) win = (pairs || []).slice(-2); // 기간 내 데이터가 짧으면 받은 만큼
+  if (win.length < 2) return null;
+  const base = win[0].c;
+  return win.map(p => ({ t: p.t, ret: (p.c / base - 1) * 100 }));
+}
 
 // ticker·currency로 시장(kr/us)과 조회 코드 판별
 function cmpResolveMarket(ticker, currency) {
@@ -7696,57 +7693,54 @@ function cmpResolveMarket(ticker, currency) {
   if (currency === "USD") return { market: "us", code: t };
   if (currency === "KRW") return { market: "kr", code: t.replace(/\.(KS|KQ)$/i, "") };
   if (/\.(KS|KQ)$/i.test(t)) return { market: "kr", code: t.replace(/\.(KS|KQ)$/i, "") };
-  if (/^\d{6}$/.test(t)) return { market: "kr", code: t };
+  if (/^[0-9]{6}$/.test(t)) return { market: "kr", code: t };
+  if (/^[0-9A-Z]{6}$/.test(t) && /[0-9]/.test(t)) return { market: "kr", code: t }; // 영숫자 신형 코드(예: 0167A0)
   return { market: "us", code: t };
 }
 
-// 한 종목의 누적 수익률 시계열 조회. 반환: [{ t(ms), ret(%) }] (기간 시작가 = 0%)
-async function cmpFetchSeries(item, period) {
-  const P = CMP_PERIODS.find(p => p.id === period) || CMP_PERIODS[1];
-  let pairs = []; // [{ t(ms), c }]
+// 종목의 raw 시세를 최대기간으로 1회 조회([{t(ms),c}]). 기간 변경은 이 raw를 클라에서 잘라 즉시 계산(추가 API 호출 없음)
+async function cmpFetchRaw(item) {
   if (item.market === "kr") {
-    const r = await fetch(`/api/naver?type=history&code=${encodeURIComponent(item.code)}&count=${P.count}`);
-    if (!r.ok) throw new Error("국내 시세 조회 실패");
+    const r = await fetch(`/api/naver?type=history&code=${encodeURIComponent(item.code)}&count=820`);
+    if (!r.ok) throw new Error(`네이버 HTTP ${r.status}`);
     const d = await r.json();
-    pairs = (d.prices || []).map(p => ({
+    const pairs = (d.prices || []).map(p => ({
       t: Date.UTC(+p.date.slice(0, 4), +p.date.slice(4, 6) - 1, +p.date.slice(6, 8)),
       c: p.close,
     })).filter(p => p.c > 0).sort((a, b) => a.t - b.t);
+    if (pairs.length < 2) throw new Error("시세 이력 없음");
+    return pairs;
   } else {
-    const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(item.code)}&range=${P.yRange}&interval=1d`);
-    if (!r.ok) throw new Error("해외 시세 조회 실패");
+    const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(item.code)}&range=5y&interval=1d`);
+    if (!r.ok) throw new Error(`야후 HTTP ${r.status}`);
     const d = await r.json();
     const res = d.chart?.result?.[0];
-    const ts = res?.timestamp || [];
-    const cl = res?.indicators?.quote?.[0]?.close || [];
-    pairs = ts.map((t, i) => ({ t: t * 1000, c: cl[i] })).filter(p => p.c != null && p.c > 0).sort((a, b) => a.t - b.t);
+    const ts = res?.timestamp || [], cl = res?.indicators?.quote?.[0]?.close || [];
+    const pairs = ts.map((t, i) => ({ t: t * 1000, c: cl[i] })).filter(p => p.c != null && p.c > 0).sort((a, b) => a.t - b.t);
+    if (pairs.length < 2) throw new Error("시세 이력 없음");
+    return pairs;
   }
-  // 기간 절단 (3y처럼 더 길게 받은 경우 포함)
-  const cutoff = Date.now() - P.days * 86400000;
-  let win = pairs.filter(p => p.t >= cutoff);
-  if (win.length < 2) win = pairs.slice(-2); // 상장 기간이 짧으면 받은 만큼
-  if (win.length < 2) throw new Error("데이터 부족");
-  const base = win[0].c;
-  return win.map(p => ({ t: p.t, ret: (p.c / base - 1) * 100 }));
 }
 
-// 여러 종목 누적 수익률 라인 차트 (SVG · 0% 기준선)
-function CmpLineChart({ lines }) {
+// 여러 라인의 누적 수익률 차트 (SVG · 0% 기준선). X축은 tStart~tEnd(선택 기간)에 고정
+function CmpLineChart({ lines, tStart, tEnd }) {
   const valid = (lines || []).filter(l => l.series && l.series.length >= 2);
   if (!valid.length) return null;
   const W = 340, H = 220, padL = 38, padR = 10, padT = 12, padB = 22;
-  let tMin = Infinity, tMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+  let rMin = Infinity, rMax = -Infinity, dMin = Infinity, dMax = -Infinity;
   valid.forEach(l => l.series.forEach(p => {
-    if (p.t < tMin) tMin = p.t;
-    if (p.t > tMax) tMax = p.t;
     if (p.ret < rMin) rMin = p.ret;
     if (p.ret > rMax) rMax = p.ret;
+    if (p.t < dMin) dMin = p.t;
+    if (p.t > dMax) dMax = p.t;
   }));
+  const xLo = (tStart != null) ? tStart : dMin;
+  const xHi = (tEnd != null) ? tEnd : dMax;
   if (rMin > 0) rMin = 0;
   if (rMax < 0) rMax = 0;
   const margin = (rMax - rMin) * 0.1 || 1;
   rMin -= margin; rMax += margin;
-  const x = t => padL + (tMax === tMin ? 0 : (t - tMin) / (tMax - tMin)) * (W - padL - padR);
+  const x = t => padL + (xHi === xLo ? 0 : (t - xLo) / (xHi - xLo)) * (W - padL - padR);
   const y = r => padT + (rMax === rMin ? 0.5 : (rMax - r) / (rMax - rMin)) * (H - padT - padB);
   const ticks = [];
   for (let i = 0; i <= 4; i++) ticks.push(rMin + (rMax - rMin) * i / 4);
@@ -7760,24 +7754,43 @@ function CmpLineChart({ lines }) {
         </g>
       ))}
       <line x1={padL} y1={y(0)} x2={W - padR} y2={y(0)} stroke="#475569" strokeWidth="1" strokeDasharray="3 3" />
-      {[tMin, (tMin + tMax) / 2, tMax].map((t, i) => (
+      {[xLo, (xLo + xHi) / 2, xHi].map((t, i) => (
         <text key={"x" + i} x={x(t)} y={H - 6} fontSize="8" fill="#64748b" textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"}>{fmtDate(t)}</text>
       ))}
       {valid.map((l, i) => (
-        <polyline key={"l" + i} fill="none" stroke={l.color} strokeWidth="1.6" strokeLinejoin="round"
+        <polyline key={"l" + i} fill="none" stroke={l.color} strokeWidth={l.mine ? 2.2 : 1.6} strokeLinejoin="round"
           points={l.series.map(p => `${x(p.t).toFixed(1)},${y(p.ret).toFixed(1)}`).join(" ")} />
       ))}
     </svg>
   );
 }
 
+// 수익률 범례 (라인 색 + 이름 + 최종 수익률). 종목별·벤치마크 공용
+function CmpLegend({ lines }) {
+  const sorted = [...lines].sort((a, b) => (b.finalRet ?? -1e9) - (a.finalRet ?? -1e9));
+  return (
+    <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
+      {sorted.map((l, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span style={{ width: 10, height: 10, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: l.mine ? "#22d3a0" : "#cbd5e1", fontWeight: l.mine ? 800 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.mine ? "⭐ " : ""}{l.name}</span>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 800, flexShrink: 0, color: l.finalRet == null ? "#475569" : l.finalRet >= 0 ? "#22d3a0" : "#ef4444" }}>
+            {l.finalRet == null ? (l.error ? `실패 · ${l.code || ""}` : "—") : `${l.finalRet >= 0 ? "+" : ""}${l.finalRet.toFixed(2)}%`}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // 비교 종목 추가 모달 — [내 포폴의 종목] / [포폴 외의 종목]
 function CmpAddModal({ onClose, onAdd, existingKeys }) {
-  const [mode, setMode] = useState("mine"); // mine | ext
-  const [extCountry, setExtCountry] = useState("KR"); // KR | US
+  const [mode, setMode] = useState("mine");
+  const [extCountry, setExtCountry] = useState("KR");
   const portfolio = loadPortfolio();
 
-  // 포폴 종목 중복 제거(같은 ticker가 여러 계좌에 있어도 1개로)
   const mineList = React.useMemo(() => {
     const seen = new Set(), out = [];
     (portfolio.holdings || []).forEach(h => {
@@ -7845,7 +7858,7 @@ function StockCompare() {
   const cache = loadCache();
   const [items, setItems] = useState(() => (cache?.items) || []);   // [{ key, name, ticker, market, code, color }]
   const [period, setPeriod] = useState(() => (cache?.period) || "3mo");
-  const [result, setResult] = useState(() => (cache?.result) || null); // { period, itemKeys, lines, ts }
+  const [result, setResult] = useState(() => (cache?.result) || null); // { metas:[{key,name,color}], rawMap:{key:{pairs}|{error,code}}, ts }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -7873,25 +7886,36 @@ function StockCompare() {
   const runCompare = async () => {
     if (items.length < 2) { setError("비교하려면 종목을 2개 이상 추가해주세요."); return; }
     setLoading(true); setError("");
-    const lines = [];
+    const rawMap = {};
+    const metas = items.map(it => ({ key: it.key, name: it.name, color: it.color }));
     for (const it of items) {
-      try {
-        const series = await cmpFetchSeries(it, period);
-        lines.push({ name: it.name, color: it.color, series, finalRet: series[series.length - 1].ret });
-      } catch (e) {
-        lines.push({ name: it.name, color: it.color, series: null, finalRet: null, err: true });
-      }
+      try { rawMap[it.key] = { pairs: await cmpFetchRaw(it) }; }
+      catch (e) { rawMap[it.key] = { error: e.message || "조회 실패", code: it.code, market: it.market }; }
     }
-    const entry = { period, itemKeys: items.map(it => it.key), lines, ts: Date.now() };
+    const entry = { metas, rawMap, ts: Date.now() };
     setResult(entry);
     try { localStorage.setItem(STOCKCMP_STORE_KEY, JSON.stringify({ items, period, result: entry })); } catch {}
     setLoading(false);
   };
 
-  const P = CMP_PERIODS.find(p => p.id === period) || CMP_PERIODS[1];
-  // 직전 조회 결과가 현재 선택(종목·기간)과 다르면 "다시 조회" 안내
+  // 기간 변경/조회결과 변경 시 차트 라인 즉시 재계산(추가 API 호출 없음)
+  const view = React.useMemo(() => {
+    if (!result || !result.rawMap || !result.metas) return null;
+    const Pp = CMP_PERIODS.find(p => p.id === period) || CMP_PERIODS[1];
+    const anchor = result.ts || Date.now();
+    const lines = result.metas.map(m => {
+      const raw = result.rawMap[m.key];
+      if (!raw || raw.error) return { name: m.name, color: m.color, series: null, finalRet: null, error: raw?.error || "미조회", code: raw?.code };
+      const series = cmpBuildSeries(raw.pairs, Pp.days, anchor);
+      return { name: m.name, color: m.color, series, finalRet: series ? series[series.length - 1].ret : null };
+    });
+    return { lines, tStart: anchor - Pp.days * 86400000, tEnd: anchor, label: Pp.label };
+  }, [result, period]);
+
   const curKeys = items.map(it => it.key).join(",");
-  const stale = result && (result.period !== period || (result.itemKeys || []).join(",") !== curKeys);
+  const resKeys = (result?.metas || []).map(m => m.key).join(",");
+  const stale = result && curKeys !== resKeys; // 종목 구성이 바뀌면 재조회 필요(기간은 즉시 반영되어 stale 아님)
+  const fails = (view?.lines || []).filter(l => l.error);
   const tsStr = result?.ts ? (() => { const d = new Date(result.ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })() : "";
 
   return (
@@ -7901,7 +7925,6 @@ function StockCompare() {
         <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>종목 2~5개를 골라 선택 기간의 누적 수익률을 비교합니다. 기간 시작일을 0% 기준으로 정규화한 토탈리턴(가격 기준)입니다.</div>
       </div>
 
-      {/* 비교 종목 칩 */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {items.map(it => (
           <div key={it.key} style={{ display: "flex", alignItems: "center", gap: 7, background: "#16162a", border: "1px solid #1e293b", borderRadius: 10, padding: "7px 10px" }}>
@@ -7915,7 +7938,6 @@ function StockCompare() {
         )}
       </div>
 
-      {/* 기간 선택 */}
       <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
         {CMP_PERIODS.map(p => (
           <button key={p.id} onClick={() => setPeriod(p.id)} disabled={loading} style={{
@@ -7926,10 +7948,9 @@ function StockCompare() {
         ))}
       </div>
 
-      {/* API 사용 경고 */}
       <div style={{ display: "flex", gap: 8, background: "#f59e0b11", border: "1px solid #f59e0b44", borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 11, color: "#f59e0b", lineHeight: 1.5 }}>
         <span style={{ flexShrink: 0 }}>⚠️</span>
-        <span>'비교 조회'를 누르면 외부 시세 API(네이버·야후)를 종목 수만큼 호출합니다. AI(LLM) 토큰은 사용하지 않으며, 같은 종목·기간은 직전 결과가 그대로 표시됩니다.</span>
+        <span>'비교 조회'는 외부 시세 API(네이버·야후)를 종목 수만큼 호출합니다. AI(LLM) 토큰은 쓰지 않으며, 조회 후 기간 변경은 추가 호출 없이 즉시 반영됩니다.</span>
       </div>
 
       <button onClick={runCompare} disabled={loading || items.length < 2} style={{
@@ -7940,29 +7961,25 @@ function StockCompare() {
 
       {error && <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>}
 
-      {/* 결과: 차트 + 범례 (직전 조회 유지) */}
-      {result && result.lines && result.lines.length > 0 ? (
+      {view && view.lines.length > 0 ? (
         <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 12px" }}>
           {stale && (
-            <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, textAlign: "center" }}>선택이 바뀌었어요. 위 '비교 다시 조회'를 누르면 갱신됩니다. (아래는 직전 조회 결과)</div>
+            <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, textAlign: "center" }}>종목 구성이 바뀌었어요. '비교 다시 조회'를 누르면 갱신됩니다. (아래는 직전 조회 결과)</div>
           )}
-          <CmpLineChart lines={result.lines} />
-          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
-            {[...result.lines].sort((a, b) => (b.finalRet ?? -1e9) - (a.finalRet ?? -1e9)).map((l, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
-                </div>
-                <span style={{ fontSize: 14, fontWeight: 800, flexShrink: 0, color: l.finalRet == null ? "#475569" : l.finalRet >= 0 ? "#22d3a0" : "#ef4444" }}>
-                  {l.finalRet == null ? "조회 실패" : `${l.finalRet >= 0 ? "+" : ""}${l.finalRet.toFixed(2)}%`}
-                </span>
-              </div>
-            ))}
-          </div>
+          {view.lines.some(l => l.series) ? (
+            <CmpLineChart lines={view.lines} tStart={view.tStart} tEnd={view.tEnd} />
+          ) : (
+            <div style={{ textAlign: "center", color: "#64748b", fontSize: 13, padding: "20px 0" }}>표시할 시세 데이터가 없습니다.</div>
+          )}
+          <CmpLegend lines={view.lines} />
+          {fails.length > 0 && (
+            <div style={{ marginTop: 12, background: "#7f1d1d18", border: "1px solid #7f1d1d55", borderRadius: 10, padding: "9px 11px", fontSize: 11, color: "#fca5a5", lineHeight: 1.6 }}>
+              {fails.map((l, i) => (<div key={i}>⚠️ {l.name} — 코드 {l.code || "?"} · {l.error}</div>))}
+            </div>
+          )}
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1a1a2e", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
-            {result.lines.find(l => l.series)?.series ? `${CMP_PERIODS.find(p => p.id === result.period)?.label || ""} 누적 수익률` : ""}{tsStr && ` · 조회 ${tsStr}`}
-            <br />· 가격지수 기준(배당 제외)이며, 상장 기간이 짧은 종목은 받은 기간만큼만 표시됩니다.
+            {view.label} 누적 수익률{tsStr && ` · 조회 ${tsStr}`}
+            <br />· 가격지수 기준(배당 제외). 상장 기간이 짧은 종목은 받은 기간만큼만 그려집니다(X축은 선택 기간 전체).
           </div>
         </div>
       ) : (
@@ -7978,7 +7995,7 @@ function StockCompare() {
 
 // 수익률비교 탭 래퍼 — 벤치마크비교 / 종목별비교 서브탭
 function CompareTab() {
-  const [sub, setSub] = useState("benchmark"); // benchmark | stock
+  const [sub, setSub] = useState("benchmark");
   const subBtn = (active) => ({
     flex: 1, padding: "10px 0", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: "none",
     background: active ? "#4f6ef7" : "transparent", color: active ? "#fff" : "#94a3b8",
