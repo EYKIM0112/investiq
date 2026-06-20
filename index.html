@@ -23,7 +23,7 @@
   <div id="root"></div>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
   <script>
     Babel.registerPreset("react-classic", {
       presets: [[Babel.availablePresets["react"], { runtime: "classic" }]],
@@ -6273,8 +6273,9 @@ function Settings() {
           { done: true,  text: "수익률 벤치마크 비교 (코스피·코스닥·S&P500)" },
           { done: true,  text: "로그인·회원가입 + 초대코드 (Supabase Auth, 베타 대비)" },
           { done: true,  text: "API 프록시 보안 강화 (JWT 인증 — 인증 사용자만 AI 호출)" },
-          { done: true,  text: "섹터 분류 체계 + ETF DB 구축" },
+          { done: true,  text: "섹터 분류 체계 + ETF DB 및 개별주 DB 구축" },
           { done: false, text: "🟡 베타 테스터 피드백 (인앱 버그·기능요청 폼)" },
+          { done: false, text: "🟡 종목 수익률 비교 (포폴·외부 종목 누적 토탈리턴, 기간별 차트)" },
           { done: false, text: "🟢 알림·리마인더 (리밸런싱·목표비중 이탈·배당 지급일)" },
           { done: false, text: "🟢 성능 최적화 (초기 로딩·단일 파일 경량화)" },
           { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
