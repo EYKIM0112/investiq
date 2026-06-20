@@ -6298,11 +6298,19 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.3.0</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.0</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.3.0 변경사항 (ETF DB 대량 확장)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.0 변경사항 (수익률비교 탭 신설)</div>
+            <div>· '벤치마크' 탭 → '수익률비교'로 확장. 서브탭 '벤치마크비교' / '종목별비교' 분리</div>
+            <div>· 벤치마크비교: 비교 지수에 나스닥 추가(코스피·코스닥·S&P500·나스닥)</div>
+            <div>· 종목별비교 신설: 내 포폴·외부 종목 2~5개의 누적 수익률을 라인 차트로 비교(기간 1·3·6개월·1년·3년). 조회 시에만 시세 API 호출, LLM 토큰 미사용, 직전 조회 결과 유지</div>
+            <div>· naver 프록시에 비교 전용 일별종가 엔드포인트(type=history) 추가 — 평소 현재가 조회 경로와 분리</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.3.1 변경사항 (안정성)</div>
+            <div>· Babel standalone CDN을 7.29.7로 버전 고정 — Babel 8 자동 승격에 따른 PC 빈화면 재발 예방</div>
+            <div>· 개발 로드맵 정리(개별주 DB 반영, 종목 비교 예정 항목 추가)</div>
+            <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.3.0 변경사항 (ETF DB 대량 확장)</div>
             <div>· ETF/ETN 약 270종 신규 등록(소비재·여행·호텔·화학·소재·원전 + 원자재: 금·은·구리·백금·팔라듐·니켈·희토류·Commodity·농산물) — 총 약 560종. 티커를 DB에 직접 등재해 시세 검색 토큰 절감</div>
             <div>· 철강 → 화학·소재로 이동(철강은 철광석 가공 소재). 철광석·광업·광산은 원자재 유지</div>
             <div>· 원자재 예외 가드: 원자재 키워드가 있으면 커버드콜·배당보다 원자재 우선(배당 순위는 유지)</div>
@@ -7527,6 +7535,7 @@ const BENCHMARKS = [
   { name: "코스피",  ticker: "^KS11", color: "#3b82f6" },
   { name: "코스닥",  ticker: "^KQ11", color: "#a855f7" },
   { name: "S&P500", ticker: "^GSPC", color: "#f59e0b" },
+  { name: "나스닥",  ticker: "^IXIC", color: "#ec4899" },
 ];
 const BENCH_PERIODS = [
   { id: "1mo", label: "1개월", days: 31 },
@@ -7612,7 +7621,7 @@ function BenchmarkCompare() {
     <div className="card">
       <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f2e1a)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff", marginBottom: 6 }}>📊 수익률 벤치마크 비교</div>
-        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>내 수익률은 앱에 저장된 평가액 기록으로 바로 계산합니다. 벤치마크(코스피·코스닥·S&P500)는 아래 버튼을 누를 때만 새로 조회합니다.</div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>내 수익률은 앱에 저장된 평가액 기록으로 바로 계산합니다. 벤치마크(코스피·코스닥·S&P500·나스닥)는 아래 버튼을 누를 때만 새로 조회합니다.</div>
       </div>
 
       {/* 기간 선택 — 누르면 내 수익률만 즉시 갱신(벤치마크는 캐시 표시) */}
@@ -7670,6 +7679,322 @@ function BenchmarkCompare() {
   );
 }
 
+// ---------- 종목별 수익률 비교 (조회 버튼 누를 때만 시세 API 호출 · LLM 토큰 미사용) ----------
+const STOCKCMP_STORE_KEY = "investiq_stockcmp_v1";
+const CMP_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
+const CMP_PERIODS = [
+  { id: "1mo", label: "1개월", days: 31,   count: 30,  yRange: "1mo" },
+  { id: "3mo", label: "3개월", days: 93,   count: 75,  yRange: "3mo" },
+  { id: "6mo", label: "6개월", days: 186,  count: 140, yRange: "6mo" },
+  { id: "1y",  label: "1년",   days: 372,  count: 270, yRange: "1y" },
+  { id: "3y",  label: "3년",   days: 1115, count: 780, yRange: "5y" }, // Yahoo엔 3y range가 없어 5y로 받고 cutoff로 절단
+];
+
+// ticker·currency로 시장(kr/us)과 조회 코드 판별
+function cmpResolveMarket(ticker, currency) {
+  const t = String(ticker || "").trim();
+  if (currency === "USD") return { market: "us", code: t };
+  if (currency === "KRW") return { market: "kr", code: t.replace(/\.(KS|KQ)$/i, "") };
+  if (/\.(KS|KQ)$/i.test(t)) return { market: "kr", code: t.replace(/\.(KS|KQ)$/i, "") };
+  if (/^\d{6}$/.test(t)) return { market: "kr", code: t };
+  return { market: "us", code: t };
+}
+
+// 한 종목의 누적 수익률 시계열 조회. 반환: [{ t(ms), ret(%) }] (기간 시작가 = 0%)
+async function cmpFetchSeries(item, period) {
+  const P = CMP_PERIODS.find(p => p.id === period) || CMP_PERIODS[1];
+  let pairs = []; // [{ t(ms), c }]
+  if (item.market === "kr") {
+    const r = await fetch(`/api/naver?type=history&code=${encodeURIComponent(item.code)}&count=${P.count}`);
+    if (!r.ok) throw new Error("국내 시세 조회 실패");
+    const d = await r.json();
+    pairs = (d.prices || []).map(p => ({
+      t: Date.UTC(+p.date.slice(0, 4), +p.date.slice(4, 6) - 1, +p.date.slice(6, 8)),
+      c: p.close,
+    })).filter(p => p.c > 0).sort((a, b) => a.t - b.t);
+  } else {
+    const r = await fetch(`/api/yahoo?type=chart&ticker=${encodeURIComponent(item.code)}&range=${P.yRange}&interval=1d`);
+    if (!r.ok) throw new Error("해외 시세 조회 실패");
+    const d = await r.json();
+    const res = d.chart?.result?.[0];
+    const ts = res?.timestamp || [];
+    const cl = res?.indicators?.quote?.[0]?.close || [];
+    pairs = ts.map((t, i) => ({ t: t * 1000, c: cl[i] })).filter(p => p.c != null && p.c > 0).sort((a, b) => a.t - b.t);
+  }
+  // 기간 절단 (3y처럼 더 길게 받은 경우 포함)
+  const cutoff = Date.now() - P.days * 86400000;
+  let win = pairs.filter(p => p.t >= cutoff);
+  if (win.length < 2) win = pairs.slice(-2); // 상장 기간이 짧으면 받은 만큼
+  if (win.length < 2) throw new Error("데이터 부족");
+  const base = win[0].c;
+  return win.map(p => ({ t: p.t, ret: (p.c / base - 1) * 100 }));
+}
+
+// 여러 종목 누적 수익률 라인 차트 (SVG · 0% 기준선)
+function CmpLineChart({ lines }) {
+  const valid = (lines || []).filter(l => l.series && l.series.length >= 2);
+  if (!valid.length) return null;
+  const W = 340, H = 220, padL = 38, padR = 10, padT = 12, padB = 22;
+  let tMin = Infinity, tMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+  valid.forEach(l => l.series.forEach(p => {
+    if (p.t < tMin) tMin = p.t;
+    if (p.t > tMax) tMax = p.t;
+    if (p.ret < rMin) rMin = p.ret;
+    if (p.ret > rMax) rMax = p.ret;
+  }));
+  if (rMin > 0) rMin = 0;
+  if (rMax < 0) rMax = 0;
+  const margin = (rMax - rMin) * 0.1 || 1;
+  rMin -= margin; rMax += margin;
+  const x = t => padL + (tMax === tMin ? 0 : (t - tMin) / (tMax - tMin)) * (W - padL - padR);
+  const y = r => padT + (rMax === rMin ? 0.5 : (rMax - r) / (rMax - rMin)) * (H - padT - padB);
+  const ticks = [];
+  for (let i = 0; i <= 4; i++) ticks.push(rMin + (rMax - rMin) * i / 4);
+  const fmtDate = ms => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+      {ticks.map((r, i) => (
+        <g key={i}>
+          <line x1={padL} y1={y(r)} x2={W - padR} y2={y(r)} stroke="#1e293b" strokeWidth="1" />
+          <text x={padL - 4} y={y(r) + 3} fontSize="8" fill="#64748b" textAnchor="end">{r >= 0 ? "+" : ""}{r.toFixed(0)}%</text>
+        </g>
+      ))}
+      <line x1={padL} y1={y(0)} x2={W - padR} y2={y(0)} stroke="#475569" strokeWidth="1" strokeDasharray="3 3" />
+      {[tMin, (tMin + tMax) / 2, tMax].map((t, i) => (
+        <text key={"x" + i} x={x(t)} y={H - 6} fontSize="8" fill="#64748b" textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"}>{fmtDate(t)}</text>
+      ))}
+      {valid.map((l, i) => (
+        <polyline key={"l" + i} fill="none" stroke={l.color} strokeWidth="1.6" strokeLinejoin="round"
+          points={l.series.map(p => `${x(p.t).toFixed(1)},${y(p.ret).toFixed(1)}`).join(" ")} />
+      ))}
+    </svg>
+  );
+}
+
+// 비교 종목 추가 모달 — [내 포폴의 종목] / [포폴 외의 종목]
+function CmpAddModal({ onClose, onAdd, existingKeys }) {
+  const [mode, setMode] = useState("mine"); // mine | ext
+  const [extCountry, setExtCountry] = useState("KR"); // KR | US
+  const portfolio = loadPortfolio();
+
+  // 포폴 종목 중복 제거(같은 ticker가 여러 계좌에 있어도 1개로)
+  const mineList = React.useMemo(() => {
+    const seen = new Set(), out = [];
+    (portfolio.holdings || []).forEach(h => {
+      const tk = (h.ticker || "").trim();
+      if (!tk || seen.has(tk)) return;
+      seen.add(tk); out.push(h);
+    });
+    return out;
+  }, []);
+
+  const tabBtn = (active) => ({
+    flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: "none",
+    background: active ? "#4f6ef7" : "transparent", color: active ? "#fff" : "#94a3b8",
+  });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#0f0f18", borderTopLeftRadius: 18, borderTopRightRadius: 18, border: "1px solid #1e293b", padding: 18, maxHeight: "80vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: "#f0f0ff" }}>비교 종목 추가</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, marginBottom: 14, background: "#16162a", padding: 4, borderRadius: 10 }}>
+          <button onClick={() => setMode("mine")} style={tabBtn(mode === "mine")}>내 포폴의 종목</button>
+          <button onClick={() => setMode("ext")} style={tabBtn(mode === "ext")}>포폴 외의 종목</button>
+        </div>
+
+        {mode === "mine" ? (
+          mineList.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#64748b", textAlign: "center", padding: "20px 0" }}>포트폴리오에 등록된 종목이 없습니다.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {mineList.map((h, i) => {
+                const { market, code } = cmpResolveMarket(h.ticker, h.currency);
+                const key = market + ":" + code;
+                const added = existingKeys.includes(key);
+                return (
+                  <button key={i} disabled={added} onClick={() => onAdd({ name: h.name, ticker: h.ticker, currency: h.currency })}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "11px 12px", borderRadius: 10, border: "1px solid #1e293b", background: added ? "#16162a55" : "#16162a", color: added ? "#475569" : "#e2e8f0", fontSize: 13, cursor: added ? "default" : "pointer", textAlign: "left" }}>
+                    <span style={{ fontWeight: 600 }}>{h.name}</span>
+                    <span style={{ fontSize: 11, color: "#64748b" }}>{added ? "추가됨" : (h.ticker + " · " + (market === "kr" ? "국내" : "해외"))}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          <div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <button onClick={() => setExtCountry("KR")} style={{ flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", background: extCountry === "KR" ? "#22d3a022" : "#16162a", border: `1px solid ${extCountry === "KR" ? "#22d3a0" : "#334155"}`, color: extCountry === "KR" ? "#22d3a0" : "#94a3b8" }}>국내</button>
+              <button onClick={() => setExtCountry("US")} style={{ flex: 1, padding: "7px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", background: extCountry === "US" ? "#22d3a022" : "#16162a", border: `1px solid ${extCountry === "US" ? "#22d3a0" : "#334155"}`, color: extCountry === "US" ? "#22d3a0" : "#94a3b8" }}>해외</button>
+            </div>
+            <StockSearchRow country={extCountry} onSelect={(sel) => onAdd({ name: sel.name, ticker: sel.ticker, currency: extCountry === "KR" ? "KRW" : "USD" })} />
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 8, lineHeight: 1.5 }}>· 검색 후 종목을 선택하면 비교 목록에 추가됩니다. TDF·일부 펀드는 시세 이력이 없어 비교가 안 될 수 있어요.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StockCompare() {
+  const loadCache = () => { try { return JSON.parse(localStorage.getItem(STOCKCMP_STORE_KEY) || "null"); } catch { return null; } };
+  const cache = loadCache();
+  const [items, setItems] = useState(() => (cache?.items) || []);   // [{ key, name, ticker, market, code, color }]
+  const [period, setPeriod] = useState(() => (cache?.period) || "3mo");
+  const [result, setResult] = useState(() => (cache?.result) || null); // { period, itemKeys, lines, ts }
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // items·period 변경 시 캐시에 반영(직전 조회 result는 다음 조회 전까지 유지)
+  React.useEffect(() => {
+    try {
+      const prev = JSON.parse(localStorage.getItem(STOCKCMP_STORE_KEY) || "null") || {};
+      localStorage.setItem(STOCKCMP_STORE_KEY, JSON.stringify({ ...prev, items, period }));
+    } catch {}
+  }, [items, period]);
+
+  const addItem = (raw) => {
+    if (items.length >= 5) return;
+    const { market, code } = cmpResolveMarket(raw.ticker, raw.currency);
+    if (!code) return;
+    const key = market + ":" + code;
+    if (items.some(it => it.key === key)) { setModalOpen(false); return; }
+    const color = CMP_COLORS[items.length % CMP_COLORS.length];
+    setItems([...items, { key, name: raw.name, ticker: raw.ticker, market, code, color }]);
+    setModalOpen(false);
+  };
+  const removeItem = (key) => setItems(items.filter(it => it.key !== key).map((it, i) => ({ ...it, color: CMP_COLORS[i % CMP_COLORS.length] })));
+
+  const runCompare = async () => {
+    if (items.length < 2) { setError("비교하려면 종목을 2개 이상 추가해주세요."); return; }
+    setLoading(true); setError("");
+    const lines = [];
+    for (const it of items) {
+      try {
+        const series = await cmpFetchSeries(it, period);
+        lines.push({ name: it.name, color: it.color, series, finalRet: series[series.length - 1].ret });
+      } catch (e) {
+        lines.push({ name: it.name, color: it.color, series: null, finalRet: null, err: true });
+      }
+    }
+    const entry = { period, itemKeys: items.map(it => it.key), lines, ts: Date.now() };
+    setResult(entry);
+    try { localStorage.setItem(STOCKCMP_STORE_KEY, JSON.stringify({ items, period, result: entry })); } catch {}
+    setLoading(false);
+  };
+
+  const P = CMP_PERIODS.find(p => p.id === period) || CMP_PERIODS[1];
+  // 직전 조회 결과가 현재 선택(종목·기간)과 다르면 "다시 조회" 안내
+  const curKeys = items.map(it => it.key).join(",");
+  const stale = result && (result.period !== period || (result.itemKeys || []).join(",") !== curKeys);
+  const tsStr = result?.ts ? (() => { const d = new Date(result.ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })() : "";
+
+  return (
+    <div className="card">
+      <div style={{ background: "linear-gradient(135deg,#1a1a2e,#0f2e1a)", border: "1px solid #1e293b", borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff", marginBottom: 6 }}>📈 종목별 수익률 비교</div>
+        <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>종목 2~5개를 골라 선택 기간의 누적 수익률을 비교합니다. 기간 시작일을 0% 기준으로 정규화한 토탈리턴(가격 기준)입니다.</div>
+      </div>
+
+      {/* 비교 종목 칩 */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {items.map(it => (
+          <div key={it.key} style={{ display: "flex", alignItems: "center", gap: 7, background: "#16162a", border: "1px solid #1e293b", borderRadius: 10, padding: "7px 10px" }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: it.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
+            <button onClick={() => removeItem(it.key)} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+          </div>
+        ))}
+        {items.length < 5 && (
+          <button onClick={() => setModalOpen(true)} style={{ background: "#4f6ef722", border: "1px dashed #4f6ef7", borderRadius: 10, padding: "7px 12px", color: "#a8b4f8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>＋ 종목 추가</button>
+        )}
+      </div>
+
+      {/* 기간 선택 */}
+      <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
+        {CMP_PERIODS.map(p => (
+          <button key={p.id} onClick={() => setPeriod(p.id)} disabled={loading} style={{
+            flex: 1, padding: "9px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: loading ? "default" : "pointer",
+            background: period === p.id ? "#22d3a022" : "#16162a", border: `1px solid ${period === p.id ? "#22d3a0" : "#334155"}`,
+            color: period === p.id ? "#22d3a0" : "#94a3b8",
+          }}>{p.label}</button>
+        ))}
+      </div>
+
+      {/* API 사용 경고 */}
+      <div style={{ display: "flex", gap: 8, background: "#f59e0b11", border: "1px solid #f59e0b44", borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 11, color: "#f59e0b", lineHeight: 1.5 }}>
+        <span style={{ flexShrink: 0 }}>⚠️</span>
+        <span>'비교 조회'를 누르면 외부 시세 API(네이버·야후)를 종목 수만큼 호출합니다. AI(LLM) 토큰은 사용하지 않으며, 같은 종목·기간은 직전 결과가 그대로 표시됩니다.</span>
+      </div>
+
+      <button onClick={runCompare} disabled={loading || items.length < 2} style={{
+        width: "100%", background: (loading || items.length < 2) ? "#22d3a011" : "#22d3a0", color: (loading || items.length < 2) ? "#22d3a0" : "#0a0a14",
+        border: "none", borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 800, cursor: (loading || items.length < 2) ? "default" : "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 14,
+      }}>{loading ? <><Spinner size={14} />조회 중...</> : (items.length < 2 ? "종목 2개 이상 추가" : (result ? "🔄 비교 다시 조회" : "📡 비교 조회"))}</button>
+
+      {error && <div style={{ background: "#7f1d1d22", border: "1px solid #7f1d1d", borderRadius: 12, padding: 14, color: "#fca5a5", fontSize: 13, marginBottom: 14 }}>{error}</div>}
+
+      {/* 결과: 차트 + 범례 (직전 조회 유지) */}
+      {result && result.lines && result.lines.length > 0 ? (
+        <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "16px 12px" }}>
+          {stale && (
+            <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 10, textAlign: "center" }}>선택이 바뀌었어요. 위 '비교 다시 조회'를 누르면 갱신됩니다. (아래는 직전 조회 결과)</div>
+          )}
+          <CmpLineChart lines={result.lines} />
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
+            {[...result.lines].sort((a, b) => (b.finalRet ?? -1e9) - (a.finalRet ?? -1e9)).map((l, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: l.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 800, flexShrink: 0, color: l.finalRet == null ? "#475569" : l.finalRet >= 0 ? "#22d3a0" : "#ef4444" }}>
+                  {l.finalRet == null ? "조회 실패" : `${l.finalRet >= 0 ? "+" : ""}${l.finalRet.toFixed(2)}%`}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1a1a2e", fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>
+            {result.lines.find(l => l.series)?.series ? `${CMP_PERIODS.find(p => p.id === result.period)?.label || ""} 누적 수익률` : ""}{tsStr && ` · 조회 ${tsStr}`}
+            <br />· 가격지수 기준(배당 제외)이며, 상장 기간이 짧은 종목은 받은 기간만큼만 표시됩니다.
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 14, padding: "28px 14px", textAlign: "center", fontSize: 13, color: "#64748b" }}>
+          종목을 2개 이상 추가하고 '비교 조회'를 누르면 누적 수익률 차트가 표시됩니다.
+        </div>
+      )}
+
+      {modalOpen && <CmpAddModal onClose={() => setModalOpen(false)} onAdd={addItem} existingKeys={items.map(it => it.key)} />}
+    </div>
+  );
+}
+
+// 수익률비교 탭 래퍼 — 벤치마크비교 / 종목별비교 서브탭
+function CompareTab() {
+  const [sub, setSub] = useState("benchmark"); // benchmark | stock
+  const subBtn = (active) => ({
+    flex: 1, padding: "10px 0", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: "none",
+    background: active ? "#4f6ef7" : "transparent", color: active ? "#fff" : "#94a3b8",
+  });
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, background: "#0f0f18", padding: 5, borderRadius: 12, border: "1px solid #1e293b" }}>
+        <button onClick={() => setSub("benchmark")} style={subBtn(sub === "benchmark")}>벤치마크비교</button>
+        <button onClick={() => setSub("stock")} style={subBtn(sub === "stock")}>종목별비교</button>
+      </div>
+      <div style={{ display: sub === "benchmark" ? "block" : "none" }}><BenchmarkCompare /></div>
+      <div style={{ display: sub === "stock" ? "block" : "none" }}>{sub === "stock" && <StockCompare />}</div>
+    </div>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("market");
   React.useEffect(() => { refreshUsdKrw(); }, []); // 앱 시작 시 환율 1회 갱신(1시간 캐시)
@@ -7678,7 +8003,7 @@ function App() {
     { id: "portfolio", label: "포트폴리오",    icon: "" },
     { id: "dividend",  label: "배당",          icon: "" },
     { id: "rebalance", label: "리밸런싱",      icon: "" },
-    { id: "benchmark", label: "벤치마크",      icon: "" },
+    { id: "compare",   label: "수익률비교",    icon: "" },
     { id: "advisor",   label: "AI 조언",       icon: "" },
     { id: "settings",  label: "설정",          icon: "" },
   ];
@@ -7755,7 +8080,7 @@ function App() {
         <div style={{ display: tab === "portfolio" ? "block" : "none" }}><Portfolio /></div>
         <div style={{ display: tab === "dividend"  ? "block" : "none" }}>{tab === "dividend" && <DividendCalendar />}</div>
         <div style={{ display: tab === "rebalance" ? "block" : "none" }}>{tab === "rebalance" && <RebalanceGuide />}</div>
-        <div style={{ display: tab === "benchmark" ? "block" : "none" }}>{tab === "benchmark" && <BenchmarkCompare />}</div>
+        <div style={{ display: tab === "compare" ? "block" : "none" }}>{tab === "compare" && <CompareTab />}</div>
         <div style={{ display: tab === "advisor"   ? "block" : "none" }}><Advisor /></div>
         <div style={{ display: tab === "settings"  ? "block" : "none" }}><Settings /></div>
       </div>
