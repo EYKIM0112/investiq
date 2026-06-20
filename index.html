@@ -1907,6 +1907,20 @@ function lookupStockDB(ticker) {
   return null;
 }
 
+// 개별주 DB 이름 역조회 (OCR 인식명 → 코드). 정확 일치 또는 공백무시 일치만 — 부분일치 금지(오매칭 방지).
+function lookupStockByName(name) {
+  if (!name) return null;
+  const nm = String(name).trim();
+  if (!nm) return null;
+  const nn = nm.replace(/\s+/g, "").toLowerCase();
+  for (const k in STOCK_SECTOR_DB) {
+    const e = STOCK_SECTOR_DB[k];
+    if (!e || !e.n) continue;
+    if (e.n === nm || e.n.replace(/\s+/g, "").toLowerCase() === nn) return { code: k, ...e };
+  }
+  return null;
+}
+
 // ===== ETF DB — 티커→(이름 n, 통화 c, 섹터 s). 국가/통화 자동 + 검색 API 스킵용. =====
 // s는 공식분류가 아니라 우리 키워드 규칙(cascadeTheme)으로 뽑은 값. c(통화)로 국가 자동: USD→미국, KRW→국내(네이버), JPY→일본.
 // 성장주/가치주/신흥국지수/선진국지수는 국가 접두가 붙음(미국성장주, 한국성장주 등) — withCountry가 처리.
@@ -4683,14 +4697,26 @@ function Portfolio() {
       let _dbHit = 0;
       newHoldings = newHoldings.map(h => {
         if (isCashNm(h.name)) return h;
+        // 1. ETF DB (코드/이름)
         const e = lookupETFEntry(h.ticker || h.yahoo_ticker, h.name);
-        if (!e) return h;
-        _dbHit++;
-        const isKR = isKrCode(e.code);
-        return { ...h, _fromDB: true, sector: e.s, currency: e.c,
-          ticker: isKR ? e.code : e.code,
-          yahoo_ticker: isKR ? (e.code + ".KS") : e.code,
-          name: e.n };
+        if (e) {
+          _dbHit++;
+          const isKR = isKrCode(e.code);
+          return { ...h, _fromDB: true, sector: e.s, currency: e.c,
+            ticker: e.code, yahoo_ticker: isKR ? (e.code + ".KS") : e.code, name: e.n };
+        }
+        // 2. 개별주 DB (코드 우선, 없으면 인식명 역조회) — 검색 API 가기 전에 DB 먼저 확인
+        const codeIn = krCodeOf(h.ticker || h.yahoo_ticker || "") || String(h.ticker || h.yahoo_ticker || "").toUpperCase();
+        const sEnt = lookupStockDB(codeIn);
+        const s = sEnt ? { code: codeIn, ...sEnt } : lookupStockByName(h.name);
+        if (s && s.code) {
+          _dbHit++;
+          const isKR = isKrCode(s.code);
+          return { ...h, _fromDB: true, sector: s.s,
+            currency: h.currency || (isKR ? "KRW" : "USD"),
+            ticker: s.code, yahoo_ticker: isKR ? (s.code + ".KS") : s.code, name: s.n || h.name };
+        }
+        return h;
       });
       setUploadMsg(`📚 ${nonCashCount}종목 중 ${_dbHit}종목 DB에서 확인`);
       await new Promise(r => setTimeout(r, 600));
@@ -6297,10 +6323,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.3</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.4</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.4 변경사항 (스샷 등록 DB 우선)</div>
+            <div>· 스샷(OCR) 등록 시 ETF DB에서 못 찾으면 개별주 DB도 코드·인식명으로 확인 후 등록 — 검색 API보다 DB를 먼저 보게 정비(엉뚱한 티커 매칭 방지)</div>
+            <div>· 개별주 DB 이름 역조회는 정확/공백무시 일치만 허용(부분일치로 인한 오매칭 차단)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.3 변경사항 (시드 데이터 코드 정정)</div>
             <div>· 기본 포트폴리오(PRESET) 종목 17종의 단축코드가 ETF_DB와 어긋나 있던 것을 정정(예: KODEX AI반도체TOP2플러스 483150→395160, TIGER 조선TOP10 481040→494670)</div>
             <div>· 코드 오류 시 종목별비교·현재가 조회가 빗나가던 문제의 근본 원인. 기존 기기에 이미 저장된 잘못된 코드는 해당 종목 편집에서 수정 필요</div>
