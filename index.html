@@ -1921,6 +1921,59 @@ function lookupStockByName(name) {
   return null;
 }
 
+// OCR 1글자 오타(치환/삽입/삭제) 판정 — resolveTickerCodes 내부 규칙과 동일. DB 직접 보정용.
+function _editDistanceIsOne(a, b) {
+  if (a === b) return false;
+  const la = a.length, lb = b.length;
+  if (Math.abs(la - lb) > 1) return false;
+  if (la === lb) { // 1. 치환 1회
+    let diff = 0;
+    for (let i = 0; i < la; i++) { if (a[i] !== b[i]) { if (++diff > 1) return false; } }
+    return diff === 1;
+  }
+  // 2. 삽입/삭제 1회
+  const [s, l] = la < lb ? [a, b] : [b, a];
+  let i = 0, j = 0, skipped = false;
+  while (i < s.length && j < l.length) {
+    if (s[i] === l[j]) { i++; j++; }
+    else { if (skipped) return false; skipped = true; j++; }
+  }
+  return true;
+}
+// 가드: 공백무시 비교 + 숫자 동일(100/200 구분 보호) + 한글 코어 6자 이상(코스피/코스닥 등 짧은 이름 제외)
+function _closeByOneCharName(query, target) {
+  const norm = (x) => String(x || "").replace(/\s+/g, "").toLowerCase();
+  const a = norm(query), b = norm(target);
+  if (!a || !b) return false;
+  const digitsOf = (x) => (x.match(/\d/g) || []).join("");
+  const hangulCount = (x) => (x.match(/[가-힣]/g) || []).length;
+  if (digitsOf(a) !== digitsOf(b)) return false;
+  if (Math.max(hangulCount(a), hangulCount(b)) < 6) return false;
+  return _editDistanceIsOne(a, b);
+}
+// ETF_DB 1글자 오타 보정 조회 — 후보 단일 + 공식명이 한글일 때만(영문명/다중후보는 네이버 검색에 위임).
+function lookupETFByFuzzy(name) {
+  if (!name) return null;
+  const hits = [];
+  for (const k in ETF_DB) {
+    const e = ETF_DB[k];
+    if (!e || !e.n || !/[가-힣]/.test(e.n)) continue;
+    if (_closeByOneCharName(name, e.n)) hits.push({ code: k, ...e });
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+// 개별주 DB 1글자 오타 보정 조회 — 동일 가드.
+function lookupStockByNameFuzzy(name) {
+  if (!name) return null;
+  const hits = [];
+  for (const k in STOCK_SECTOR_DB) {
+    const e = STOCK_SECTOR_DB[k];
+    if (!e || !e.n || !/[가-힣]/.test(e.n)) continue;
+    if (_closeByOneCharName(name, e.n)) hits.push({ code: k, ...e });
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+
 // ===== ETF DB — 티커→(이름 n, 통화 c, 섹터 s). 국가/통화 자동 + 검색 API 스킵용. =====
 // s는 공식분류가 아니라 우리 키워드 규칙(cascadeTheme)으로 뽑은 값. c(통화)로 국가 자동: USD→미국, KRW→국내(네이버), JPY→일본.
 // 성장주/가치주/신흥국지수/선진국지수는 국가 접두가 붙음(미국성장주, 한국성장주 등) — withCountry가 처리.
@@ -2094,6 +2147,8 @@ const ETF_DB = {
   // 원전·전력·채권
   "434730":{n:"HANARO 원자력iSelect",c:"KRW",s:"원전"},
   "491820":{n:"HANARO 전력설비투자",c:"KRW",s:"AI전력·인프라"},
+  "472050":{n:"KODEX 미국AI전력핵심인프라",c:"KRW",s:"미국AI전력·인프라"},
+  "476290":{n:"KODEX AI전력핵심설비",c:"KRW",s:"AI전력·인프라"},
   "459580":{n:"KODEX CD금리액티브(합성)",c:"KRW",s:"파킹형"},
   // 배당
   "466940":{n:"TIGER 은행고배당TOP10",c:"KRW",s:"배당"},
@@ -4716,6 +4771,26 @@ function Portfolio() {
             currency: h.currency || (isKR ? "KRW" : "USD"),
             ticker: s.code, yahoo_ticker: isKR ? (s.code + ".KS") : s.code, name: s.n || h.name };
         }
+        // 3. DB 완전일치 미스 → 로컬 1글자 오타 보정. OCR '전력'→'전략' 류를 네이버 의존 없이 DB로 직접 교정.
+        const fe = lookupETFByFuzzy(h.name);
+        if (fe) {
+          _dbHit++;
+          const note = { from: h.name, to: fe.n };
+          if (batchCtx) batchCtx.corrections.push(note); else localCorrections.push(note);
+          const isKR = isKrCode(fe.code);
+          return { ...h, _fromDB: true, sector: fe.s, currency: fe.c,
+            ticker: fe.code, yahoo_ticker: isKR ? (fe.code + ".KS") : fe.code, name: fe.n };
+        }
+        const fs = lookupStockByNameFuzzy(h.name);
+        if (fs && fs.code) {
+          _dbHit++;
+          const note = { from: h.name, to: fs.n };
+          if (batchCtx) batchCtx.corrections.push(note); else localCorrections.push(note);
+          const isKR = isKrCode(fs.code);
+          return { ...h, _fromDB: true, sector: fs.s,
+            currency: h.currency || (isKR ? "KRW" : "USD"),
+            ticker: fs.code, yahoo_ticker: isKR ? (fs.code + ".KS") : fs.code, name: fs.n };
+        }
         return h;
       });
       setUploadMsg(`📚 ${nonCashCount}종목 중 ${_dbHit}종목 DB에서 확인`);
@@ -6151,6 +6226,7 @@ ${SOURCE_RULES}
 function Settings() {
   const restoreInputRef = useRef(null);
   const [userEmail, setUserEmail] = useState("");
+  const [showAllHistory, setShowAllHistory] = useState(false);
   useEffect(() => {
     supabaseClient.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email || ""));
   }, []);
@@ -6327,6 +6403,10 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.2 변경사항 (OCR 오인식 보정)</div>
+            <div>· 스샷(OCR) 종목명 1글자 오인식(예: '전력'→'전략')을 DB로 직접 교정 — 검색 API에만 의존하던 보정을 ETF DB·개별주 DB 로컬 보정으로 보강(네이버 결과와 무관하게 동작). 가드: 숫자 동일·한글 6자 이상·후보 단일·공식명 한글</div>
+            <div>· 보유 전력 ETF 2종(KODEX 미국AI전력핵심인프라·KODEX AI전력핵심설비)을 ETF DB에 등재 — 정타는 검색 없이 즉시 확정, 오인식분도 로컬 교정 대상에 포함</div>
+            <div>· 버전 변경사항을 최근 6개만 표시하고 이전 버전은 '더보기'로 접음</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.1 변경사항 (피드백 아이콘)</div>
             <div>· 피드백 플로팅 버튼 아이콘을 이모지(💬)에서 SVG(말풍선+별)로 교체 — PC·모바일 동일하게 또렷하게 표시, 메신저 느낌 제거</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.0 변경사항 (피드백 기능)</div>
@@ -6340,6 +6420,10 @@ function Settings() {
             <div>· 코드 오류 시 종목별비교·현재가 조회가 빗나가던 문제의 근본 원인. 기존 기기에 이미 저장된 잘못된 코드는 해당 종목 편집에서 수정 필요</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.2 변경사항 (차트 X축 가독성)</div>
             <div>· 수익률 비교 차트 X축 눈금을 3개 → 5개로 세분화, 연도가 바뀌는 지점에 연도(YY) 표기</div>
+            <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
+              {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
+            </button>
+            {showAllHistory && (<>
             <div style={{ marginBottom:4, marginTop:6, color:"#64748b", fontWeight:600 }}>v2.4.1 변경사항 (수익률비교 개선)</div>
             <div>· 종목별비교: 조회 후 기간 버튼만 눌러도 즉시 갱신(최대기간 1회 조회 후 클라이언트 절단, 추가 API 호출 없음)</div>
             <div>· 차트 X축을 선택 기간 전체로 고정 — 6개월·1년·3년이 동일하게 보이던 문제 해결(상장 기간 짧은 종목은 일부만 그려짐)</div>
@@ -6492,6 +6576,7 @@ function Settings() {
             <div>· 스크린샷 인식 팁 안내 추가</div>
             <div style={{ marginTop:6, marginBottom:4, color:"#64748b", fontWeight:600 }}>v1.5.0</div>
             <div>· 벤치마크 비교 / 리밸런싱 AI 추천 / 환율(USD→KRW) 반영</div>
+            </>)}
           </div>
           <div style={{ marginTop: 12, fontSize: 13, color: "#64748b" }}>
             ⚠️ 이 앱의 투자 정보는 참고용이며, 투자 손실에 대한 책임은 투자자 본인에게 있습니다.
@@ -8060,7 +8145,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "2.5.1";
+const APP_VERSION = "2.5.2";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
