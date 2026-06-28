@@ -6297,10 +6297,10 @@ function Settings() {
           { done: true,  text: "배당 캘린더 (예상 배당금·달력 뷰)" },
           { done: true,  text: "리밸런싱 AI 가이드 (추천 비중)" },
           { done: true,  text: "수익률비교 — 벤치마크(코스피·코스닥·S&P500·나스닥) + 종목별 비교 라인차트" },
+          { done: true,  text: "인앱 피드백 (별점 + 버그·기능요청·기타, Supabase 저장)" },
           { done: true,  text: "로그인·회원가입 + 초대코드 (Supabase Auth, 베타 대비)" },
           { done: true,  text: "API 프록시 보안 강화 (JWT 인증 — 인증 사용자만 AI 호출)" },
           { done: true,  text: "섹터 분류 체계 + ETF DB 및 개별주 DB 구축" },
-          { done: false, text: "🟡 베타 테스터 피드백 (인앱 버그·기능요청 폼)" },
           { done: false, text: "🟢 알림·리마인더 (리밸런싱·목표비중 이탈·배당 지급일)" },
           { done: false, text: "🟢 성능 최적화 (초기 로딩·단일 파일 경량화)" },
           { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
@@ -6323,10 +6323,13 @@ function Settings() {
         <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.8 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
             <span style={{ fontWeight:700, color:"#a8b4f8" }}>InvestIQ</span>
-            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>v2.4.4</span>
+            <span style={{ fontSize:11, background:"#7c3aed22", color:"#a8b4f8", border:"1px solid #7c3aed44", borderRadius:6, padding:"2px 8px", fontWeight:700, letterSpacing:1 }}>{"v" + APP_VERSION}</span>
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.0 변경사항 (피드백 기능)</div>
+            <div>· 모든 화면 우하단 플로팅 버튼으로 피드백 작성 — 앱 만족도 별점(0.5~5.0, 반쪽 단위) + 유형(버그·기능요청·기타) + 자유 입력</div>
+            <div>· 제출 시 가입 이메일·앱 버전 자동 기록, Supabase feedbacks 테이블(RLS)에 저장</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.4.4 변경사항 (스샷 등록 DB 우선)</div>
             <div>· 스샷(OCR) 등록 시 ETF DB에서 못 찾으면 개별주 DB도 코드·인식명으로 확인 후 등록 — 검색 API보다 DB를 먼저 보게 정비(엉뚱한 티커 매칭 방지)</div>
             <div>· 개별주 DB 이름 역조회는 정확/공백무시 일치만 허용(부분일치로 인한 오매칭 차단)</div>
@@ -8054,6 +8057,127 @@ function CompareTab() {
   );
 }
 
+// ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
+const APP_VERSION = "2.5.0";
+
+// 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
+function StarRating({ value, onChange, size = 36 }) {
+  return (
+    <div style={{ display: "flex", gap: 5, justifyContent: "center" }}>
+      {[1, 2, 3, 4, 5].map(i => {
+        const fillPct = value >= i ? 100 : (value >= i - 0.5 ? 50 : 0);
+        return (
+          <div key={i} style={{ position: "relative", width: size, height: size }}>
+            <span style={{ fontSize: size, lineHeight: 1, color: "#334155", position: "absolute", left: 0, top: 0 }}>★</span>
+            <span style={{ fontSize: size, lineHeight: 1, color: "#f59e0b", position: "absolute", left: 0, top: 0, width: fillPct + "%", overflow: "hidden", display: "inline-block", whiteSpace: "nowrap" }}>★</span>
+            <div onClick={() => onChange(i - 0.5)} style={{ position: "absolute", left: 0, top: 0, width: "50%", height: "100%", cursor: "pointer", zIndex: 2 }} />
+            <div onClick={() => onChange(i)} style={{ position: "absolute", right: 0, top: 0, width: "50%", height: "100%", cursor: "pointer", zIndex: 2 }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FeedbackWidget() {
+  const [open, setOpen] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [category, setCategory] = useState("bug");
+  const [content, setContent] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+
+  const reset = () => { setRating(0); setCategory("bug"); setContent(""); setErr(""); setDone(false); };
+  const close = () => { setOpen(false); setTimeout(reset, 200); };
+
+  const submit = async () => {
+    if (rating === 0 && !content.trim()) { setErr("별점을 선택하거나 내용을 입력해주세요."); return; }
+    setSending(true); setErr("");
+    try {
+      const { data: u } = await supabaseClient.auth.getUser();
+      const { error } = await supabaseClient.from("feedbacks").insert({
+        user_email: u?.user?.email || null,
+        rating: rating > 0 ? rating : null,
+        category: content.trim() ? category : null,
+        content: content.trim() || null,
+        app_version: APP_VERSION,
+      });
+      if (error) throw error;
+      setDone(true);
+    } catch (e) { setErr("전송 실패: " + (e.message || e)); }
+    setSending(false);
+  };
+
+  const CATS = [{ id: "bug", label: "버그" }, { id: "feature", label: "기능요청" }, { id: "etc", label: "기타" }];
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} style={{
+        position: "fixed", right: 18, bottom: 22, zIndex: 400,
+        width: 52, height: 52, borderRadius: "50%", border: "none",
+        background: "linear-gradient(135deg,#4f6ef7,#7c3aed)", color: "#fff",
+        fontSize: 22, cursor: "pointer", boxShadow: "0 4px 16px rgba(79,110,247,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }} aria-label="피드백 보내기">💬</button>
+
+      {open && (
+        <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 600, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#0f0f18", borderTopLeftRadius: 18, borderTopRightRadius: 18, border: "1px solid #1e293b", padding: 20, maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: "#f0f0ff" }}>💬 피드백 보내기</span>
+              <button onClick={close} style={{ background: "none", border: "none", color: "#64748b", fontSize: 20, cursor: "pointer" }}>✕</button>
+            </div>
+
+            {done ? (
+              <div style={{ textAlign: "center", padding: "30px 0" }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🙏</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#22d3a0", marginBottom: 6 }}>소중한 피드백 감사합니다!</div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 18 }}>더 나은 앱을 만드는 데 큰 도움이 됩니다.</div>
+                <button onClick={close} style={{ background: "#16162a", border: "1px solid #334155", borderRadius: 10, padding: "10px 24px", color: "#cbd5e1", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>닫기</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 10, textAlign: "center" }}>앱 전체 만족도 (별 반쪽 단위로 선택)</div>
+                  <StarRating value={rating} onChange={setRating} />
+                  <div style={{ textAlign: "center", fontSize: 12, color: rating > 0 ? "#f59e0b" : "#475569", marginTop: 6, fontWeight: 700 }}>{rating > 0 ? `${rating.toFixed(1)} / 5.0` : "미선택"}</div>
+                </div>
+
+                <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 8 }}>유형</div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  {CATS.map(c => (
+                    <button key={c.id} onClick={() => setCategory(c.id)} style={{
+                      flex: 1, padding: "9px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      background: category === c.id ? "#4f6ef7" : "#16162a", border: `1px solid ${category === c.id ? "#4f6ef7" : "#334155"}`,
+                      color: category === c.id ? "#fff" : "#94a3b8",
+                    }}>{c.label}</button>
+                  ))}
+                </div>
+
+                <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="버그·개선 아이디어·하고 싶은 말을 자유롭게 적어주세요. (선택)" rows={5} style={{
+                  width: "100%", background: "#0a0a14", border: "1px solid #1e293b", borderRadius: 10, padding: 12,
+                  color: "#e2e8f0", fontSize: 13, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.5,
+                }} />
+
+                {err && <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 10 }}>{err}</div>}
+
+                <button onClick={submit} disabled={sending} style={{
+                  width: "100%", marginTop: 14, background: sending ? "#4f6ef733" : "#4f6ef7", color: "#fff",
+                  border: "none", borderRadius: 10, padding: "13px", fontSize: 14, fontWeight: 800, cursor: sending ? "default" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>{sending ? <><Spinner size={14} />전송 중...</> : "피드백 전송"}</button>
+
+                <div style={{ fontSize: 10, color: "#475569", marginTop: 10, textAlign: "center", lineHeight: 1.5 }}>전송 시 가입 이메일과 앱 버전(v{APP_VERSION})이 함께 기록됩니다.</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("market");
   React.useEffect(() => { refreshUsdKrw(); }, []); // 앱 시작 시 환율 1회 갱신(1시간 캐시)
@@ -8143,6 +8267,7 @@ function App() {
         <div style={{ display: tab === "advisor"   ? "block" : "none" }}><Advisor /></div>
         <div style={{ display: tab === "settings"  ? "block" : "none" }}><Settings /></div>
       </div>
+      <FeedbackWidget />
     </div>
   );
 }
