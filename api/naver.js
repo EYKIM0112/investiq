@@ -32,7 +32,7 @@ export default async function handler(req, res) {
       if (r.ok) {
         const html = await r.text();
         // <a href="/item/main.naver?code=475080">KODEX 코리아밸류업</a>
-        const matches = [...html.matchAll(/href="\/item\/main\.naver\?code=(\d{6})"[^>]*>([^<]{2,50})<\/a>/g)];
+        const matches = [...html.matchAll(/href="\/item\/main\.naver\?code=(\d{4}[0-9A-Z]\d)"[^>]*>([^<]{2,50})<\/a>/g)];
         if (matches.length > 0) {
           const seen = new Set();
           const items = [];
@@ -218,7 +218,7 @@ export default async function handler(req, res) {
           if (jsonMatch) {
             const items = JSON.parse(jsonMatch[0]);
             const quotes = items
-              .filter(i => i.code && /^\d{6}$/.test(String(i.code)))
+              .filter(i => i.code && /^\d{4}[0-9A-Z]\d$/.test(String(i.code)))
               .map(i => {
                 const isKosdaq = String(i.market || "").includes("KOSDAQ");
                 return {
@@ -254,7 +254,7 @@ export default async function handler(req, res) {
   // Yahoo 검색으로 받은 영어명을 한국어로 교체하는 용도
   if (type === "names") {
     if (!codes) return res.status(400).json({ error: "codes required" });
-    const codeList = codes.split(",").map(c => c.trim()).filter(c => /^\d{6}$/.test(c)).slice(0, 10);
+    const codeList = codes.split(",").map(c => c.trim()).filter(c => /^\d{4}[0-9A-Z]\d$/.test(c)).slice(0, 10);
     if (!codeList.length) return res.status(200).json({ names: {} });
 
     const names = {};
@@ -545,7 +545,7 @@ export default async function handler(req, res) {
 
   const codeList = codes.split(",")
     .map(c => c.trim())
-    .filter(c => /^\d{6}$/.test(c));
+    .filter(c => /^\d{4}[0-9A-Z]\d$/.test(c));
   if (!codeList.length) return res.status(400).json({ error: "invalid codes" });
 
   const HEADERS = {
