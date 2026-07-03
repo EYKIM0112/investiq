@@ -133,32 +133,46 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: "KIS 토큰 발급 실패: " + (e.message || e) });
   }
 
+  // 관심종목(멀티종목) 시세조회 — 한 번에 최대 30종목 (tr_id FHKST11300006, 실전 전용)
+  // 응답 output[] 각 항목: inter_shrn_iscd(코드), inter2_prpr(현재가), prdy_ctrt(등락률),
+  //                        prdy_vrss_sign(부호), inter_kor_isnm(종목명)
   const results = {};
-  for (const code of codeList) {
+  for (let i = 0; i < codeList.length; i += 30) {
+    const chunk = codeList.slice(i, i + 30);
+    const qs = [];
+    chunk.forEach((code, idx) => {
+      const n = idx + 1;
+      qs.push(`FID_COND_MRKT_DIV_CODE_${n}=J`);
+      qs.push(`FID_INPUT_ISCD_${n}=${encodeURIComponent(code)}`);
+    });
     try {
-      const url = `${KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-price?fid_cond_mrkt_div_code=J&fid_input_iscd=${encodeURIComponent(code)}`;
+      const url = `${KIS_BASE}/uapi/domestic-stock/v1/quotations/intstock-multprice?${qs.join("&")}`;
       const r = await fetch(url, {
         headers: {
-          "Content-Type": "application/json",
+          "content-type": "application/json; charset=utf-8",
           authorization: `Bearer ${token}`,
           appkey,
           appsecret,
-          tr_id: "FHKST01010100",
+          tr_id: "FHKST11300006",
           custtype: "P",
         },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(10000),
       });
       const d = await r.json().catch(() => ({}));
-      const o = d.output;
-      if (o && o.stck_prpr != null && o.stck_prpr !== "") {
-        results[code] = {
-          currentPrice: Number(o.stck_prpr),
-          changeRate: signedRate(o.prdy_ctrt, o.prdy_vrss_sign),
-        };
+      if (d.rt_cd === "0" && Array.isArray(d.output)) {
+        for (const o of d.output) {
+          const code = String(o.inter_shrn_iscd || "").trim().toUpperCase();
+          if (!code || o.inter2_prpr == null || o.inter2_prpr === "") continue;
+          results[code] = {
+            currentPrice: Number(o.inter2_prpr),
+            changeRate: signedRate(o.prdy_ctrt, o.prdy_vrss_sign),
+            name: String(o.inter_kor_isnm || "").trim() || null,
+          };
+        }
       }
-      await sleep(120); // 초당 ~8건 (KIS 초당 제한 여유)
+      if (i + 30 < codeList.length) await sleep(150); // 배치 간 딜레이
     } catch (e) {
-      // 개별 종목 실패는 건너뜀
+      // 배치 실패는 건너뜀 (해당 종목들은 앱 레벨 fallback으로 처리)
     }
   }
 
