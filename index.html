@@ -5233,17 +5233,25 @@ function Portfolio() {
         const withCode    = krwHoldings.filter(h => getKrCode(h.ticker));
         const withoutCode = krwHoldings.filter(h => !getKrCode(h.ticker));
 
+        // naverPrices: 한국 시세 결과 맵(코드→{currentPrice,changeRate}). 1차 KIS, 실패분만 네이버로 채움.
         let naverPrices = {};
         if (withCode.length > 0) {
-          setUploadMsg(`📡 네이버 금융 조회 중 (${withCode.length}개)...`);
+          const allCodes = withCode.map(h => getKrCode(h.ticker));
+          // 1차: 한국투자증권(KIS) — 숫자·영숫자 코드 모두 지원, 배치(30개/호출). Vercel IP 차단 영향 없음.
+          setUploadMsg(`📡 한국투자증권 시세 조회 중 (${withCode.length}개)...`);
           try {
-            const codes = withCode.map(h => getKrCode(h.ticker)).join(",");
-            const nr = await fetch(`/api/naver?codes=${codes}`);
-            if (nr.ok) {
-              const nd = await nr.json();
-              naverPrices = nd.results || {};
-            }
-          } catch(e) { console.warn("Naver 조회 오류:", e.message); }
+            const kr = await fetch(`/api/kis?codes=${allCodes.join(",")}`);
+            if (kr.ok) { const kd = await kr.json(); naverPrices = kd.results || {}; }
+          } catch(e) { console.warn("KIS 조회 오류:", e.message); }
+          // 2차: KIS가 못 준 코드만 네이버 fallback
+          const missing = allCodes.filter(c => !(naverPrices[c] && naverPrices[c].currentPrice > 0));
+          if (missing.length > 0) {
+            setUploadMsg(`📡 네이버 금융 보조 조회 중 (${missing.length}개)...`);
+            try {
+              const nr = await fetch(`/api/naver?codes=${missing.join(",")}`);
+              if (nr.ok) { const nd = await nr.json(); Object.assign(naverPrices, nd.results || {}); }
+            } catch(e) { console.warn("Naver 조회 오류:", e.message); }
+          }
         }
 
         // 네이버 성공 종목 처리
@@ -6452,6 +6460,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.6.0 변경사항 (한국투자증권 시세 연동)</div>
+            <div>· 한국 시세를 한국투자증권(KIS) 공식 OpenAPI로 조회하도록 전환 — 1차 KIS → 실패분만 네이버 → AI검색 순 fallback. Vercel IP 차단·영숫자 코드 문제를 근본 해결(KIS는 숫자·영숫자 코드 모두 지원, 멀티종목 배치 조회)</div>
+            <div>· 접근토큰은 서버에서 발급·캐싱(app key는 서버 환경변수에만 보관)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.7 변경사항 (DB 보강)</div>
             <div>· ETF DB 등재 — TIGER 미국테크TOP10채권혼합(472170, 채권혼합은 주식부분 테마인 미국빅테크로 분류). DB에 없어 티커 미매핑되던 것 해결</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.6 변경사항 (코드 정정·DB 보강)</div>
@@ -6471,12 +6482,12 @@ function Settings() {
             <div>· 스샷(OCR) 종목명 1글자 오인식(예: '전력'→'전략')을 DB로 직접 교정 — 검색 API에만 의존하던 보정을 ETF DB·개별주 DB 로컬 보정으로 보강(네이버 결과와 무관하게 동작). 가드: 숫자 동일·한글 6자 이상·후보 단일·공식명 한글</div>
             <div>· 보유 전력 ETF 2종(KODEX 미국AI전력핵심인프라·KODEX AI전력핵심설비)을 ETF DB에 등재 — 정타는 검색 없이 즉시 확정, 오인식분도 로컬 교정 대상에 포함</div>
             <div>· 버전 변경사항을 최근 6개만 표시하고 이전 버전은 '더보기'로 접음</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.1 변경사항 (피드백 아이콘)</div>
-            <div>· 피드백 플로팅 버튼 아이콘을 이모지(💬)에서 SVG(말풍선+별)로 교체 — PC·모바일 동일하게 또렷하게 표시, 메신저 느낌 제거</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.1 변경사항 (피드백 아이콘)</div>
+            <div>· 피드백 플로팅 버튼 아이콘을 이모지(💬)에서 SVG(말풍선+별)로 교체 — PC·모바일 동일하게 또렷하게 표시, 메신저 느낌 제거</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.0 변경사항 (피드백 기능)</div>
             <div>· 모든 화면 우하단 플로팅 버튼으로 피드백 작성 — 앱 만족도 별점(0.5~5.0, 반쪽 단위) + 유형(버그·기능요청·기타) + 자유 입력</div>
             <div>· 제출 시 가입 이메일·앱 버전 자동 기록, Supabase feedbacks 테이블(RLS)에 저장</div>
@@ -8209,7 +8220,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "2.5.7";
+const APP_VERSION = "2.6.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
