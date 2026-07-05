@@ -436,6 +436,28 @@ function savePortfolio(p) {
     localStorage.removeItem(STORAGE_CLEARED_KEY);   // 데이터가 다시 생기면 cleared 해제
   }
 }
+// 같은 계좌 + 같은 종목(코드 우선, 없으면 이름)을 하나로 병합. shares 합산, avg_price는 수량가중평균.
+// 한 스샷 안에 같은 종목이 여러 줄(예: 현금분+RSA분)일 때 계좌내 중복이 생기지 않게 함.
+function mergeSameAccountHoldings(list) {
+  if (!Array.isArray(list)) return list;
+  const out = [];
+  const pos = {};
+  for (const h of list) {
+    const code = (krCodeOf(h.ticker) || h.ticker || "").toUpperCase();
+    const key = (h.account || "") + "::" + (code || h.name || "");
+    if (pos[key] === undefined) { pos[key] = out.length; out.push({ ...h }); continue; }
+    const e = out[pos[key]];
+    const s1 = Number(e.shares) || 0, s2 = Number(h.shares) || 0, tot = s1 + s2;
+    const a1 = Number(e.avg_price) || 0, a2 = Number(h.avg_price) || 0;
+    if (tot > 0) {
+      const raw = (s1 * a1 + s2 * a2) / tot;
+      e.avg_price = (e.currency && e.currency !== "KRW") ? Math.round(raw * 100) / 100 : Math.round(raw);
+    }
+    e.shares = tot;
+    if ((e.current_price == null || e.current_price === 0) && h.current_price) e.current_price = h.current_price;
+  }
+  return out;
+}
 // 계좌별 현금(예수금). account 미지정/"all"이면 전체 합계.
 function getCashFor(pf, account) {
   if (!pf) return 0;
@@ -4904,6 +4926,7 @@ function Portfolio() {
         } catch(e) { console.warn("ticker 보완 실패:", e); }
       }
 
+      newHoldings = mergeSameAccountHoldings(newHoldings); // 한 스샷 내 같은 계좌+같은 종목 병합(계좌내 중복 방지)
       // ── 등록 방식에 따라 머지 (base = 최신 localStorage 스냅샷) ──────────────
       let latestPortfolio;
       if (regMode === "merge") {
@@ -5022,6 +5045,27 @@ function Portfolio() {
       newHoldings = portfolio.holdings.filter((_, i) => i !== idx);
     } else {
       newHoldings = portfolio.holdings.map((h, i) => i === idx ? updated : h);
+    }
+    const p = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
+    savePortfolio(p);
+    setPortfolio(p);
+  };
+
+  // 합산 뷰의 수정/삭제 처리: 같은 계좌 + 같은 종목(코드 우선, 없으면 이름)의 원본 항목 "전체"를 대상으로.
+  // updated!==null → 매칭 항목들을 updated 하나로 대체(나머지 제거). updated===null → 매칭 전부 삭제.
+  // 화면은 같은 종목을 1줄로 합산 표시하므로, 내부에 여러 항목이 있어도 사용자 기대대로 하나처럼 동작하게 함.
+  const updateHoldingGroup = (ref, updated) => {
+    const refCode = (krCodeOf(ref.ticker) || ref.ticker || "").toUpperCase();
+    const match = (x) => (x.account || "") === (ref.account || "") &&
+      (refCode ? (krCodeOf(x.ticker) || x.ticker || "").toUpperCase() === refCode : x.name === ref.name);
+    let placed = false;
+    const newHoldings = [];
+    for (const x of portfolio.holdings) {
+      if (match(x)) {
+        if (updated !== null && !placed) { newHoldings.push(updated); placed = true; }
+      } else {
+        newHoldings.push(x);
+      }
     }
     const p = { ...portfolio, holdings: newHoldings, updatedAt: new Date().toISOString() };
     savePortfolio(p);
@@ -5626,7 +5670,7 @@ function Portfolio() {
         <EditHoldingModal
           holding={editTarget.holding}
           onClose={() => setEditTarget(null)}
-          onSave={(updated) => { updateHolding(editTarget.index, updated); setEditTarget(null); }}
+          onSave={(updated) => { updateHoldingGroup(editTarget.holding, updated); setEditTarget(null); }}
         />
       )}
       {showManual && (
@@ -6125,8 +6169,8 @@ function Portfolio() {
                         <div style={{ fontSize: 10, color: "#64748b", background:"#1e293b", padding:"2px 6px", borderRadius:4 }}>미조회</div>
                       )}
                     </div>
-                    <button onClick={() => setEditTarget({ holding: h, index: portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account) })} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
-                    <button onClick={() => removeHolding(portfolio.holdings.findIndex(x => x.ticker===h.ticker && x.name===h.name && x.account===h.account))} style={{ background: "none", border: "none", color: "#f87171", fontSize: 19, fontWeight: 800, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}>×</button>
+                    <button onClick={() => setEditTarget({ holding: h })} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, cursor: "pointer", padding: "2px 4px" }}>✎</button>
+                    <button onClick={() => updateHoldingGroup(h, null)} style={{ background: "none", border: "none", color: "#f87171", fontSize: 19, fontWeight: 800, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}>×</button>
                   </div>
                 </div>
               );
@@ -6513,6 +6557,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.7.1 변경사항 (중복 종목 수정·삭제 버그 수정)</div>
+            <div>· 한 계좌에 같은 종목이 여러 줄로 저장됐을 때(예: 한 화면의 현금분+RSA분) 수정하면 엉뚱한 수량이 되던 버그 수정 — 화면은 1줄로 합산 표시하지만 수정·삭제는 첫 항목만 건드려 나머지가 잔존하던 문제. 이제 같은 계좌+같은 종목(코드 우선) 전체를 하나로 처리</div>
+            <div>· 스샷 등록 시 한 화면 안에 같은 종목이 여러 줄이면 자동 병합(수량 합산·평단 가중평균)해 계좌내 중복을 원천 차단</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.7.0 변경사항 (KIS 마스터 DB 자동화)</div>
             <div>· 한국투자증권(KIS) 종목마스터로 국내 전종목(코스피·코스닥 ETF 1,143 + 개별주 2,725) code↔이름 확보 — 스샷(OCR) 등록 시 DB에 없던 신규 종목도 이름·코드로 매칭(별도 파일 lazy-load). '신규 종목마다 수동 등재' 한계를 근본 해결. ※ kis_master.json을 루트에 함께 배포해야 적용됨</div>
             <div>· ETF 신규분은 이름 키워드로 섹터 자동분류, 신규 개별주는 '기타'로 등록(추후 KRX 업종 중분류 매핑으로 개선 예정)</div>
@@ -6532,13 +6579,13 @@ function Settings() {
             <div>· AI검색이 준 종목코드는 환각 가능성이 있어, 네이버 공식명 역조회(type=names)로 이름이 일치할 때만 티커 확정(잘못된 코드 차단)</div>
             <div>· ETF DB 보강 — TIGER 코스닥액티브·TIME 코스피액티브·KODEX 코리아밸류업·RISE 미국나스닥100·ACE 미국빅테크TOP7 Plus·KoAct 글로벌AI메모리반도체액티브 등재. KODEX 로봇액티브(445290) 정식명칭 정정(기존 'K-로봇액티브'라 인식명과 안 맞아 매핑 누락). 기본 포트폴리오 코리아밸류업 코드 정정(475080→495850)</div>
             <div>· 보유목록에서 종목명이 길어 잘려도(…) 티커는 항상 보이도록 표시 변경</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.3 변경사항 (계좌 삭제·티커 매핑)</div>
-            <div>· 계좌 전체 삭제·마지막 계좌 삭제 후 새 스샷을 등록하면 삭제했던 기본 데모 계좌가 되살아나던 버그 수정 — 비운 상태를 기억해 PRESET(데모 포폴)을 다시 깔지 않음(최초 실행 때만 시드)</div>
-            <div>· DB에 없는 한국 종목이 네이버 검색에선 잡히는데 티커 없이 등록되던 문제 보완 — 검색 후보가 단 1건이면 그 티커·공식명을 채택(브랜드명·ETF판정에 의존하지 않음, 리브랜딩·이름 잘림 대응). 결과가 여러 건이면 모호하므로 종전대로 미할당</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.3 변경사항 (계좌 삭제·티커 매핑)</div>
+            <div>· 계좌 전체 삭제·마지막 계좌 삭제 후 새 스샷을 등록하면 삭제했던 기본 데모 계좌가 되살아나던 버그 수정 — 비운 상태를 기억해 PRESET(데모 포폴)을 다시 깔지 않음(최초 실행 때만 시드)</div>
+            <div>· DB에 없는 한국 종목이 네이버 검색에선 잡히는데 티커 없이 등록되던 문제 보완 — 검색 후보가 단 1건이면 그 티커·공식명을 채택(브랜드명·ETF판정에 의존하지 않음, 리브랜딩·이름 잘림 대응). 결과가 여러 건이면 모호하므로 종전대로 미할당</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.2 변경사항 (OCR 오인식 보정)</div>
             <div>· 스샷(OCR) 종목명 1글자 오인식(예: '전력'→'전략')을 DB로 직접 교정 — 검색 API에만 의존하던 보정을 ETF DB·개별주 DB 로컬 보정으로 보강(네이버 결과와 무관하게 동작). 가드: 숫자 동일·한글 6자 이상·후보 단일·공식명 한글</div>
             <div>· 보유 전력 ETF 2종(KODEX 미국AI전력핵심인프라·KODEX AI전력핵심설비)을 ETF DB에 등재 — 정타는 검색 없이 즉시 확정, 오인식분도 로컬 교정 대상에 포함</div>
@@ -8277,7 +8324,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.7.1";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
