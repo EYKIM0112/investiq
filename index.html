@@ -1860,7 +1860,7 @@ function withCountry(base, country) {
   return (country || "") + base;
 }
 // 한국 단축코드: 구형 6자리 숫자(069500) + 신형 영숫자 혼합(0193T0). 끝 .KS/.KQ 허용.
-const KR_CODE_RE = /^\d{4}[0-9A-Z]\d$/;
+const KR_CODE_RE = /^\d{4}[0-9A-Z]{2}$/; // 앞4자리 숫자 + 뒤2자리 영숫자(우선주 K/L 등 포함) — 국내 마스터 3,868개 전량 커버 확인됨
 const krCodeOf = (t) => { const c = String(t || "").replace(/\.(KS|KQ)$/i, ""); return KR_CODE_RE.test(c) ? c : null; };
 const isKrCode = (t) => krCodeOf(t) !== null;
 // 한국 ETF 브랜드 접두 — 이게 붙은 종목은 ETF로 보고 개별주 DB/LLM 폴백을 타지 않음
@@ -6605,6 +6605,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.8.1 변경사항 (우선주 코드 인식 수정)</div>
+            <div>· 국내 코드 판별 정규식이 마지막 자리를 숫자로만 제한해 우선주(마지막 자리 K·L, 예: 삼성물산우B·SK우 등 23종목)를 국내 코드로 인식 못 하던 버그 수정 — 앞4자리 숫자+뒤2자리 영숫자 전부 허용으로 완화(index.html·api/kis.js·api/naver.js 총 6곳). 국내 마스터 3,868종목 전량 커버 및 미국 마스터 비충돌 재검증 완료</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.8.0 변경사항 (해외 종목마스터 자동화)</div>
             <div>· 한국투자증권 해외(나스닥·뉴욕·아멕스) 종목마스터로 미국 개별주 6,677 + ETF 5,873 = 12,550종목 code↔이름 확보 — 국내와 동일하게 스샷(OCR) 등록 시 DB에 없던 미국 신규종목도 심볼·이름으로 매칭(별도 파일 lazy-load). ※ kis_master_us.json을 루트(public/)에 함께 배포해야 적용됨</div>
             <div>· 기존 DB의 미국종목 138개 이름을 KIS 공식 등록명으로 통일(예: 알파벳(구글)→알파벳 A/알파벳 C로 클래스 구분, 아마존→아마존닷컴 등 61건)</div>
@@ -6623,12 +6625,12 @@ function Settings() {
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.6 변경사항 (코드 정정·DB 보강)</div>
             <div>· 잘못된 종목코드 정정 — KODEX 미국AI전력핵심인프라(472050→487230), KODEX AI전력핵심설비(476290→487240). 틀린 코드라 현재가가 미조회되던 문제 해결(ETF DB·기본 포트폴리오 모두 반영)</div>
             <div>· ETF DB 보강 — SOL 미국배당미국채혼합50(490490, 채권혼합은 주식부분 테마인 미국배당으로 분류)·KODEX 미국서학개미(473460) 등재. 미국서학개미 기본 포트폴리오 코드도 정정(411500→473460)</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.5 변경사항 (영숫자 코드 시세조회)</div>
-            <div>· 영숫자 종목코드(예: 0204S0·0174B0·0043Y0·0162Z0 — 새 KRX 코드형식)가 티커는 붙어도 현재가가 미조회되던 문제 수정. 네이버 프록시(naver.js)가 6자리 숫자코드만 받던 필터를 영숫자 코드까지 허용하도록 변경(현재가·이름·검색 전 경로). ※ naver.js도 함께 배포해야 적용됨</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.5 변경사항 (영숫자 코드 시세조회)</div>
+            <div>· 영숫자 종목코드(예: 0204S0·0174B0·0043Y0·0162Z0 — 새 KRX 코드형식)가 티커는 붙어도 현재가가 미조회되던 문제 수정. 네이버 프록시(naver.js)가 6자리 숫자코드만 받던 필터를 영숫자 코드까지 허용하도록 변경(현재가·이름·검색 전 경로). ※ naver.js도 함께 배포해야 적용됨</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.5.4 변경사항 (티커 매핑·표시)</div>
             <div>· DB에 없는 한국 종목 티커 미매핑 수정 — 빠른 소스(네이버·다음)가 막혀 느린 AI검색으로만 잡히던 종목이 8초 타임아웃에 끊겨 티커가 안 붙던 문제. 검색 타임아웃 8→20초로 늘려 결과를 받게 함</div>
             <div>· AI검색이 준 종목코드는 환각 가능성이 있어, 네이버 공식명 역조회(type=names)로 이름이 일치할 때만 티커 확정(잘못된 코드 차단)</div>
@@ -8375,7 +8377,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.8.1";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
