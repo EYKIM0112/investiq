@@ -16,7 +16,7 @@ const KIS_BASE = "https://openapi.koreainvestment.com:9443";
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://vqmuwmjdzskycxaqostt.supabase.co";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
 
-const KR_CODE_RE = /^\d{4}[0-9A-Z]\d$/; // 6자리 KRX 코드(영숫자 포함) — index.html/naver.js와 동일 규칙
+const KR_CODE_RE = /^\d{4}[0-9A-Z]{2}$/; // 6자리 KRX 코드(앞4자리 숫자+뒤2자리 영숫자, 우선주 K/L 등 포함) — index.html/naver.js와 동일 규칙
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
