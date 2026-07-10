@@ -31,6 +31,7 @@
   </script>
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script type="text/babel" data-presets="react-classic" src="/backtest.js"></script>
   <script type="text/babel" data-presets="react-classic">
 const { useState, useCallback, useEffect, useRef } = React;
 
@@ -8359,7 +8360,7 @@ function StockCompare() {
 
 // 수익률비교 탭 래퍼 — 벤치마크비교 / 종목별비교 서브탭
 function CompareTab() {
-  const [sub, setSub] = useState("benchmark");
+  const [sub, setSub] = useState("backtest");
   const subBtn = (active) => ({
     flex: 1, padding: "10px 0", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: "none",
     background: active ? "#4f6ef7" : "transparent", color: active ? "#fff" : "#94a3b8",
@@ -8367,9 +8368,11 @@ function CompareTab() {
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14, background: "#0f0f18", padding: 5, borderRadius: 12, border: "1px solid #1e293b" }}>
+        <button onClick={() => setSub("backtest")} style={subBtn(sub === "backtest")}>백테스트</button>
         <button onClick={() => setSub("benchmark")} style={subBtn(sub === "benchmark")}>벤치마크비교</button>
         <button onClick={() => setSub("stock")} style={subBtn(sub === "stock")}>종목별비교</button>
       </div>
+      <div style={{ display: sub === "backtest" ? "block" : "none" }}>{sub === "backtest" && <BacktestTab />}</div>
       <div style={{ display: sub === "benchmark" ? "block" : "none" }}><BenchmarkCompare /></div>
       <div style={{ display: sub === "stock" ? "block" : "none" }}>{sub === "stock" && <StockCompare />}</div>
     </div>
@@ -8510,7 +8513,7 @@ function App() {
     { id: "portfolio", label: "포트폴리오",    icon: "" },
     { id: "dividend",  label: "배당",          icon: "" },
     { id: "rebalance", label: "리밸런싱",      icon: "" },
-    { id: "compare",   label: "수익률비교",    icon: "" },
+    { id: "compare",   label: "백테스트&비교",    icon: "" },
     { id: "advisor",   label: "AI 조언",       icon: "" },
     { id: "settings",  label: "설정",          icon: "" },
   ];
