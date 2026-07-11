@@ -8570,7 +8570,7 @@ function App() {
         <div style={{ display: "flex" }}>
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
-              flex: 1, padding: "8px 2px 10px", border: "none",
+              flex: t.id === "compare" ? 1.5 : 1, padding: "8px 2px 10px", border: "none",
               background: "transparent",
               color: tab === t.id ? "#f1f5f9" : "#94a3b8",
               cursor: "pointer", fontSize: 10, fontWeight: tab === t.id ? 700 : 500,
@@ -8578,7 +8578,7 @@ function App() {
               borderBottom: tab === t.id ? "2px solid #4f6ef7" : "2px solid transparent",
             }}>
               <div style={{ fontSize: 15, marginBottom: 2 }}>{t.icon}</div>
-              <div>{t.label}</div>
+              <div style={{ whiteSpace: "nowrap", fontSize: t.id === "compare" ? 9 : 10 }}>{t.label}</div>
             </button>
           ))}
         </div>
