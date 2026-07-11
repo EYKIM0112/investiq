@@ -330,9 +330,12 @@ function BacktestTab() {
 
   const addSec = (s) => {
     setErr("");
+    const ticker = String((s && (s.ticker || s.code)) || "").trim().toUpperCase();
+    if (!ticker) { setErr("종목 코드를 확인할 수 없어."); return; }
     if (secs.length >= 5) { setErr("종목은 최대 5개까지야."); return; }
-    if (secs.some(x => x.ticker === s.ticker)) { setErr("이미 추가된 종목이야."); return; }
-    const next = secs.concat([{ ticker: s.ticker, name: s.name, domestic: s.domestic, type: s.type || null, weight: 0, lumpMan: 0, dcaMan: 0 }]);
+    if (secs.some(x => x.ticker === ticker)) { setErr("이미 추가된 종목이야."); return; }
+    const domestic = (s && s.domestic != null) ? s.domestic : btIsDomestic(ticker);
+    const next = secs.concat([{ ticker, name: (s && s.name) || ticker, domestic, type: (s && s.type) || null, weight: 0, lumpMan: 0, dcaMan: 0 }]);
     const w = Math.round((100 / next.length) * 10) / 10;
     setSecs(next.map((x, i) => Object.assign({}, x, { weight: i === next.length - 1 ? Math.round((100 - w * (next.length - 1)) * 10) / 10 : w })));
   };
@@ -365,6 +368,7 @@ function BacktestTab() {
   const run = async () => {
     setErr(""); setWarn(""); setResult(null);
     if (!secs.length) { setErr("종목을 1개 이상 추가해줘."); return; }
+    if (secs.some(s => !s.ticker)) { setErr("종목 정보가 올바르지 않아. 해당 종목을 지우고 다시 추가해줘."); return; }
     const reqStart = startY + "-" + String(startM).padStart(2, "0");
     const reqEnd = endY + "-" + String(endM).padStart(2, "0");
     if (reqStart > reqEnd) { setErr("시작 시점이 종료 시점보다 늦어."); return; }
