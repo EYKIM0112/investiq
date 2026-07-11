@@ -384,6 +384,7 @@ function BacktestTab() {
     const reqStart = startY + "-" + String(startM).padStart(2, "0");
     const reqEnd = endY + "-" + String(endM).padStart(2, "0");
     if (reqStart > reqEnd) { setErr("시작 시점이 종료 시점보다 늦어."); return; }
+    if ((endY - startY) * 12 + (endM - startM) > 360) { setErr("백테스트 기간은 최대 30년까지야. 시작·종료를 조정해줘."); return; }
 
     let engSecs;
     if (allocMode === "weight") {
@@ -555,14 +556,14 @@ function BacktestTab() {
         <div style={label}>기간 (월봉 기준)</div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <select value={startY} onChange={e => setStartY(Number(e.target.value))} style={Object.assign({}, inp, { flex: 1, minWidth: 90 })}>
-            {Array.from({ length: nowY - 1999 }, (_, i) => nowY - i).map(y => <option key={y} value={y}>{y}년</option>)}
+            {Array.from({ length: nowY - 1994 }, (_, i) => nowY - i).map(y => <option key={y} value={y}>{y}년</option>)}
           </select>
           <select value={startM} onChange={e => setStartM(Number(e.target.value))} style={Object.assign({}, inp, { width: 76 })}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
           </select>
           <span style={{ color: "#64748b", fontSize: 14 }}>~</span>
           <select value={endY} onChange={e => setEndY(Number(e.target.value))} style={Object.assign({}, inp, { flex: 1, minWidth: 90 })}>
-            {Array.from({ length: nowY - 1999 }, (_, i) => nowY - i).map(y => <option key={y} value={y}>{y}년</option>)}
+            {Array.from({ length: nowY - 1994 }, (_, i) => nowY - i).map(y => <option key={y} value={y}>{y}년</option>)}
           </select>
           <select value={endM} onChange={e => setEndM(Number(e.target.value))} style={Object.assign({}, inp, { width: 76 })}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
