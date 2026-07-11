@@ -55,13 +55,25 @@ function btDomType(code) { const m = window.__btMasterDom; if (!m) return null; 
 async function btSearch(q) {
   const out = [];
   const nq = q.replace(/\s+/g, "").toLowerCase();
+  if (!nq) return out;
   const dom = await btLoadMasterDom();
   if (dom) {
-    let cnt = 0;
+    const scored = [];
     for (const it of dom.list) {
       const nm = String(it.name).replace(/\s+/g, "").toLowerCase();
-      if (nm.includes(nq) || it.code.toLowerCase().includes(nq)) { out.push(it); if (++cnt >= 8) break; }
+      const code = it.code.toLowerCase();
+      let score = 0;
+      if (nm === nq) score = 100;            // 이름 정확히 일치
+      else if (code === nq) score = 95;      // 코드 정확히 일치
+      else if (nm.startsWith(nq)) score = 80; // 이름 앞부분 일치
+      else if (code.startsWith(nq)) score = 70;
+      else if (nm.includes(nq)) score = 40;  // 이름 부분 포함
+      else if (code.includes(nq)) score = 20;
+      if (score > 0) scored.push({ it, score, nlen: nm.length });
     }
+    // 점수 내림차순 → 이름 짧은 순(더 정확) → 가나다순
+    scored.sort((a, b) => (b.score - a.score) || (a.nlen - b.nlen) || (a.it.name < b.it.name ? -1 : 1));
+    for (let i = 0; i < scored.length && i < 12; i++) out.push(scored[i].it);
   }
   try {
     const r = await fetch("/api/yahoo?type=search&q=" + encodeURIComponent(q), { signal: AbortSignal.timeout(8000) });
@@ -75,7 +87,7 @@ async function btSearch(q) {
         const qt = (x.quoteType || "").toUpperCase();
         if (qt !== "EQUITY" && qt !== "ETF") continue;
         out.push({ code: sym, name: x.shortname || x.longname || sym, type: qt.toLowerCase(), domestic: false });
-        if (++cnt >= 6) break;
+        if (++cnt >= 8) break;
       }
     }
   } catch (e) {}
