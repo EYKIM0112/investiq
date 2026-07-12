@@ -248,7 +248,9 @@ function btRunEngine(opts) {
       const v = px > 0 ? shares[s.ticker] * px : 0;
       bySec[s.ticker] = v; valByCur[s.currency] += v;
     });
-    monthly.push({ ym, bySec, valByCur, prinByCur: Object.assign({}, prinByCur), secPrin: Object.assign({}, secPrin) });
+    const px = {};
+    securities.forEach(s => { const v = seriesNative[s.ticker].get(ym); px[s.ticker] = v > 0 ? v : 0; });
+    monthly.push({ ym, bySec, valByCur, px, prinByCur: Object.assign({}, prinByCur), secPrin: Object.assign({}, secPrin) });
   });
 
   const last = monthly[monthly.length - 1];
@@ -284,16 +286,44 @@ function btYearlyByCur(monthly, cur) {
     return { year, value, principal, ret: principal > 0 ? (value - principal) / principal : null };
   }).sort((a, b) => (a.year < b.year ? -1 : 1));
 }
-// 종목별 연도별 집계 (비중은 같은 통화 내 비중)
-function btYearlyBySec(monthly, s) {
+// 종목별 연도별 집계.
+// 비중은 "전 종목 원화환산 총액" 기준(통화 통합) — rates는 종료월 환율 1개(통화별).
+function btYearlyBySec(monthly, s, secs, rates) {
   const byYear = new Map();
   monthly.forEach(p => { byYear.set(p.ym.slice(0, 4), p); });
   return Array.from(byYear, ([year, p]) => {
     const value = p.bySec[s.ticker] || 0;
     const prin = p.secPrin[s.ticker] || 0;
-    const curTotal = p.valByCur[s.currency] || 0;
-    return { year, value, principal: prin, weight: curTotal > 0 ? value / curTotal : 0, ret: prin > 0 ? (value - prin) / prin : null };
+    const rt = rates[s.currency];
+    const krwVal = rt > 0 ? value * rt : null;
+    const krwTotal = btKrwTotalAt(p, secs, rates);
+    return {
+      year, value, principal: prin,
+      weight: (krwTotal > 0 && krwVal != null) ? krwVal / krwTotal : null,
+      ret: prin > 0 ? (value - prin) / prin : null,
+    };
   }).sort((a, b) => (a.year < b.year ? -1 : 1));
+}
+// 특정 시점의 전 종목 원화환산 총 평가액(종료월 환율 사용)
+function btKrwTotalAt(p, secs, rates) {
+  let t = 0;
+  for (const s of secs) {
+    const rt = rates[s.currency];
+    if (!(rt > 0)) return 0;
+    t += (p.bySec[s.ticker] || 0) * rt;
+  }
+  return t;
+}
+// 전 종목 통합 수익률 지수(시작=100). 통화가 달라도 성장배수는 비교 가능.
+function btIndexSeries(monthly, secs) {
+  return secs.map(s => {
+    const first = monthly.find(p => (p.px && p.px[s.ticker] > 0));
+    const basePx = first && first.px ? first.px[s.ticker] : null;
+    return {
+      name: s.name,
+      points: monthly.map(p => ({ ym: p.ym, value: (basePx > 0 && p.px && p.px[s.ticker] > 0) ? (p.px[s.ticker] / basePx) * 100 : null })),
+    };
+  });
 }
 function btDividendLabel(s) {
   if (!s.domestic) return { txt: "해외 · 배당 재투자 반영(TR)", color: "#22d3a0" };
@@ -367,6 +397,48 @@ function BtMultiChart(props) {
           <text x={padL + 2} y={y(v) - 3} fill="#475569" fontSize="11">{btFmtAmtShort(v, cur)}</text>
         </g>
       ))}
+      {shownYears.map((m, k) => (<text key={k} x={x(m.i)} y={H - 8} fill="#64748b" fontSize="11" textAnchor="middle">{m.label}</text>))}
+      {series.map((s, si) => (<path key={si} d={path(s.points)} fill="none" stroke={s.color} strokeWidth="2" />))}
+    </svg>
+  );
+}
+
+// ===== SVG: 통합 수익률 지수(시작=100) — 통화 무관 비교 =====
+function BtIndexChart(props) {
+  const series = (props.series || []).filter(s => s.points.some(p => p.value != null));
+  if (!series.length) return null;
+  const pts0 = series[0].points;
+  const n = pts0.length;
+  if (n < 2) return null;
+  const W = 700, H = 280, padL = 8, padR = 12, padT = 14, padB = 26;
+  let maxV = 0;
+  series.forEach(s => s.points.forEach(p => { if (p.value != null && p.value > maxV) maxV = p.value; }));
+  if (maxV <= 0) maxV = 100;
+  const x = (i) => padL + (i / (n - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - v / maxV) * (H - padT - padB);
+  const path = (pts) => {
+    let d = "", started = false;
+    pts.forEach((p, i) => {
+      if (p.value == null) return;
+      d += (started ? "L" : "M") + x(i).toFixed(1) + " " + y(p.value).toFixed(1) + " ";
+      started = true;
+    });
+    return d.trim();
+  };
+  const ticks = []; for (let k = 0; k <= 4; k++) ticks.push(maxV * (k / 4));
+  const yearMarks = []; const seen = {};
+  pts0.forEach((p, i) => { const yy = p.ym.slice(0, 4); if (!seen[yy]) { seen[yy] = true; yearMarks.push({ i, label: yy }); } });
+  const step = Math.ceil(yearMarks.length / 8);
+  const shownYears = yearMarks.filter((_, k) => k % step === 0);
+  return (
+    <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto", display: "block" }}>
+      {ticks.map((v, k) => (
+        <g key={k}>
+          <line x1={padL} y1={y(v)} x2={W - padR} y2={y(v)} stroke="#1e293b" strokeWidth="1" />
+          <text x={padL + 2} y={y(v) - 3} fill="#475569" fontSize="11">{Math.round(v).toLocaleString("ko-KR")}</text>
+        </g>
+      ))}
+      {maxV >= 100 && <line x1={padL} y1={y(100)} x2={W - padR} y2={y(100)} stroke="#475569" strokeWidth="1" strokeDasharray="3 3" />}
       {shownYears.map((m, k) => (<text key={k} x={x(m.i)} y={H - 8} fill="#64748b" fontSize="11" textAnchor="middle">{m.label}</text>))}
       {series.map((s, si) => (<path key={si} d={path(s.points)} fill="none" stroke={s.color} strokeWidth="2" />))}
     </svg>
@@ -687,6 +759,7 @@ function BtResult(props) {
   const modeLabel = { lump: "거치식", dca: "적립식", both: "거치+적립" }[mode];
   const colors = btColors();
   const card = { background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 12, padding: 14, marginBottom: 12 };
+  const secHead = { fontSize: 13, fontWeight: 800, color: "#e8eaf0", margin: "18px 4px 8px" };
   const last = eng.monthly[eng.monthly.length - 1];
   const kpi = (title, val, color) => (
     <div style={{ flex: 1, textAlign: "center", padding: "10px 4px" }}>
@@ -695,10 +768,16 @@ function BtResult(props) {
     </div>
   );
   const krwRet = krwPrincipal > 0 ? (krwValue - krwPrincipal) / krwPrincipal : null;
+  const colorOf = (t) => colors[secs.findIndex(x => x.ticker === t) % colors.length];
+  const idxSeries = btIndexSeries(eng.monthly, secs).map(s => {
+    const sec = secs.find(x => x.name === s.name) || {};
+    return Object.assign({}, s, { color: colorOf(sec.ticker) });
+  });
+  const krwTotalLast = btKrwTotalAt(last, secs, rates);
 
   return (
     <div>
-      {/* 최종 합산(원화 환산) */}
+      {/* ── 최종 합산(원화 환산) ── */}
       <div style={card}>
         <div style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>{start} ~ {end} · {modeLabel} · {secs.length}종목</div>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: "#a8b4f8", marginBottom: 2 }}>최종 합산 (원화 환산)</div>
@@ -711,110 +790,135 @@ function BtResult(props) {
         </div>
         {!fxOk && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 4 }}>· 일부 통화의 환율을 가져오지 못해 합산이 불가능해.</div>}
         <div style={{ fontSize: 10.5, color: "#475569", marginTop: 6, lineHeight: 1.5 }}>
-          · 각 종목은 자기 통화로 계산되고(환율 변동 미반영), 합산 원화 환산에는 종료월({end}) 환율만 사용했어.
+          · 각 종목은 자기 통화로 계산되고(환율 변동 미반영), 원화 환산에는 종료월({end}) 환율만 사용했어.
           {eng.currencies.filter(c => c !== "KRW").map(c => (rates[c] > 0 ? " · " + c + "/KRW " + Math.round(rates[c]).toLocaleString("ko-KR") : "")).join("")}
         </div>
       </div>
 
-      {/* 통화별 섹션 */}
+      {/* ── 그래프 영역 ── */}
+      {/* 그래프 1 — 통화별 평가액 추이 */}
       {eng.byCur.map(b => {
         const cur = b.currency;
         const curSecs = secs.filter(s => s.currency === cur);
         const pts = eng.monthly.map(p => ({ ym: p.ym, value: p.valByCur[cur] || 0, principal: p.prinByCur[cur] || 0 }));
-        const yearly = btYearlyByCur(eng.monthly, cur);
-        const series = curSecs.map((s, i) => ({ name: s.name, color: colors[i % colors.length], points: eng.monthly.map(p => ({ ym: p.ym, value: p.bySec[s.ticker] || 0 })) }));
         return (
-          <div key={cur}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#e8eaf0", margin: "16px 4px 8px" }}>
-              {cur === "KRW" ? "국내 (원화)" : "해외 (" + cur + ")"} <span style={{ fontSize: 11, color: "#64748b", fontWeight: 500 }}>· {curSecs.length}종목</span>
+          <div key={"g_" + cur}>
+            <div style={secHead}>
+              {cur === "KRW" ? "국내 (원화)" : "해외 (" + cur + ")"} <span style={{ fontSize: 11, color: "#64748b", fontWeight: 500 }}>· {curSecs.length}종목 · 자산 추이</span>
             </div>
-
             <div style={card}>
               <div style={{ display: "flex", flexWrap: "wrap" }}>
                 {kpi("평가액", btFmtAmt(b.value, cur), "#e8eaf0")}
                 {kpi("투자원금", btFmtAmt(b.principal, cur), "#94a3b8")}
               </div>
-              <div style={{ display: "flex", borderTop: "1px solid #1e293b", marginTop: 4 }}>
+              <div style={{ display: "flex", borderTop: "1px solid #1e293b", marginTop: 4, marginBottom: 10 }}>
                 {kpi("총 수익률", btFmtPct(b.totalReturn), b.totalReturn >= 0 ? "#22d3a0" : "#f87171")}
                 {kpi("연환산(IRR)", btFmtPct(b.irr), b.irr >= 0 ? "#22d3a0" : "#f87171")}
               </div>
-            </div>
-
-            <div style={card}>
               <div style={{ display: "flex", gap: 14, marginBottom: 8, fontSize: 11.5 }}>
                 <span style={{ color: "#22d3a0" }}>● 평가액</span>
                 <span style={{ color: "#64748b" }}>┄ 투자원금</span>
               </div>
               <BtChart points={pts} currency={cur} />
             </div>
-
-            <div style={card}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8", marginBottom: 10 }}>연도별 자산 변동</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1.3fr 1fr", gap: 4, fontSize: 11, color: "#64748b", paddingBottom: 6, borderBottom: "1px solid #1e293b" }}>
-                <span>연도</span><span style={{ textAlign: "right" }}>투자원금</span><span style={{ textAlign: "right" }}>평가액</span><span style={{ textAlign: "right" }}>수익률</span>
-              </div>
-              {yearly.map(r => (
-                <div key={r.year} style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1.3fr 1fr", gap: 4, fontSize: 12.5, padding: "7px 0", borderBottom: "1px solid #12121f" }}>
-                  <span style={{ color: "#cbd5e1" }}>{r.year}</span>
-                  <span style={{ textAlign: "right", color: "#94a3b8" }}>{btFmtAmtShort(r.principal, cur)}</span>
-                  <span style={{ textAlign: "right", color: "#e8eaf0", fontWeight: 700 }}>{btFmtAmtShort(r.value, cur)}</span>
-                  <span style={{ textAlign: "right", color: r.ret >= 0 ? "#22d3a0" : "#f87171" }}>{btFmtPct(r.ret)}</span>
-                </div>
-              ))}
-            </div>
-
-            {curSecs.length >= 2 && (
-              <div style={card}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8", marginBottom: 8 }}>종목별 평가액 비교</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", marginBottom: 8, fontSize: 11 }}>
-                  {curSecs.map((s, i) => (<span key={s.ticker} style={{ color: colors[i % colors.length] }}>● {s.name}</span>))}
-                </div>
-                <BtMultiChart series={series} currency={cur} />
-              </div>
-            )}
-
-            {curSecs.map((s, i) => {
-              const fv = last.bySec[s.ticker] || 0;
-              const fp = last.secPrin[s.ticker] || 0;
-              const curTotal = last.valByCur[cur] || 0;
-              const wt = curTotal > 0 ? fv / curTotal : 0;
-              const ret = fp > 0 ? (fv - fp) / fp : null;
-              const rows = btYearlyBySec(eng.monthly, s);
-              const lab = btDividendLabel(s);
-              return (
-                <div key={s.ticker} style={card}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: colors[i % colors.length], display: "inline-block" }}></span>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: "#e8eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
-                    <span style={{ fontSize: 11, color: "#475569" }}>{s.ticker}</span>
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", marginBottom: 4 }}>
-                    {kpi("최종 평가액", btFmtAmtShort(fv, cur), "#e8eaf0")}
-                    {kpi("비중", (wt * 100).toFixed(1) + "%", "#a8b4f8")}
-                    {kpi("수익률", btFmtPct(ret), ret >= 0 ? "#22d3a0" : "#f87171")}
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1fr 1fr", gap: 4, fontSize: 10.5, color: "#64748b", paddingBottom: 5, borderBottom: "1px solid #1e293b" }}>
-                    <span>연도</span><span style={{ textAlign: "right" }}>평가액</span><span style={{ textAlign: "right" }}>비중</span><span style={{ textAlign: "right" }}>수익률</span>
-                  </div>
-                  {rows.map(r => (
-                    <div key={r.year} style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1fr 1fr", gap: 4, fontSize: 12, padding: "6px 0", borderBottom: "1px solid #12121f" }}>
-                      <span style={{ color: "#cbd5e1" }}>{r.year}</span>
-                      <span style={{ textAlign: "right", color: "#e8eaf0" }}>{btFmtAmtShort(r.value, cur)}</span>
-                      <span style={{ textAlign: "right", color: "#94a3b8" }}>{(r.weight * 100).toFixed(1) + "%"}</span>
-                      <span style={{ textAlign: "right", color: r.ret >= 0 ? "#22d3a0" : "#f87171" }}>{btFmtPct(r.ret)}</span>
-                    </div>
-                  ))}
-                  <div style={{ fontSize: 11, color: lab.color, marginTop: 8 }}>{lab.txt}</div>
-                </div>
-              );
-            })}
           </div>
         );
       })}
 
-      <div style={{ fontSize: 10.5, color: "#475569", padding: "0 4px 8px", lineHeight: 1.5 }}>
-        · 국내 ETF·해외 종목은 배당/분배금이 재투자된 총수익(TR) 기준, 국내 개별주는 현금배당 미반영(가격수익률)이야.
-        · 통화별 비중은 같은 통화 안에서의 비중이야.
+      {/* 그래프 2 — 종목별 평가액 추이, 통화별 */}
+      {eng.byCur.map(b => {
+        const cur = b.currency;
+        const curSecs = secs.filter(s => s.currency === cur);
+        if (curSecs.length < 2) return null;
+        const series = curSecs.map(s => ({ name: s.name, color: colorOf(s.ticker), points: eng.monthly.map(p => ({ ym: p.ym, value: p.bySec[s.ticker] || 0 })) }));
+        return (
+          <div key={"m_" + cur} style={card}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8", marginBottom: 8 }}>종목별 평가액 추이 ({cur})</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", marginBottom: 8, fontSize: 11 }}>
+              {curSecs.map(s => (<span key={s.ticker} style={{ color: colorOf(s.ticker) }}>● {s.name}</span>))}
+            </div>
+            <BtMultiChart series={series} currency={cur} />
+          </div>
+        );
+      })}
+
+      {/* 그래프 3 — 전 종목 통합 수익률 지수, 통화 무관 */}
+      {secs.length >= 2 && (
+        <div style={card}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8", marginBottom: 4 }}>전 종목 수익률 비교 (시작=100)</div>
+          <div style={{ fontSize: 10.5, color: "#475569", marginBottom: 8 }}>· 통화가 달라도 성장 배수는 비교 가능해. 금액이 아니라 시작 시점 대비 몇 배가 됐는지를 보여줘.</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", marginBottom: 8, fontSize: 11 }}>
+            {secs.map(s => (<span key={s.ticker} style={{ color: colorOf(s.ticker) }}>● {s.name} <span style={{ color: "#475569" }}>({s.currency})</span></span>))}
+          </div>
+          <BtIndexChart series={idxSeries} />
+        </div>
+      )}
+
+      {/* ── 연도별 자산 변동 (통화별 총합) ── */}
+      {eng.byCur.map(b => {
+        const cur = b.currency;
+        const yearly = btYearlyByCur(eng.monthly, cur);
+        return (
+          <div key={"y_" + cur} style={card}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8", marginBottom: 10 }}>연도별 자산 변동 · {cur === "KRW" ? "국내(원화)" : "해외(" + cur + ")"}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1.3fr 1fr", gap: 4, fontSize: 11, color: "#64748b", paddingBottom: 6, borderBottom: "1px solid #1e293b" }}>
+              <span>연도</span><span style={{ textAlign: "right" }}>투자원금</span><span style={{ textAlign: "right" }}>평가액</span><span style={{ textAlign: "right" }}>수익률</span>
+            </div>
+            {yearly.map(r => (
+              <div key={r.year} style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1.3fr 1fr", gap: 4, fontSize: 12.5, padding: "7px 0", borderBottom: "1px solid #12121f" }}>
+                <span style={{ color: "#cbd5e1" }}>{r.year}</span>
+                <span style={{ textAlign: "right", color: "#94a3b8" }}>{btFmtAmtShort(r.principal, cur)}</span>
+                <span style={{ textAlign: "right", color: "#e8eaf0", fontWeight: 700 }}>{btFmtAmtShort(r.value, cur)}</span>
+                <span style={{ textAlign: "right", color: r.ret >= 0 ? "#22d3a0" : "#f87171" }}>{btFmtPct(r.ret)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      {/* ── 종목별 상세 (비중=전체 원화환산 기준) ── */}
+      <div style={secHead}>종목별 상세 <span style={{ fontSize: 11, color: "#64748b", fontWeight: 500 }}>· 비중은 전 종목 원화환산 기준</span></div>
+      {secs.map(s => {
+        const cur = s.currency;
+        const fv = last.bySec[s.ticker] || 0;
+        const fp = last.secPrin[s.ticker] || 0;
+        const rt = rates[cur];
+        const wt = (krwTotalLast > 0 && rt > 0) ? (fv * rt) / krwTotalLast : null;
+        const ret = fp > 0 ? (fv - fp) / fp : null;
+        const rows = btYearlyBySec(eng.monthly, s, secs, rates);
+        const lab = btDividendLabel(s);
+        return (
+          <div key={s.ticker} style={card}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: colorOf(s.ticker), display: "inline-block" }}></span>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: "#e8eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+              <span style={{ fontSize: 10, color: "#64748b" }}>{cur}</span>
+              <span style={{ fontSize: 11, color: "#475569" }}>{s.ticker}</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", marginBottom: 4 }}>
+              {kpi("최종 평가액", btFmtAmtShort(fv, cur), "#e8eaf0")}
+              {kpi("비중(원화)", wt != null ? (wt * 100).toFixed(1) + "%" : "-", "#a8b4f8")}
+              {kpi("수익률", btFmtPct(ret), ret >= 0 ? "#22d3a0" : "#f87171")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1fr 1fr", gap: 4, fontSize: 10.5, color: "#64748b", paddingBottom: 5, borderBottom: "1px solid #1e293b" }}>
+              <span>연도</span><span style={{ textAlign: "right" }}>평가액</span><span style={{ textAlign: "right" }}>비중</span><span style={{ textAlign: "right" }}>수익률</span>
+            </div>
+            {rows.map(r => (
+              <div key={r.year} style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr 1fr 1fr", gap: 4, fontSize: 12, padding: "6px 0", borderBottom: "1px solid #12121f" }}>
+                <span style={{ color: "#cbd5e1" }}>{r.year}</span>
+                <span style={{ textAlign: "right", color: "#e8eaf0" }}>{btFmtAmtShort(r.value, cur)}</span>
+                <span style={{ textAlign: "right", color: "#94a3b8" }}>{r.weight != null ? (r.weight * 100).toFixed(1) + "%" : "-"}</span>
+                <span style={{ textAlign: "right", color: r.ret >= 0 ? "#22d3a0" : "#f87171" }}>{btFmtPct(r.ret)}</span>
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: lab.color, marginTop: 8 }}>{lab.txt}</div>
+          </div>
+        );
+      })}
+
+      <div style={{ fontSize: 10.5, color: "#475569", padding: "0 4px 8px", lineHeight: 1.6 }}>
+        · 국내 ETF·해외 종목은 배당/분배금이 재투자된 총수익(TR) 기준, 국내 개별주는 현금배당 미반영(가격수익률)이야.<br />
+        · 종목별 비중은 전 종목을 원화로 환산한 총액 기준이야(종료월 환율 사용).
       </div>
     </div>
   );
