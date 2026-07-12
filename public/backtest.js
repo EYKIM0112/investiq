@@ -516,12 +516,12 @@ function BacktestTab() {
   const addSec = (s) => {
     setErr("");
     const ticker = String((s && (s.ticker || s.code)) || "").trim().toUpperCase();
-    if (!ticker) { setErr("종목 코드를 확인할 수 없어."); return; }
-    if (secs.length >= 5) { setErr("종목은 최대 5개까지야."); return; }
-    if (secs.some(x => x.ticker === ticker)) { setErr("이미 추가된 종목이야."); return; }
+    if (!ticker) { setErr("종목 코드를 확인할 수 없습니다."); return; }
+    if (secs.length >= 5) { setErr("종목은 최대 5개까지 선택 가능합니다."); return; }
+    if (secs.some(x => x.ticker === ticker)) { setErr("이미 추가된 종목입니다."); return; }
     const domestic = (s && s.domestic != null) ? s.domestic : btIsDomestic(ticker);
     const currency = (s && s.currency) || (domestic ? "KRW" : null);
-    if (!currency) { setErr("이 종목은 KIS 마스터에 없어 백테스트를 지원하지 않아."); return; }
+    if (!currency) { setErr("이 종목은 KIS 마스터에 없어 백테스트를 지원하지 않습니다."); return; }
     const next = secs.concat([{ ticker, name: (s && s.name) || ticker, domestic, type: (s && s.type) || null, currency, weight: 0, lumpAmt: 0, dcaAmt: 0 }]);
     const w = Math.round((100 / next.length) * 10) / 10;
     setSecs(next.map((x, i) => Object.assign({}, x, { weight: i === next.length - 1 ? Math.round((100 - w * (next.length - 1)) * 10) / 10 : w })));
@@ -540,21 +540,21 @@ function BacktestTab() {
 
   const run = async () => {
     setErr(""); setWarn(""); setResult(null);
-    if (!secs.length) { setErr("종목을 1개 이상 추가해줘."); return; }
+    if (!secs.length) { setErr("종목을 1개 이상 추가해주세요."); return; }
     const reqStart = startY + "-" + String(startM).padStart(2, "0");
     const reqEnd = endY + "-" + String(endM).padStart(2, "0");
-    if (reqStart > reqEnd) { setErr("시작 시점이 종료 시점보다 늦어."); return; }
-    if ((endY - startY) * 12 + (endM - startM) > 360) { setErr("백테스트 기간은 최대 30년까지야."); return; }
+    if (reqStart > reqEnd) { setErr("시작 시점이 종료 시점보다 늦습니다."); return; }
+    if ((endY - startY) * 12 + (endM - startM) > 360) { setErr("백테스트 기간은 최대 30년까지 가능합니다."); return; }
 
     // 종목별 투자금 확정 (각 통화의 기본단위)
     let engSecs;
     if (effAlloc === "weight" && singleCur) {
-      if (Math.abs(weightSum - 100) > 0.5) { setErr("비중 합이 100%가 되어야 해 (현재 " + weightSum.toFixed(1) + "%)."); return; }
+      if (Math.abs(weightSum - 100) > 0.5) { setErr("비중 합이 100%가 되어야 합니다. (현재 " + weightSum.toFixed(1) + "%)"); return; }
       const mul = singleMeta.unitMul;
       const tl = (Number(lumpTotal) || 0) * mul;
       const td = (Number(dcaTotal) || 0) * mul;
-      if (needLump && tl <= 0) { setErr("거치 금액을 입력해줘."); return; }
-      if (needDca && td <= 0) { setErr("적립 금액을 입력해줘."); return; }
+      if (needLump && tl <= 0) { setErr("거치 금액을 입력해주세요."); return; }
+      if (needDca && td <= 0) { setErr("적립 금액을 입력해주세요."); return; }
       engSecs = secs.map(s => { const w = (Number(s.weight) || 0) / 100; return { ticker: s.ticker, name: s.name, domestic: s.domestic, type: s.type, currency: s.currency, lumpAmt: tl * w, dcaAmt: td * w }; });
     } else {
       engSecs = secs.map(s => {
@@ -563,8 +563,8 @@ function BacktestTab() {
       });
       const sumL = engSecs.reduce((a, s) => a + s.lumpAmt, 0);
       const sumD = engSecs.reduce((a, s) => a + s.dcaAmt, 0);
-      if (needLump && sumL <= 0) { setErr("종목별 거치 금액을 입력해줘."); return; }
-      if (needDca && sumD <= 0) { setErr("종목별 적립 금액을 입력해줘."); return; }
+      if (needLump && sumL <= 0) { setErr("종목별 거치 금액을 입력해주세요."); return; }
+      if (needDca && sumD <= 0) { setErr("종목별 적립 금액을 입력해주세요."); return; }
     }
 
     setRunning(true);
@@ -584,8 +584,8 @@ function BacktestTab() {
       let common = null;
       secs.forEach(s => { const ks = new Set(seriesNative[s.ticker].keys()); common = common === null ? ks : new Set([...common].filter(y => ks.has(y))); });
       const months = Array.from(common || []).sort();
-      if (months.length < 2) { setErr("공통으로 조회되는 월 데이터가 부족해. 종목 상장 시기나 기간을 확인해줘."); setRunning(false); return; }
-      if (months[0] > reqStart) setWarn("일부 종목의 데이터 시작이 늦어, 백테스트는 " + months[0] + "부터 시작했어.");
+      if (months.length < 2) { setErr("공통으로 조회되는 월 데이터가 부족합니다. 종목 상장 시기나 기간을 확인해주세요."); setRunning(false); return; }
+      if (months[0] > reqStart) setWarn("일부 종목의 데이터 시작이 늦어, 백테스트는 " + months[0] + "부터 시작했습니다.");
 
       const eng = btRunEngine({ securities: engSecs, seriesNative, months, mode });
       const endYm = months[months.length - 1];
@@ -604,7 +604,7 @@ function BacktestTab() {
 
       setResult({ eng, secs: engSecs, start: months[0], end: endYm, mode, rates, krwValue, krwPrincipal, fxOk });
     } catch (e) {
-      setErr(e.message || "백테스트 중 오류가 발생했어.");
+      setErr(e.message || "백테스트 중 오류가 발생했습니다.");
     } finally {
       setRunning(false);
     }
@@ -630,7 +630,7 @@ function BacktestTab() {
           <button onClick={() => !isMixed && setAllocMode("weight")} disabled={isMixed} style={segBtn(effAlloc === "weight", isMixed)}>비중(%)</button>
           <button onClick={() => setAllocMode("amount")} style={segBtn(effAlloc === "amount")}>금액 직접입력</button>
         </div>
-        {isMixed && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 8 }}>· 통화가 다른 종목이 섞여 있어 비중(%) 배분은 쓸 수 없어. 통화별로 금액을 직접 입력해줘.</div>}
+        {isMixed && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 8 }}>· 통화가 다른 종목이 섞여 있을 경우 비중(%) 배분은 사용 불가합니다. 통화별로 투자 금액을 직접 입력 해주세요.</div>}
         {effAlloc === "weight" && singleCur && (
           <div style={{ marginTop: 12 }}>
             {needLump && (
@@ -647,10 +647,10 @@ function BacktestTab() {
                 <span style={{ fontSize: 13, color: "#94a3b8", width: 34 }}>{singleMeta.unit}</span>
               </div>
             )}
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>· 총액을 종목별 비중대로 나눠 투자해.{needDca ? " 적립은 매월 말 종가 기준." : ""}</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>· 총액을 종목별 비중대로 나누어 투자합니다.{needDca ? " 적립은 매월 말 종가 기준." : ""}</div>
           </div>
         )}
-        {effAlloc === "amount" && <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>· 종목별로 각 통화 단위의 금액을 직접 입력해.{needDca ? " 적립은 매월 말 종가 기준." : ""}</div>}
+        {effAlloc === "amount" && <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>· 종목별로 각 통화 단위의 금액을 직접 입력합니다.{needDca ? " 적립은 매월 말 종가 기준." : ""}</div>}
       </div>
 
       <div style={card}>
@@ -697,7 +697,7 @@ function BacktestTab() {
         <button onClick={() => setShowPicker(!showPicker)} style={Object.assign({}, inp, { width: "100%", cursor: "pointer", color: "#a8b4f8", fontWeight: 700, marginBottom: showPicker ? 8 : 10 })}>＋ 내 포트폴리오에서 추가</button>
         {showPicker && (
           <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #1e293b", borderRadius: 8, padding: 6, marginBottom: 10 }}>
-            {portfolio.length === 0 && <div style={{ fontSize: 12, color: "#64748b", padding: 8 }}>백테스트 가능한 종목이 없어(KIS 마스터 기준).</div>}
+            {portfolio.length === 0 && <div style={{ fontSize: 12, color: "#64748b", padding: 8 }}>백테스트 가능한 종목이 없습니다. (KIS 마스터 기준)</div>}
             {portfolio.map(h => (
               <div key={h.code} onClick={() => addSec(h)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 6, cursor: "pointer" }}>
                 <span style={{ fontSize: 10, color: h.domestic ? "#22d3a0" : "#fbbf24" }}>{h.currency}</span>
@@ -788,9 +788,9 @@ function BtResult(props) {
         <div style={{ display: "flex", borderTop: "1px solid #1e293b", marginTop: 4 }}>
           {kpi("총 수익률", fxOk ? btFmtPct(krwRet) : "-", krwRet >= 0 ? "#22d3a0" : "#f87171")}
         </div>
-        {!fxOk && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 4 }}>· 일부 통화의 환율을 가져오지 못해 합산이 불가능해.</div>}
+        {!fxOk && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 4 }}>· 일부 통화의 환율을 가져오지 못해 합산이 불가능합니다.</div>}
         <div style={{ fontSize: 10.5, color: "#475569", marginTop: 6, lineHeight: 1.5 }}>
-          · 각 종목은 자기 통화로 계산되고(환율 변동 미반영), 원화 환산에는 종료월({end}) 환율만 사용했어.
+          · 각 종목은 자기 통화로 계산되고(환율 변동 미반영), 원화 환산에는 종료월({end}) 환율만 사용했습니다.
           {eng.currencies.filter(c => c !== "KRW").map(c => (rates[c] > 0 ? " · " + c + "/KRW " + Math.round(rates[c]).toLocaleString("ko-KR") : "")).join("")}
         </div>
       </div>
@@ -846,7 +846,7 @@ function BtResult(props) {
       {secs.length >= 2 && (
         <div style={card}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#a8b4f8", marginBottom: 4 }}>전 종목 수익률 비교 (시작=100)</div>
-          <div style={{ fontSize: 10.5, color: "#475569", marginBottom: 8 }}>· 통화가 달라도 성장 배수는 비교 가능해. 금액이 아니라 시작 시점 대비 몇 배가 됐는지를 보여줘.</div>
+          <div style={{ fontSize: 10.5, color: "#475569", marginBottom: 8 }}>· 통화가 달라도 성장 배수는 비교 가능합니다. 시작 시점 대비 몇 배가 됐는지를 보여줍니다.</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", marginBottom: 8, fontSize: 11 }}>
             {secs.map(s => (<span key={s.ticker} style={{ color: colorOf(s.ticker) }}>● {s.name} <span style={{ color: "#475569" }}>({s.currency})</span></span>))}
           </div>
@@ -917,8 +917,8 @@ function BtResult(props) {
       })}
 
       <div style={{ fontSize: 10.5, color: "#475569", padding: "0 4px 8px", lineHeight: 1.6 }}>
-        · 국내 ETF·해외 종목은 배당/분배금이 재투자된 총수익(TR) 기준, 국내 개별주는 현금배당 미반영(가격수익률)이야.<br />
-        · 종목별 비중은 전 종목을 원화로 환산한 총액 기준이야(종료월 환율 사용).
+        · 국내 ETF·해외 종목은 배당/분배금이 재투자된 총수익(TR) 기준, 국내 개별주는 현금배당 미반영(가격수익률) 기준.<br />
+        · 종목별 비중은 전 종목을 원화로 환산한 총액 기준(종료월 환율 사용).
       </div>
     </div>
   );
