@@ -32,6 +32,7 @@
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/backtest.js"></script>
+  <script type="text/babel" data-presets="react-classic" src="/gurus.js"></script>
   <script type="text/babel" data-presets="react-classic">
 const { useState, useCallback, useEffect, useRef } = React;
 
@@ -8594,7 +8595,7 @@ function App() {
       <IndexWidget />
       <div style={{ padding: "12px 14px 60px" }}>
         <div style={{ display: tab === "market"    ? "block" : "none" }}><MarketInsight /></div>
-        <div style={{ display: tab === "portfolio" ? "block" : "none" }}><Portfolio /></div>
+        <div style={{ display: tab === "portfolio" ? "block" : "none" }}><PortfolioWithGurus /></div>
         <div style={{ display: tab === "dividend"  ? "block" : "none" }}>{tab === "dividend" && <DividendCalendar />}</div>
         <div style={{ display: tab === "rebalance" ? "block" : "none" }}>{tab === "rebalance" && <RebalanceGuide />}</div>
         <div style={{ display: tab === "compare" ? "block" : "none" }}>{tab === "compare" && <CompareTab />}</div>
