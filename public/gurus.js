@@ -187,6 +187,18 @@ function GurusTab() {
         {loading && <div style={{ fontSize: 13, color: "#64748b", padding: 20, textAlign: "center" }}>SEC EDGAR에서 13F 불러오는 중…</div>}
         {err && <div style={{ fontSize: 13, color: "#f87171", background: "#f8717111", border: "1px solid #f8717133", borderRadius: 8, padding: "9px 12px" }}>{err}</div>}
         {data && <GrHoldings data={data} guru={sel} />}
+        {/* 종목이 많아도 언제든 목록으로 — 우하단 플로팅 버튼 */}
+        <button
+          onClick={() => { setSel(null); setData(null); setErr(""); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {} }}
+          aria-label="대가 목록으로"
+          style={{
+            position: "fixed", left: 18, bottom: 22, zIndex: 401,
+            width: 48, height: 48, borderRadius: 24, border: "none", cursor: "pointer",
+            background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "#fff",
+            fontSize: 20, lineHeight: "48px", textAlign: "center", padding: 0,
+            boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
+          }}
+        >←</button>
       </div>
     );
   }
