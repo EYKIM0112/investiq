@@ -163,13 +163,17 @@ function safeParseJSON(text) {
 }
 
 // ---------- Gemini API 스트리밍 호출 ----------
-async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, onChunk, _retry = 0 }) {
+async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, thinkingBudget = null, onChunk, _retry = 0 }) {
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
   else contents.push({ role: "user", parts: [{ text: user }] });
 
-  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
+  // thinkingBudget 명시 시 그 값 사용, 아니면 기존 동작(검색=미설정, 비검색=0)
+  const thinkCfg = (thinkingBudget != null)
+    ? { thinkingConfig: { thinkingBudget } }
+    : (useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } });
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7, ...thinkCfg } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
   let res;
@@ -183,7 +187,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
     // network error (Failed to fetch) 재시도
     if (_retry < 2) {
       await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
-      return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
+      return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
     }
     throw new Error("network error");
   }
@@ -195,7 +199,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
       const delay = (res.status === 429 ? 5000 : 2000) * (_retry + 1);
       onChunk && onChunk(`[재시도 중... ${_retry + 1}/3]`);
       await new Promise(r => setTimeout(r, delay));
-      return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
+      return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
     }
     throw new Error(msg);
   }
@@ -223,7 +227,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
           // 스트리밍 중 과부하 에러도 재시도
           if ((parsed.error.code === 429 || parsed.error.code === 503) && _retry < 3) {
             await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
-            return callGeminiStream({ system, user, maxTokens, useSearch, onChunk, _retry: _retry + 1 });
+            return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
           }
           throw new Error(errMsg);
         }
@@ -236,7 +240,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   // 토큰 한도로 응답이 잘린 경우: 토큰 2배로 1회 자동 재시도 (사용자가 다시 누를 필요 없게)
   if (finishReason === "MAX_TOKENS" && _retry < 1) {
     onChunk && onChunk("[응답이 길어 더 받는 중...]");
-    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, onChunk, _retry: _retry + 1 });
+    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
   }
   return fullText;}
 
@@ -901,6 +905,7 @@ function MarketInsight({ onRefreshAll }) {
         callGeminiStream({
           maxTokens: 8000,
           useSearch: true,
+          thinkingBudget: 0,
           system: `You are a global investment analyst with real-time market data access. CRITICAL RULES:
 1. Search the web for TODAY's or YESTERDAY's market data ONLY. Never use data older than 2 days.
 2. For index values (KOSPI, NASDAQ etc), find the most recent actual price from today's trading session.
