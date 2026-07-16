@@ -7033,16 +7033,45 @@ function DividendCalendar() {
   const fetchDividends = async () => {
     if (holdings.length === 0) { setError("보유 종목이 없습니다. 먼저 포트폴리오에 종목을 추가하세요."); return; }
     setLoading(true); setError(""); // 조회 중에도 기존 결과 유지
-    const results = [];
-    const fx = getUsdKrw(); // USD ETF → KRW 환산용
+    const fx = getUsdKrw(); // USD 종목 → KRW 환산용
+    let done = 0;
+    setProgress(`0/${holdings.length}`);
 
-    for (let i = 0; i < holdings.length; i++) {
-      const h = holdings[i];
-      setProgress(`${i+1}/${holdings.length} · ${h.name}`);
-      let entry = null;
+    // 종목 1개 처리 → entry 또는 null(조회 안 됨/무배당 → 제외). 폴백 없음: 국내=KIS 1회, 해외=Yahoo 1회.
+    const processOne = async (h) => {
+      const krCode = krCodeOf(h.ticker); // 국내 6자리 코드(해외면 null)
 
-      // 1차: Yahoo 과거 분배금 이력
-      const yTicker = h.yahoo_ticker || (isKrCode(h.ticker) ? h.ticker + ".KS" : null);
+      // ── 국내: KIS 예탁원 배당일정 (개별주·ETF·우선주 커버) ──
+      if (krCode) {
+        try {
+          const res = await fetch(`/api/kis-dividend?code=${encodeURIComponent(krCode)}`);
+          if (res.ok) {
+            const kd = await res.json();
+            const paid = (kd.dividends || []).filter(x => x.payDate && x.perShare > 0);
+            if (paid.length > 0) {
+              // 기존 헬퍼 재사용 위해 Yahoo divs 형식({date:unix초, amount})으로 변환
+              const divs = paid.map(x => ({
+                date: Date.parse(`${x.payDate.slice(0,4)}-${x.payDate.slice(4,6)}-${x.payDate.slice(6,8)}`) / 1000,
+                amount: x.perShare,
+              })).sort((a, b) => a.date - b.date);
+              const freq = detectDividendFrequency(divs);
+              const annualPerShare = paid.reduce((s, x) => s + x.perShare, 0); // 최근 1년 주당 배당 합
+              return {
+                name: h.name, shares: h.shares, freq,
+                annualPerShare, annualTotal: annualPerShare * h.shares, // 국내=KRW, 환산 불필요
+                perPayment: annualPerShare / freqToCount(freq),
+                months: getPaymentMonths(divs, freq),
+                source: "KIS 예탁원", currency: "KRW",
+                payDay: getPayDay(divs),
+              };
+            }
+          }
+        } catch(e) {}
+        return null; // 국내인데 배당 없음/조회 실패 → 목록에서 제외
+      }
+
+      // ── 해외: Yahoo 과거 분배금 이력 ──
+      const yTicker = h.yahoo_ticker || null;
       if (yTicker) {
         try {
           const res = await fetch(`/api/yahoo?type=dividends&ticker=${encodeURIComponent(yTicker)}&range=3y`);
@@ -7051,63 +7080,46 @@ function DividendCalendar() {
             if (d.dividends && d.dividends.length > 0) {
               const freq = detectDividendFrequency(d.dividends);
               const now = Date.now() / 1000;
-              // 최근 12개월 주당 배당 합
               const last12 = d.dividends.filter(x => x.date > now - 365 * 86400);
               const annualPerShare = last12.length > 0
                 ? last12.reduce((s, x) => s + x.amount, 0)
-                : d.dividends[d.dividends.length - 1].amount * freqToCount(freq); // 1년치 없으면 최근 1회 × 주기
-              const months = getPaymentMonths(d.dividends, freq);
+                : d.dividends[d.dividends.length - 1].amount * freqToCount(freq);
               const cur = d.currency || h.currency || "KRW";
-              entry = {
+              return {
                 name: h.name, shares: h.shares, freq,
                 annualPerShare, annualTotal: annualPerShare * h.shares * (cur === "USD" ? fx : 1),
                 perPayment: annualPerShare / freqToCount(freq),
-                months, source: "Yahoo 이력", currency: cur,
+                months: getPaymentMonths(d.dividends, freq),
+                source: "Yahoo 이력", currency: cur,
                 payDay: getPayDay(d.dividends),
               };
             }
           }
         } catch(e) {}
       }
+      return null; // 해외 배당 없음/조회 실패 → 목록에서 제외
+    };
 
-      // 2차: Gemini Search 폴백 (Yahoo 이력 없음)
-      if (!entry) {
-        try {
-          const sys = "한국 ETF 배당 정보 전문가. 순수 JSON만 출력, 마크다운 없이.";
-          const usr = `"${h.name}" ETF의 배당 정보를 검색해서 JSON으로:\n{"yield_pct":연간배당수익률숫자또는null,"frequency":"월배당/분기배당/반기배당/연배당/무배당 중 하나","pay_months":[지급월숫자배열 예 1,4,7,10]}\n배당수익률은 최근 1년 기준 %. 무배당이면 yield_pct=0, frequency="무배당". 모르면 null.`;
-          const txt = await callGemini({ system: sys, user: usr, maxTokens: 300, useSearch: true });
-          const m = txt.replace(/```json|```/g, "").match(/\{[\s\S]*\}/);
-          if (m) {
-            const g = JSON.parse(m[0]);
-            if (g.frequency === "무배당" || g.yield_pct === 0) {
-              entry = { name: h.name, shares: h.shares, freq: "무배당", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "검색", currency: h.currency || "KRW", payDay: null };
-            } else if (g.yield_pct > 0 && h.current_price > 0) {
-              const annualPerShare = h.current_price * (g.yield_pct / 100);
-              const freq = g.frequency || "연배당";
-              const months = (g.pay_months && g.pay_months.length) ? g.pay_months.map(x => x - 1) : getPaymentMonths(null, freq);
-              entry = {
-                name: h.name, shares: h.shares, freq,
-                annualPerShare, annualTotal: annualPerShare * h.shares * (h.currency === "USD" ? fx : 1),
-                perPayment: annualPerShare / freqToCount(freq),
-                months, source: "검색·추정", currency: h.currency || "KRW",
-                yieldPct: g.yield_pct, payDay: null,
-              };
-            }
-          }
-        } catch(e) {}
+    // 동시성 제한 병렬 (한 번에 6종목씩) — 결과는 원래 순서 유지
+    const CONCURRENCY = 6;
+    const results = new Array(holdings.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (true) {
+        const my = cursor++;
+        if (my >= holdings.length) break;
+        results[my] = await processOne(holdings[my]);
+        done++; setProgress(`${done}/${holdings.length}`);
       }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, holdings.length) }, worker));
 
-      // 둘 다 실패
-      if (!entry) {
-        entry = { name: h.name, shares: h.shares, freq: "미확인", annualPerShare: 0, annualTotal: 0, perPayment: 0, months: [], source: "조회실패", currency: h.currency || "KRW", payDay: null };
-      }
-      results.push(entry);
-    }
+    const clean = results.filter(Boolean); // 조회 안 된 종목은 제외
 
     const ts = Date.now();
-    setStockData(results);
+    setStockData(clean);
     setUpdatedAt(ts);
-    try { localStorage.setItem(DIV_CACHE_KEY, JSON.stringify({ data: results, ts })); } catch(e) {}
+    try { localStorage.setItem(DIV_CACHE_KEY, JSON.stringify({ data: clean, ts })); } catch(e) {}
     setProgress("");
     setLoading(false);
   };
