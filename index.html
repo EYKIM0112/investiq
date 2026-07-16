@@ -6594,8 +6594,9 @@ function Settings() {
           { done: true,  text: "섹터 분류 체계 + ETF DB 및 개별주 DB 구축" },
           { done: true,  text: "백테스팅 — 거치식·적립식·거치+적립, 최대 5종목·30년, 통화별 네이티브 계산 + 연도별 자산 변동" },
           { done: true,  text: "대가들의 포트폴리오 — SEC 13F 기반 버핏·애크먼·달리오 등 18인의 미국주식 보유·비중·분기 변동 조회" },
+          { done: true,  text: "성능 최적화 — 인사이트 분석 thinking off + 배당 KIS 조회·폴백 제거로 응답 속도 개선" },
           { done: false, text: "🟢 알림·리마인더 (리밸런싱·목표비중 이탈·배당 지급일)" },
-          { done: false, text: "🟢 성능 최적화 (초기 로딩·단일 파일 경량화)" },
+          { done: false, text: "🟢 KIS 마스터 종목 섹터 자동 분류 (KRX 업종→섹터, 신규 개별주 '기타' 방지)" },
           { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
           { done: false, text: "🔵 안드로이드 앱 (PWA 래핑·상용화 — 최종 목표)" },
         ].map((item, i) => (
@@ -6620,6 +6621,12 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.1.0 변경사항 (배당 KIS 조회 · 성능 최적화)</div>
+            <div>· 배당 캘린더를 한국투자증권 예탁원(배당일정) API로 조회하도록 전환(api/kis-dividend.js 신설) — 국내 개별주·ETF·우선주의 주당 배당금·지급일을 예탁원 원천 데이터로 정확히 조회. 국내=KIS / 해외=Yahoo로 이원화하고 Gemini 검색 폴백을 제거, 동시 병렬 조회로 배당 조회 속도를 대폭 단축. ※ kis-dividend.js를 api/에 배포해야 적용됨</div>
+            <div>· 시장 인사이트 분석 속도 최적화 — 웹 검색 모드에서 thinking을 끄도록(thinkingBudget:0) 옵션화해 분석 응답 시간을 기존 대비 절반 이하로 단축</div>
+            <div>· 아시아 인사이트 탭 PC 흰 화면(React #31) 수정 — index_change 등 일부 필드가 객체로 반환될 때 렌더가 깨지던 문제를 안전 문자열화로 방어</div>
+            <div>· 배당 캘린더 '보유 종목 변경됨' 알림 오탐 수정 — 무배당 종목이 목록에서 제외되며 항상 변경으로 오판하던 문제를, 조회 시점 보유종목 스냅샷과 비교하도록 개선</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.0.0 변경사항 (대가들의 포트폴리오 추가)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.0.0 변경사항 (대가들의 포트폴리오 추가)</div>
             <div>· 대가들의 포트폴리오 신규 — SEC EDGAR 13F 공시 기반으로 워런 버핏·빌 애크먼·레이 달리오·마이클 버리 등 18인의 미국주식 보유 종목·비중·평가액·주식수를 조회. 직전 분기 대비 신규/추가/축소/전량청산 변동까지 표시. '포트폴리오' 탭에 '내 포트폴리오 / 대가들의 포트폴리오' 서브탭으로 배치</div>
             <div>· SEC EDGAR 13F 프록시(api/edgar.js) 신설 — submissions API로 13F-HR 이력 조회 후 information table XML을 파싱(네임스페이스 무관), 수정본(13F-HR/A) 분기별 최신본만 중복제거. 값 단위(달러/천달러) 자동 감지. 표시정책상 CUSIP→티커 매핑 없이 issuer명 그대로 사용. ※ gurus.js를 public/에, edgar.js를 api/에 배포해야 적용됨</div>
@@ -8420,7 +8427,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.1.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
