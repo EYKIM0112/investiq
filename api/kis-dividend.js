@@ -177,7 +177,7 @@ export default async function handler(req, res) {
     SHT_CD: code,      // 특정종목. ※ 6자리 코드 그대로 — 실측으로 확정 필요
     HIGH_GB: "",
   });
-  const url = `${KIS_BASE}/uapi/domestic-stock/v1/quotations/ksdinfo/dividend?${qs.toString()}`;
+  const url = `${KIS_BASE}/uapi/domestic-stock/v1/ksdinfo/dividend?${qs.toString()}`;
 
   try {
     const r = await fetch(url, {
