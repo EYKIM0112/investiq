@@ -766,7 +766,13 @@ const WORLD_INDEX_LIST = [
   { name: "영국FTSE",       ticker: "%5EFTSE",   },
   { name: "필라델피아반도체", ticker: "%5ESOX",    },
 ];
-
+    
+// 인사이트 렌더 안전 문자열화 — 객체/배열이 와도 React child 에러(#31) 방지
+function miText(v) {
+  if (v == null) return "";
+  if (typeof v === "object") return String(v.change ?? v.value ?? v.text ?? v.name ?? "");
+  return String(v);
+}
 function MarketInsight({ onRefreshAll }) {
   // localStorage 캐시 초기 로드
   const loadCachedResults = () => {
@@ -1244,7 +1250,7 @@ ${SOURCE_RULES}`,
       </div>
       {(d.markets||[]).map((mkt,i) => (
         <div key={i} style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
-          <div style={{ fontSize:13, fontWeight:700, marginBottom:12, letterSpacing:2 }}><span style={{ color:"#e2e8f0" }}>{mkt.country}</span> <span style={{ color:changePctColor(mkt.index_change) }}>{mkt.index_change||""}</span></div>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:12, letterSpacing:2 }}><span style={{ color:"#e2e8f0" }}>{miText(mkt.country)}</span> <span style={{ color:changePctColor(miText(mkt.index_change)) }}>{miText(mkt.index_change)}</span></div>
           {(mkt.strong||[]).length > 0 && (
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:14, color:"#10b981", marginBottom:8, fontWeight:700 }}>▲ 강한 섹터</div>
@@ -1255,11 +1261,11 @@ ${SOURCE_RULES}`,
             <div>
               <div style={{ fontSize:14, color:"#ef4444", marginBottom:8, fontWeight:700 }}>▼ 약한 섹터</div>
               {mkt.weak.map((s,j) => (
-                <div key={j} style={{ fontSize:16, color:"#94a3b8", marginBottom:6 }}>- {s.name||""}: {s.reason||""}</div>
+                <div key={j} style={{ fontSize:16, color:"#94a3b8", marginBottom:6 }}>- {miText(s.name)}: {miText(s.reason)}</div>
               ))}
             </div>
           )}
-          {mkt.outlook && <div style={{ fontSize:15, color:"#64748b", marginTop:10 }}>전망: {mkt.outlook}</div>}
+          {mkt.outlook && <div style={{ fontSize:15, color:"#64748b", marginTop:10 }}>전망: {miText(mkt.outlook)}</div>}
         </div>
       ))}
       {(d.events||[]).length > 0 && (
@@ -7010,6 +7016,9 @@ function DividendCalendar() {
   const [stockData, setStockData] = useState(() => {
     try { return JSON.parse(localStorage.getItem(DIV_CACHE_KEY) || "null")?.data || null; } catch { return null; }
   });
+  const [cachedNames, setCachedNames] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DIV_CACHE_KEY) || "null")?.holdingNames || null; } catch { return null; }
+  });
   const [updatedAt, setUpdatedAt] = useState(() => {
     try { return JSON.parse(localStorage.getItem(DIV_CACHE_KEY) || "null")?.ts || null; } catch { return null; }
   });
@@ -7122,9 +7131,11 @@ function DividendCalendar() {
     const clean = results.filter(Boolean); // 조회 안 된 종목은 제외
 
     const ts = Date.now();
+    const holdingNames = holdings.map(h => h.name); // 조회 시점 전체 보유종목 스냅샷
     setStockData(clean);
     setUpdatedAt(ts);
-    try { localStorage.setItem(DIV_CACHE_KEY, JSON.stringify({ data: clean, ts })); } catch(e) {}
+    setCachedNames(holdingNames);
+    try { localStorage.setItem(DIV_CACHE_KEY, JSON.stringify({ data: clean, ts, holdingNames })); } catch(e) {}
     setProgress("");
     setLoading(false);
   };
@@ -7163,13 +7174,13 @@ function DividendCalendar() {
 
   // 캐시된 데이터와 현재 보유 종목이 다른지 (다시 조회 권장 힌트)
   const holdingsChanged = React.useMemo(() => {
-    if (!stockData) return false;
-    const cached = new Set(stockData.map(s => s.name));
+    if (!stockData || !cachedNames) return false;
+    const cached = new Set(cachedNames); // 조회 시점 보유종목 스냅샷과 비교(무배당 종목 제외 영향 없음)
     const cur = new Set(holdings.map(h => h.name));
     if (cached.size !== cur.size) return true;
     for (const n of cur) if (!cached.has(n)) return true;
     return false;
-  }, [stockData, holdings]);
+  }, [cachedNames, holdings]);
 
   const lastUpdatedStr = React.useMemo(() => {
     if (!updatedAt) return "";
