@@ -6640,13 +6640,13 @@ function Settings() {
             <div>· 모듈 분리 — 백테스트는 별도 파일(public/backtest.js)로 분리해 index.html 비대화 방지. ※ backtest.js를 public/에 함께 배포해야 적용됨</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.8.1 변경사항 (우선주 코드 인식 수정)</div>
             <div>· 국내 코드 판별 정규식이 마지막 자리를 숫자로만 제한해 우선주(마지막 자리 K·L, 예: 삼성물산우B·SK우 등 23종목)를 국내 코드로 인식 못 하던 버그 수정 — 앞4자리 숫자+뒤2자리 영숫자 전부 허용으로 완화(index.html·api/kis.js·api/naver.js 총 6곳). 국내 마스터 3,868종목 전량 커버 및 미국 마스터 비충돌 재검증 완료</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.8.0 변경사항 (해외 종목마스터 자동화)</div>
-            <div>· 한국투자증권 해외(나스닥·뉴욕·아멕스) 종목마스터로 미국 개별주 6,677 + ETF 5,873 = 12,550종목 code↔이름 확보 — 국내와 동일하게 스샷(OCR) 등록 시 DB에 없던 미국 신규종목도 심볼·이름으로 매칭(별도 파일 lazy-load). ※ kis_master_us.json을 루트(public/)에 함께 배포해야 적용됨</div>
-            <div>· 기존 DB의 미국종목 138개 이름을 KIS 공식 등록명으로 통일(예: 알파벳(구글)→알파벳 A/알파벳 C로 클래스 구분, 아마존→아마존닷컴 등 61건)</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.8.0 변경사항 (해외 종목마스터 자동화)</div>
+            <div>· 한국투자증권 해외(나스닥·뉴욕·아멕스) 종목마스터로 미국 개별주 6,677 + ETF 5,873 = 12,550종목 code↔이름 확보 — 국내와 동일하게 스샷(OCR) 등록 시 DB에 없던 미국 신규종목도 심볼·이름으로 매칭(별도 파일 lazy-load). ※ kis_master_us.json을 루트(public/)에 함께 배포해야 적용됨</div>
+            <div>· 기존 DB의 미국종목 138개 이름을 KIS 공식 등록명으로 통일(예: 알파벳(구글)→알파벳 A/알파벳 C로 클래스 구분, 아마존→아마존닷컴 등 61건)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.7.1 변경사항 (중복 종목 수정·삭제 버그 수정)</div>
             <div>· 한 계좌에 같은 종목이 여러 줄로 저장됐을 때(예: 한 화면의 현금분+RSA분) 수정하면 엉뚱한 수량이 되던 버그 수정 — 화면은 1줄로 합산 표시하지만 수정·삭제는 첫 항목만 건드려 나머지가 잔존하던 문제. 이제 같은 계좌+같은 종목(코드 우선) 전체를 하나로 처리</div>
             <div>· 스샷 등록 시 한 화면 안에 같은 종목이 여러 줄이면 자동 병합(수량 합산·평단 가중평균)해 계좌내 중복을 원천 차단</div>
