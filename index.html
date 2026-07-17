@@ -6622,6 +6622,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.2.0 변경사항 (배당 지급일 알림 추가)</div>
+            <div>· 배당 지급일 알림 신규 — 헤더 알림 벨(🔔)에서 보유 종목의 다가오는 배당 지급 예정을 확인합니다. 배당 캘린더 데이터의 지급월·지급일자 패턴에서 다음 예상 지급일을 산출해, 지급일자가 확정된 종목은 D-7 이내를 뱃지로 알리고 30일 이내 예정도 함께 표시합니다. 앱 진입·재활성화 시 추가 조회 없이 즉시 계산합니다(네트워크 미사용). 지급일은 과거 이력 기반 예상치이며, 배당 탭에서 한 번 조회한 뒤 동작합니다. ※ notify.js를 public/에 배포해야 적용됨</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.1.0 변경사항 (배당 KIS 조회 · 성능 최적화)</div>
             <div>· 배당 캘린더를 한국투자증권 예탁원(배당일정) API로 조회하도록 전환(api/kis-dividend.js 신설) — 국내 개별주·ETF·우선주의 주당 배당금·지급일을 예탁원 원천 데이터로 정확히 조회. 국내=KIS / 해외=Yahoo로 이원화하고 Gemini 검색 폴백을 제거, 동시 병렬 조회로 배당 조회 속도를 대폭 단축. ※ kis-dividend.js를 api/에 배포해야 적용됨</div>
             <div>· 시장 인사이트 분석 속도 최적화 — 웹 검색 모드에서 thinking을 끄도록(thinkingBudget:0) 옵션화해 분석 응답 시간을 기존 대비 절반 이하로 단축</div>
