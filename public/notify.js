@@ -13,12 +13,13 @@
 //                   payDay(대표 지급일자, 중앙값 or null), currency, source, ... }
 //   → 배당 탭 달력이 이미 쓰는 months + payDay 패턴 그대로 사용해 "다음 예상 지급일"을 산출.
 //   → payDate 확정 미래일은 원천(KIS 예탁원)에서 미제공이라, 과거 이력 기반 '예상치'임을 UI에 명시.
+//
+// 표시 정책: 지급일자가 확정된 종목의 "다음 예상 지급일 D-7 이내"만 노출(뱃지 = 미확인 개수).
 
 // ===== 상수(함수로 노출 — top-level const 금지 규칙 준수) =====
 function ntDivCacheKey() { return "investiq_dividend_cache_v1"; }   // 배당 탭 캐시 (index.html DIV_CACHE_KEY와 동일)
 function ntSeenKey() { return "investiq_notify_seen_dividend_v1"; } // 이미 확인한 임박 알림 표시(뱃지 중복 방지)
-function ntImminentDays() { return 7; }   // 뱃지 대상: 지급일자 확정 + D-7 이내
-function ntUpcomingDays() { return 30; }  // 패널 하단 '예정' 목록: 30일 이내
+function ntImminentDays() { return 7; }   // 알림 노출·뱃지 대상: 지급일자 확정 + D-7 이내
 
 // ===== localStorage 유틸 =====
 function ntLoadDivCache() {
@@ -89,42 +90,37 @@ function ntPruneSeen(seen, today) {
   return out;
 }
 
-// 알림 계산: 캐시 → { hasCache, ts, imminent[], upcoming[] }
-// imminent: 일자확정 + 0<=D<=7 (뱃지 대상) / upcoming: 8~30일(+ 일자미정 근사)
+// 알림 계산: 캐시 → { hasCache, ts, imminent[] }
+// imminent: 지급일자 확정 + 0<=D<=7 (노출·뱃지 대상). 그 외(먼 미래·일자 미정)는 노출 안 함.
 function ntComputeAlerts() {
   const cache = ntLoadDivCache();
   const hasCache = !!(cache && Array.isArray(cache.data));
-  if (!hasCache) return { hasCache: false, ts: null, imminent: [], upcoming: [] };
+  if (!hasCache) return { hasCache: false, ts: null, imminent: [] };
 
   const today = ntStartOfToday();
   const imminent = [];
-  const upcoming = [];
 
   cache.data.forEach((s) => {
-    const per = ntPerPaymentKRW(s);
     const nx = ntNextPayDate(s, today);
-    if (!nx) return;
+    if (!nx || !nx.dayKnown) return;             // 지급일자 미확정 → 7일 이내 단정 불가 → 제외
     const dday = ntDiffDays(nx.date, today);
-    if (dday < 0) return;
-    const item = {
+    if (dday < 0 || dday > ntImminentDays()) return; // 7일 이내만
+    imminent.push({
       name: s.name,
       date: nx.date,
       ymd: ntYmd(nx.date),
       dday,
-      dayKnown: nx.dayKnown,
-      amountKRW: per,
+      dayKnown: true,
+      amountKRW: ntPerPaymentKRW(s),
       freq: s.freq || null,
       currency: s.currency || "KRW",
       source: s.source || null,
       key: `${s.name}::${ntYmd(nx.date)}`,
-    };
-    if (nx.dayKnown && dday <= ntImminentDays()) imminent.push(item);
-    else if (dday <= ntUpcomingDays()) upcoming.push(item);
+    });
   });
 
   imminent.sort((a, b) => a.date - b.date);
-  upcoming.sort((a, b) => a.date - b.date);
-  return { hasCache: true, ts: cache.ts || null, imminent, upcoming };
+  return { hasCache: true, ts: cache.ts || null, imminent };
 }
 
 // ===== 표시 유틸 =====
@@ -137,10 +133,8 @@ function ntDdayLabel(dday) {
   if (dday === 1) return "내일";
   return "D-" + dday;
 }
-function ntDateLabel(dt, dayKnown) {
-  const m = dt.getMonth() + 1;
-  const d = dt.getDate();
-  return dayKnown ? `${m}/${d}` : `${m}월 중`;
+function ntDateLabel(dt) {
+  return `${dt.getMonth() + 1}/${dt.getDate()}`;
 }
 function ntFmtTs(ts) {
   if (!ts) return "";
@@ -218,20 +212,17 @@ function NtBell(props) {
   const card = { background: "#0f0f18", border: "1px solid #1e293b", borderRadius: 12, padding: 12, marginBottom: 10 };
   const rowBase = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "9px 0", borderBottom: "1px solid #12121f", cursor: "pointer" };
 
-  const renderRow = function (a, dim) {
+  const renderRow = function (a) {
     return (
       <div key={a.key} onClick={goDividend} style={rowBase}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: dim ? "#94a3b8" : "#e8eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#e8eaf0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
           <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 2 }}>
-            {ntDateLabel(a.date, a.dayKnown)} 예상{a.freq ? " · " + a.freq : ""}{a.currency === "USD" ? " · 환산" : ""}
+            {ntDateLabel(a.date)} 예상{a.freq ? " · " + a.freq : ""}{a.currency === "USD" ? " · 환산" : ""}
           </div>
         </div>
         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-          <div style={{
-            fontSize: 12, fontWeight: 800,
-            color: a.dday <= 1 ? "#22d3a0" : (dim ? "#64748b" : "#a8b4f8"),
-          }}>{ntDdayLabel(a.dday)}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: a.dday <= 1 ? "#22d3a0" : "#a8b4f8" }}>{ntDdayLabel(a.dday)}</div>
           <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 2 }}>{ntFmtWon(a.amountKRW)}</div>
         </div>
       </div>
@@ -268,11 +259,11 @@ function NtBell(props) {
           </div>
         )}
 
-        {alerts.hasCache && alerts.imminent.length === 0 && alerts.upcoming.length === 0 && (
+        {alerts.hasCache && alerts.imminent.length === 0 && (
           <div style={{ ...card, textAlign: "center" }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
             <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6 }}>
-              {ntUpcomingDays()}일 이내 예상 배당 지급이 없습니다.
+              {ntImminentDays()}일 이내 예상 배당 지급이 없습니다.
             </div>
           </div>
         )}
@@ -280,14 +271,7 @@ function NtBell(props) {
         {alerts.hasCache && alerts.imminent.length > 0 && (
           <div style={card}>
             <div style={{ fontSize: 12, fontWeight: 800, color: "#22d3a0", marginBottom: 4 }}>💰 곧 지급 예정 (D-{ntImminentDays()} 이내)</div>
-            {alerts.imminent.map(function (a) { return renderRow(a, false); })}
-          </div>
-        )}
-
-        {alerts.hasCache && alerts.upcoming.length > 0 && (
-          <div style={card}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>📆 예정 ({ntUpcomingDays()}일 이내)</div>
-            {alerts.upcoming.map(function (a) { return renderRow(a, true); })}
+            {alerts.imminent.map(function (a) { return renderRow(a); })}
           </div>
         )}
 
