@@ -33,6 +33,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/backtest.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/gurus.js"></script>
+  <script type="text/babel" data-presets="react-classic" src="/notify.js"></script>
   <script type="text/babel" data-presets="react-classic">
 const { useState, useCallback, useEffect, useRef } = React;
 
@@ -8426,7 +8427,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.2.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
@@ -8604,12 +8605,15 @@ function App() {
               <div style={{ fontSize: 9, color: "#64748b", letterSpacing: 2.5, fontWeight: 600 }}>AI INVESTMENT ADVISOR</div>
             </div>
           </div>
-          <button onClick={() => { setTab("market"); setTimeout(() => window.dispatchEvent(new CustomEvent("globalRefresh")), 100); }} style={{
-            background: "transparent",
-            color: "#94a3b8", border: "1px solid #2d3748",
-            borderRadius: 8, padding: "7px 13px",
-            cursor: "pointer", fontWeight: 500, fontSize: 12,
-          }}>⟳ 새로고침</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <NtBell goTab={setTab} />
+            <button onClick={() => { setTab("market"); setTimeout(() => window.dispatchEvent(new CustomEvent("globalRefresh")), 100); }} style={{
+              background: "transparent",
+              color: "#94a3b8", border: "1px solid #2d3748",
+              borderRadius: 8, padding: "7px 13px",
+              cursor: "pointer", fontWeight: 500, fontSize: 12,
+            }}>⟳ 새로고침</button>
+          </div>
         </div>
 
         {/* 탭바 */}
