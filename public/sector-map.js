@@ -273,25 +273,85 @@ function smSectorFromYahoo(info) {
 }
 
 // ===== 프록시 호출 헬퍼 =====
-// 티커 배열 → { 티커: 섹터 } (실패한 건 제외). 신규 종목 등록 시 1회만 호출 권장.
-// 국내 종목은 접미사 필요: KOSPI=.KS / KOSDAQ=.KQ
-async function smFetchSectors(tickers) {
-  const list = (tickers || []).filter(Boolean).slice(0, 20);
-  if (list.length === 0) return {};
+// 국내 6자리 코드 판별 (kis.js/index.html과 동일 규칙)
+function smIsKrCode(t) {
+  return /^\d{4}[0-9A-Z]{2}$/.test(String(t || "").trim().toUpperCase());
+}
+
+// KIS 티커 → Yahoo 티커 표기 변환.
+// KIS는 클래스주/우선주를 슬래시로 쓰지만(BRK/B, BF/B — 미국 개별주 462종=6.9%),
+// Yahoo는 하이픈을 쓴다(BRK-B). 변환 안 하면 해당 종목 조회가 전부 실패.
+function smToYahooTicker(t) {
+  return String(t || "").trim().toUpperCase().replace(/\//g, "-");
+}
+
+// Yahoo 조회 1회. { results, failed } 반환 (실패 시 빈 값)
+async function smCallYahoo(symbols) {
+  if (!symbols || symbols.length === 0) return { results: {}, failed: [] };
   try {
-    const r = await fetch("/api/yahoo-sector?tickers=" + encodeURIComponent(list.join(",")), {
+    const r = await fetch("/api/yahoo-sector?tickers=" + encodeURIComponent(symbols.join(",")), {
       signal: AbortSignal.timeout(25000),
     });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok || !d.results) return {};
-    const out = {};
-    Object.keys(d.results).forEach((k) => {
-      const v = d.results[k] || {};
-      if (v.type === "ETF" || v.type === "MUTUALFUND") return; // ETF는 이름 키워드 분류 사용
-      out[k] = smSectorFromYahoo({ ticker: k, industry: v.industry, sector: v.sector });
-    });
-    return out;
+    const d = await r.json().catch(function () { return {}; });
+    if (!r.ok || !d.results) return { results: {}, failed: symbols.slice() };
+    return { results: d.results, failed: Array.isArray(d.failed) ? d.failed : [] };
   } catch (e) {
-    return {};
+    return { results: {}, failed: symbols.slice() };
   }
+}
+
+// 티커 배열 → { 원본티커: 섹터 }. 신규 종목 등록/미분류 보충 시 1회만 호출 권장.
+// 국내 코드는 KOSPI(.KS) 우선 시도 → 실패분만 KOSDAQ(.KQ) 재시도 (티커만으론 시장 구분 불가).
+// ETF/펀드는 제외(기존 이름 키워드 분류가 담당).
+async function smFetchSectors(tickers) {
+  const src = (tickers || []).map(function (t) { return String(t || "").trim(); }).filter(Boolean);
+  if (src.length === 0) return {};
+
+  const out = {};
+  const symToOrig = {};   // 조회심볼 → 원본티커
+  const pass1 = [];
+  const krOrig = [];      // 국내 코드 원본 목록(2차 재시도용)
+
+  src.slice(0, 20).forEach(function (t) {
+    if (smIsKrCode(t)) {
+      const sym = t.toUpperCase() + ".KS";
+      symToOrig[sym] = t;
+      pass1.push(sym);
+      krOrig.push(t);
+    } else {
+      const sym = smToYahooTicker(t);
+      symToOrig[sym] = t;
+      pass1.push(sym);
+    }
+  });
+
+  function absorb(results) {
+    Object.keys(results || {}).forEach(function (sym) {
+      const v = results[sym] || {};
+      const orig = symToOrig[sym] || sym;
+      if (out[orig]) return;
+      if (v.type === "ETF" || v.type === "MUTUALFUND") return; // ETF는 이름 키워드 분류 사용
+      if (!v.industry && !v.sector) return;                    // 정보 없으면 스킵(LLM에 넘김)
+      out[orig] = smSectorFromYahoo({ ticker: orig, industry: v.industry, sector: v.sector });
+    });
+  }
+
+  const r1 = await smCallYahoo(pass1);
+  absorb(r1.results);
+
+  // 국내 코드 중 .KS로 못 찾은 것 → .KQ 재시도
+  const retry = [];
+  krOrig.forEach(function (t) {
+    if (!out[t]) {
+      const sym = t.toUpperCase() + ".KQ";
+      symToOrig[sym] = t;
+      retry.push(sym);
+    }
+  });
+  if (retry.length > 0) {
+    const r2 = await smCallYahoo(retry);
+    absorb(r2.results);
+  }
+
+  return out;
 }
