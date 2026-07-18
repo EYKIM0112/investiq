@@ -33,6 +33,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/backtest.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/gurus.js"></script>
+  <script type="text/babel" data-presets="react-classic" src="/sector-map.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/notify.js"></script>
   <script type="text/babel" data-presets="react-classic">
 const { useState, useCallback, useEffect, useRef } = React;
@@ -52,7 +53,7 @@ const GEMINI_MODEL_FAST = "gemini-2.5-flash-lite";  // 텍스트/검색용 (빠�
 const SECTOR_COLORS = {
   "지수": "#94a3b8", "채권": "#0ea5e9", "반도체": "#7c3aed",
   "AI·로보틱스": "#f59e0b", "미국빅테크": "#00d4ff", "테크": "#38bdf8",
-  "AI전력·인프라": "#eab308", "원전": "#a3e635", "친환경·그린": "#22c55e",
+  "AI전력·인프라": "#eab308", "산업재·건설": "#9a3412", "원전": "#a3e635", "친환경·그린": "#22c55e",
   "에너지": "#059669", "원자재": "#d97706", "2차전지·전기차": "#14b8a6",
   "자동차": "#6366f1", "조선·방산·우주항공": "#ef4444", "헬스케어": "#ec4899",
   "금융": "#3b82f6", "해운·물류": "#f97316",
@@ -72,10 +73,10 @@ const SECTOR_COLOR_ALIASES = {
   "2차전지": "2차전지·전기차", "이차전지": "2차전지·전기차", "전기차": "2차전지·전기차",
   "금": "원자재", "금/원자재": "원자재", "금·원자재": "원자재", "원자재/금": "원자재", "소재": "화학·소재", "화학": "화학·소재",
   "신흥국": "지수", "국내지수": "지수", "미국지수": "지수", "지수추종": "지수",
-  "현금": "기타", "통신": "AI전력·인프라", "건설": "AI전력·인프라",
+  "현금": "기타", "통신": "AI전력·인프라", "건설": "산업재·건설",
   "엔터": "엔터·미디어", "미디어": "엔터·미디어", "게임": "엔터·미디어",
   "여행": "여행·호텔", "호텔": "여행·호텔", "리조트": "여행·호텔", "관광": "여행·호텔", "엔터·미디어·관광": "여행·호텔",
-  "전력": "AI전력·인프라", "산업재": "AI전력·인프라",
+  "전력": "AI전력·인프라", "산업재": "산업재·건설", "중장비": "산업재·건설", "토목": "산업재·건설",
   "운송": "해운·물류", "물류": "해운·물류", "해운": "해운·물류",
 };
 
@@ -1861,7 +1862,7 @@ const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v1";
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
-const SECTOR_THEMES = ["REITs","배당","반도체","원전","AI전력·인프라","친환경·그린","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","해운·물류","여행·호텔","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권","파킹형"];
+const SECTOR_THEMES = ["REITs","배당","반도체","원전","AI전력·인프라","산업재·건설","친환경·그린","에너지","원자재","2차전지·전기차","자동차","AI·로보틱스","미국빅테크","테크","조선·방산·우주항공","헬스케어","금융","해운·물류","여행·호텔","엔터·미디어","소비재","화학·소재","지주사","성장주","가치주","신흥국지수","선진국지수","가상화폐","지수","채권","파킹형"];
 const SECTOR_THEME_SET = new Set(SECTOR_THEMES);
 // 국가 접두 후보(라벨에서 떼어내 베이스 테마를 얻을 때 사용)
 const COUNTRY_PREFIXES = ["미국","글로벌","중국","일본","인도"];
@@ -4626,23 +4627,22 @@ function Portfolio() {
       targets.push({ key, name: nm, ticker: tk });
     }
     if (!targets.length) return; // 분류할 종목 없음 → 즉시 종료(리렌더 안 함, 루프 방지)
+    // v3.3.0 — Yahoo(GICS 계열) sector/industry → sector-map.js 매핑표로 결정적 분류.
+    // 티커 없는 종목은 조회 불가라 스킵(그대로 "기타"). LLM 폴백은 제거됨.
     try {
-      const list = targets.map((t, i) => `${i + 1}. ${t.name}${t.ticker ? ` (${t.ticker})` : ""}`).join("\n");
-      const sys = `너는 주식 섹터 분류기다. 입력 종목을 반드시 다음 24개 섹터 중 정확히 하나로만 분류한다.\n[${SECTOR_THEMES.join(", ")}]\n투자 관점 규칙: 아마존=테크, 구글·메타=AI·로보틱스, 팔란티어=AI·로보틱스, 게임주=엔터·미디어, 카카오뱅크=금융, 카카오페이=테크, 통신사=인프라, 지주회사=지주사.\n오직 JSON만 출력한다. 설명·마크다운 금지: {"result":[{"key":"입력한 종목명 또는 코드 그대로","sector":"24개 중 하나"}]}`;
-      const usr = `다음 종목을 분류해줘:\n${list}`;
-      const txt = await callGemini({ system: sys, user: usr, maxTokens: 1200, useSearch: false, temperature: 0 });
-      let json = (txt || "").replace(/```json|```/g, "").trim();
-      const si = json.indexOf("{"), ei = json.lastIndexOf("}");
-      if (si >= 0 && ei > si) json = json.slice(si, ei + 1);
-      const parsed = JSON.parse(json);
-      const arr = Array.isArray(parsed.result) ? parsed.result : [];
+      if (typeof smFetchSectors !== "function") return; // sector-map.js 미로드 시 무동작
+      const withTicker = targets.filter(t => t.ticker);
+      if (!withTicker.length) return;
       let wrote = 0;
-      for (const r of arr) {
-        if (!r || !r.sector || !SECTOR_THEME_SET.has(r.sector)) continue;
-        const hit = targets.find(t => t.key === r.key || (t.ticker && t.ticker === r.key) || t.name === r.key);
-        if (!hit) continue;
-        STOCK_LLM_CACHE[hit.key] = { s: r.sector }; // 국가는 통화로 폴백(classifyOne에서 처리)
-        wrote++;
+      for (let i = 0; i < withTicker.length; i += 20) { // 프록시 상한 20종목
+        const chunk = withTicker.slice(i, i + 20);
+        const map = await smFetchSectors(chunk.map(t => t.ticker));
+        for (const t of chunk) {
+          const sec = map[t.ticker];
+          if (!sec || sec === "기타" || !SECTOR_THEME_SET.has(sec)) continue;
+          STOCK_LLM_CACHE[t.key] = { s: sec }; // 국가는 거래소/통화로 폴백(classifyOne에서 처리)
+          wrote++;
+        }
       }
       if (wrote > 0) {
         try { localStorage.setItem(STOCK_LLM_CACHE_KEY, JSON.stringify(STOCK_LLM_CACHE)); } catch (e) {}
