@@ -1859,7 +1859,7 @@ const EXCHANGE_COUNTRY = {
 };
 
 // 캐싱 LLM 분류 결과(종목코드/이름 기준). getSectorLabel이 동기로 읽고, 백그라운드가 채움.
-const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v2"; // 분류 규칙 변경 시 뒤 숫자를 올리면 기존 캐시가 자동 무효화됨
+const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v3"; // 분류 규칙 변경 시 뒤 숫자를 올리면 기존 캐시가 자동 무효화됨
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
@@ -2031,24 +2031,42 @@ function lookupStockByNameFuzzy(name) {
 // 섹터는 마스터에 없음(KRX 숫자 업종코드뿐) → ETF는 cascadeTheme로 자동분류, 개별주 신규는 "기타"(추후 KRX 업종 중분류 매핑으로 개선).
 let _kisMaster = null;         // { etf:{코드:이름}, stock:{코드:이름} }
 let _kisMasterNameIdx = null;  // { 정규화이름: {code, name, type} }
+// 마스터 localStorage 캐시(7일) — 앱 시작 시 동기 복원용. 신규 상장은 최대 7일 내 반영.
+const MASTER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+function readMasterCache(key) {
+  try {
+    const o = JSON.parse(localStorage.getItem(key) || "null");
+    if (o && o.ts && o.d && Date.now() - o.ts < MASTER_TTL_MS) return o.d;
+  } catch (e) {}
+  return null;
+}
+function writeMasterCache(key, d) {
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), d })); } catch (e) {}
+}
+function setKisMaster(d) {
+  _kisMaster = d;
+  _kisMasterNameIdx = {};
+  const add = (dict, type) => {
+    if (!dict) return;
+    for (const code in dict) {
+      const key = String(dict[code]).replace(/\s+/g, "").toLowerCase();
+      if (key && !_kisMasterNameIdx[key]) _kisMasterNameIdx[key] = { code, name: dict[code], type };
+    }
+  };
+  add(d.etf, "etf");
+  add(d.stock, "stock");
+  return _kisMaster;
+}
 async function loadKisMaster() {
   if (_kisMaster) return _kisMaster;
+  const c = readMasterCache("investiq_kis_master_v1");
+  if (c) return setKisMaster(c);
   try {
     const r = await fetch("/kis_master.json", { signal: AbortSignal.timeout(10000) });
     if (!r.ok) return null;
     const d = await r.json();
-    _kisMaster = d;
-    _kisMasterNameIdx = {};
-    const add = (dict, type) => {
-      if (!dict) return;
-      for (const code in dict) {
-        const key = String(dict[code]).replace(/\s+/g, "").toLowerCase();
-        if (key && !_kisMasterNameIdx[key]) _kisMasterNameIdx[key] = { code, name: dict[code], type };
-      }
-    };
-    add(d.etf, "etf");
-    add(d.stock, "stock");
-    return _kisMaster;
+    writeMasterCache("investiq_kis_master_v1", d);
+    return setKisMaster(d);
   } catch (e) { return null; }
 }
 // 마스터 조회: 코드 우선(정확), 없으면 이름(정확/공백무시). {code, name, type} 또는 null.
@@ -2071,26 +2089,37 @@ function lookupMaster(code, name) {
 // 국내 마스터와 코드체계 겹침 없음(국내=6자리 숫자, 미국=알파벳 심볼) — 완전히 독립적으로 조회.
 let _kisMasterUs = null;         // { stock:{심볼:이름}, etf:{심볼:이름} }
 let _kisMasterUsNameIdx = null;  // { 정규화이름: {code, name, type} }
+function setKisMasterUs(d) {
+  _kisMasterUs = d;
+  _kisMasterUsNameIdx = {};
+  const add = (dict, type) => {
+    if (!dict) return;
+    for (const sym in dict) {
+      const key = String(dict[sym]).replace(/\s+/g, "").toLowerCase();
+      if (key && !_kisMasterUsNameIdx[key]) _kisMasterUsNameIdx[key] = { code: sym, name: dict[sym], type };
+    }
+  };
+  add(d.stock, "stock");
+  add(d.etf, "etf");
+  return _kisMasterUs;
+}
 async function loadKisMasterUs() {
   if (_kisMasterUs) return _kisMasterUs;
+  const c = readMasterCache("investiq_kis_master_us_v1");
+  if (c) return setKisMasterUs(c);
   try {
     const r = await fetch("/kis_master_us.json", { signal: AbortSignal.timeout(10000) });
     if (!r.ok) return null;
     const d = await r.json();
-    _kisMasterUs = d;
-    _kisMasterUsNameIdx = {};
-    const add = (dict, type) => {
-      if (!dict) return;
-      for (const sym in dict) {
-        const key = String(dict[sym]).replace(/\s+/g, "").toLowerCase();
-        if (key && !_kisMasterUsNameIdx[key]) _kisMasterUsNameIdx[key] = { code: sym, name: dict[sym], type };
-      }
-    };
-    add(d.stock, "stock");
-    add(d.etf, "etf");
-    return _kisMasterUs;
+    writeMasterCache("investiq_kis_master_us_v1", d);
+    return setKisMasterUs(d);
   } catch (e) { return null; }
 }
+// 앱 시작 시 캐시가 있으면 동기 복원 → 첫 렌더부터 ETF/개별주 판별이 정확해짐(최초 실행만 네트워크).
+try {
+  const _c1 = readMasterCache("investiq_kis_master_v1"); if (_c1) setKisMaster(_c1);
+  const _c2 = readMasterCache("investiq_kis_master_us_v1"); if (_c2) setKisMasterUs(_c2);
+} catch (e) {}
 // 해외 마스터 조회: 심볼 우선(정확), 없으면 이름(정확/공백무시). {code, name, type} 또는 null.
 function lookupMasterUs(symbol, name) {
   if (!_kisMasterUs) return null;
@@ -2840,6 +2869,23 @@ function classifyOne(sector, name, ticker, currency, manual) {
     }
   }
   if (isExplicitOther(raw)) return "기타";
+  // 0-b. KIS 마스터로 자산유형 확정 — 개별주면 ETF용 이름 키워드 캐스케이드를 아예 타지 않는다.
+  //      (대한항공→"항공"→방산, GS건설→"건설"→인프라 같은 오분류 원천 차단)
+  if (typeof smAssetType === "function" && smAssetType(ticker, raw) === "stock") {
+    const sdb = lookupStockDB(ticker);
+    if (sdb) {
+      const sc = (EXCHANGE_COUNTRY[sdb.x] != null) ? EXCHANGE_COUNTRY[sdb.x] : countryFromCurrency(currency);
+      return withCountry(sdb.s, sc);
+    }
+    const scc = STOCK_LLM_CACHE[ticker] || STOCK_LLM_CACHE[raw];
+    if (scc && scc.s) {
+      const sc2 = (scc.c != null) ? scc.c : countryFromCurrency(currency);
+      return withCountry(scc.s, sc2);
+    }
+    const scomp = lookupCompany(raw);
+    if (scomp) return scomp.s === "기타" ? "기타" : (scomp.c + scomp.s);
+    return "기타";
+  }
   // 1. ETF DB (티커/이름) — s에 국가 포함 최종 섹터 저장. 통화 c는 조회 라우팅용(KRW→네이버, USD→야후).
   const etf = lookupETF(ticker, raw);
   if (etf) return etf.s;
@@ -4623,6 +4669,8 @@ function Portfolio() {
   // V2.0.0 — 캐스케이드·시드DB·사용자선택 어디에도 안 걸린 개별주를 백그라운드에서 LLM 1회 분류(종목별 localStorage 캐싱).
   const classifyMissingSectors = useCallback(async (pf) => {
     if (!pf || !Array.isArray(pf.holdings)) return;
+    // KIS 마스터 선로드 — ETF/개별주 판별에 필요(캐시 있으면 즉시, 없으면 최초 1회만 네트워크)
+    try { await Promise.all([loadKisMaster(), loadKisMasterUs()]); } catch (e) {}
     const seen = new Set();
     const targets = [];
     for (const h of pf.holdings) {
@@ -4632,7 +4680,7 @@ function Portfolio() {
       const key = tk || nm;
       if (!key || seen.has(key)) continue;
       if (isExplicitOther(nm)) continue;                                     // TDF·서학개미 등 → 기타 확정
-      if (cascadeTheme(nm)) continue;                                        // ETF 키워드로 이미 분류됨
+      if (smAssetType(tk, nm) !== "stock" && cascadeTheme(nm)) continue;                // ETF만 캐스케이드로 확정, 개별주는 Yahoo로
       if (isETFName(nm)) continue;                                           // 브랜드 ETF → 기타
       if (lookupStockDB(tk)) continue;                                       // 시드 DB 보유
       if (h.sector && SECTOR_THEME_SET.has(stripCountry(h.sector))) continue; // 사용자 지정 섹터 존중
