@@ -1917,7 +1917,8 @@ function cascadeTheme(name) {
   if (has("배당","고배당","커버드콜","DIVIDEND") && !COMMODITY_KW.some(k => n.includes(k))) return "배당";  // 2 (원자재 키워드 동반 시 배당 제외 → 아래 원자재로)
   if (has("반도체","SEMICONDUCTOR")) return "반도체";  // 3
   if (has("원자력","원전","우라늄","URANIUM","NUCLEAR") || (has("SMR") && !n.includes("CNSMR") && !n.includes("SMRT") && !n.includes("CONSUMER"))) return "원전";  // 4 (SMR은 CNSMR/SMRT/CONSUMER 오인 배제)
-  if (has("전력","전력인프라","데이터센터","ESS","유틸리티","UTILITIES","UTILITY","AI인프라","클라우드인프라","네트워크인프라","건설","중장비","건설장비","토목","SOC")) return "AI전력·인프라";  // 5 (구체적 인프라 — 전력·데이터센터·AI/클라우드/네트워크인프라·건설·중장비·토목·SOC. 친환경·에너지·AI로보틱스보다 우선)
+  if (has("전력","전력인프라","데이터센터","ESS","유틸리티","UTILITIES","UTILITY","AI인프라","클라우드인프라","네트워크인프라")) return "AI전력·인프라";  // 5 (구체적 인프라 — 전력·데이터센터·AI/클라우드/네트워크인프라. 친환경·에너지·AI로보틱스보다 우선)
+  if (has("건설","중장비","건설장비","토목","SOC")) return "산업재·건설";  // 5.5 (건설·토목·중장비 — 개별주 Yahoo 매핑(Engineering & Construction)과 동일 기준)
   if (has("2차전지","이차전지","전기차","LITHIUM","BATTERY")) return "2차전지·전기차";  // 6 (친환경보다 우선 — "친환경차"는 대부분 전기차/배터리)
   if (has("신재생","클린에너지","태양광","그린에너지","친환경에너지","친환경","탄소중립","그린","CLEAN ENERGY","SOLAR","RENEWABLE","CARBON NEUTRAL","NET ZERO")) return "친환경·그린";  // 7 (친환경·그린 테마, 국가 접두 적용. 전기차/배터리는 위 6번이 먼저)
   if (has("에너지","원유","오일","가스","ENERGY","OIL")) return "에너지";  // 8
@@ -1927,7 +1928,7 @@ function cascadeTheme(name) {
   if (has("빅테크","미국테크TOP10","BIG TECH")) return "미국빅테크";  // 12 (ETF 전용, 항상 미국)
   if (has("여행","호텔","리조트","크루즈","카지노","레저","항공운송","항공사","TRAVEL","HOTEL","RESORT","CRUISE","CASINO","LEISURE","AIRLINE")) return "여행·호텔";  // 12.5 (여객 항공·관광·숙박·카지노. 조선·방산·해운물류보다 위 — "항공운송">"운송". 호텔리츠는 REITs 1번 먼저)
   if (has("해운","물류","운송","SHIPPING","LOGISTICS","TRANSPORTATION")) return "해운·물류";  // 12.7 (화물 운송·물류. 여객 항공 제외 → 여행·호텔)
-  if (has("조선","방산","우주항공","우주","항공","드론","방위","DEFENSE","AEROSPACE")) return "조선·방산·우주항공";  // 13
+  if (has("조선","방산","우주항공","우주","드론","방위","DEFENSE","AEROSPACE")) return "조선·방산·우주항공";  // 13 ("항공" 단독 제거 — 대한항공·제주항공 등 항공사가 방산으로 오분류. 우주항공/AEROSPACE는 유지)
   if (has("헬스케어","바이오","제약","바이오시밀러","생명과학","의료기기","HEALTH CARE","HEALTHCARE","BIOTECH","PHARMA","MEDICAL")) return "헬스케어";  // 14
   if (has("금융","은행","증권","보험","카드","FINANCIAL","BANK")) return "금융";  // 15
   if (has("인프라","산업재","엔지니어링","통신","INFRASTRUCTURE","INDUSTRIAL","INDSTRL","TELECOM")) return "AI전력·인프라";  // 16 (두루뭉술 인프라·산업재 — 에너지보다 아래라 "천연가스인프라"는 에너지가 가져감)
