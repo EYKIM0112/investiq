@@ -372,3 +372,24 @@ async function smFetchSectors(tickers) {
 
   return out;
 }
+
+// ===== 자산유형 판별 (ETF vs 개별주) =====
+// KIS 마스터(index.html의 lookupMaster/lookupMasterUs)를 사용해 티커·이름으로 확정 판별.
+// 마스터 미로드 시 null → 호출측은 기존 로직으로 폴백.
+// 목적: ETF용 이름 키워드 캐스케이드가 개별주를 가로채는 것을 원천 차단
+//       (예: 대한항공→"항공"→방산, GS건설→"건설"→인프라).
+function smAssetType(ticker, name) {
+  try {
+    if (typeof lookupMaster === "function") {
+      const m = lookupMaster(ticker, name);
+      if (m && m.type) return m.type;
+    }
+  } catch (e) {}
+  try {
+    if (typeof lookupMasterUs === "function") {
+      const m = lookupMasterUs(ticker, name);
+      if (m && m.type) return m.type;
+    }
+  } catch (e) {}
+  return null;
+}
