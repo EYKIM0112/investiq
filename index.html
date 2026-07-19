@@ -6611,7 +6611,7 @@ function Settings() {
           { done: true,  text: "대가들의 포트폴리오 — SEC 13F 기반 버핏·애크먼·달리오 등 18인의 미국주식 보유·비중·분기 변동 조회" },
           { done: true,  text: "성능 최적화 — 인사이트 분석 thinking off + 배당 KIS 조회·폴백 제거로 응답 속도 개선" },
           { done: true,  text: "배당 지급일 알림 기능" },
-          { done: false, text: "🟢 KIS 마스터 종목 섹터 자동 분류 (KRX 업종→섹터, 신규 개별주 '기타' 방지)" },
+          { done: true,  text: "개별주 섹터 자동 분류 (Yahoo 업종 매핑) + 섹터 수동 지정" },
           { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
           { done: false, text: "🔵 안드로이드 앱 (PWA 래핑·상용화 — 최종 목표)" },
         ].map((item, i) => (
@@ -6636,6 +6636,12 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.3.0 변경사항 (개별주 섹터 자동 분류 · 수동 지정)</div>
+            <div>· 개별주 섹터 자동 분류 신설 — DB에 없는 종목의 섹터를 Yahoo 업종 정보로 판별해 앱 섹터 체계에 매핑합니다. 국내·미국을 포함한 전 세계 공통 기준이라 새로운 국가의 종목도 동일하게 분류됩니다. 실측 검증에서 대형·중견주 29종목 중 28종목이 정확히 분류되었습니다. ※ sector-map.js·sector-edit.js를 public/에, yahoo-sector.js를 api/에 배포해야 적용됨</div>
+            <div>· 섹터 직접 지정 기능 추가 — 종목 편집 화면에서 현재 섹터와 자동 분류 여부를 확인하고, 원하는 테마·국가로 직접 지정할 수 있습니다. 직접 지정한 섹터는 자동 분류보다 항상 우선하며 '자동 분류로 되돌리기'도 가능합니다. 해외 소형주 등 업종 정보가 없어 '기타'로 분류된 종목을 보완하는 용도입니다.</div>
+            <div>· 섹터 '산업재·건설' 신설 — 건설·토목·중장비를 'AI전력·인프라'에서 분리했습니다. 'AI전력·인프라'는 전력·유틸리티와 통신망 인프라로 범위가 명확해졌습니다.</div>
+            <div>· 항공사가 방산으로 분류되던 문제 수정 — 대한항공·제주항공 등 여객 항공사가 '여행·호텔'로 올바르게 분류됩니다.</div>
+            <div>· 섹터 분류의 AI 호출 제거 — 규칙 기반 판별로 대체해 분류 속도가 빨라지고 결과가 일관됩니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.2.0 변경사항 (배당 지급일 알림 추가)</div>
             <div>· 배당 지급일 알림 신규 — 헤더 알림 벨(🔔)에서 보유 종목의 다가오는 배당 지급 예정을 확인합니다. 배당 캘린더 데이터의 지급월·지급일자 패턴에서 다음 예상 지급일을 산출해, 지급일자가 확정된 종목은 D-7 이내를 뱃지로 알리고 30일 이내 예정도 함께 표시합니다. 앱 진입·재활성화 시 추가 조회 없이 즉시 계산합니다(네트워크 미사용). 지급일은 과거 이력 기반 예상치이며, 배당 탭에서 한 번 조회한 뒤 동작합니다. ※ notify.js를 public/에 배포해야 적용됨</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.1.0 변경사항 (배당 KIS 조회 · 성능 최적화)</div>
@@ -8443,7 +8449,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.2.0";
+const APP_VERSION = "3.3.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
