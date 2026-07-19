@@ -77,13 +77,31 @@ export default async function handler(req, res) {
       if (!q) return res.status(400).json({ error: "q required" });
 
       const regionParam = region ? `&region=${region}&lang=ko-KR` : "";
-      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false${regionParam}`;
-      const r = await fetch(url, { headers: HEADERS });
-      if (!r.ok) return res.status(r.status).json({ error: `Yahoo ${r.status}` });
-      const data = await r.json();
+      const runSearch = async (term) => {
+        const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(term)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false${regionParam}`;
+        const rr = await fetch(url, { headers: HEADERS });
+        if (!rr.ok) return { ok: false, status: rr.status, data: null };
+        return { ok: true, status: 200, data: await rr.json() };
+      };
+
+      let out = await runSearch(q);
+
+      // 클래스주 티커 표기 보정 — 국내 증권사/KIS는 BRK/B·BRK.B로 쓰지만 Yahoo는 BRK-B를 쓴다.
+      // 1차 검색 결과가 비었을 때만 하이픈 표기로 재시도(정상 검색어에는 영향 없음).
+      // 해외 거래소 접미사(BP.L·7203.T 등)와 충돌하지 않도록 점(.) 변환은 클래스 표기 A/B/C/K에만 적용.
+      const alt = String(q).trim().toUpperCase()
+        .replace(/\//g, "-")
+        .replace(/^([A-Z]{1,5})\.([ABCK])$/, "$1-$2");
+      const hasQuotes = (d) => !!(d && Array.isArray(d.quotes) && d.quotes.length);
+      if (!hasQuotes(out.data) && alt !== String(q).trim().toUpperCase()) {
+        const retry = await runSearch(alt);
+        if (hasQuotes(retry.data)) out = retry;
+      }
+
+      if (!out.ok && !out.data) return res.status(out.status || 502).json({ error: `Yahoo ${out.status || "unavailable"}` });
 
       res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");
-      return res.status(200).json(data);
+      return res.status(200).json(out.data);
 
     } else {
       return res.status(400).json({ error: "type must be 'chart', 'dividends', or 'search'" });
