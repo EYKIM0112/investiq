@@ -296,7 +296,10 @@ function smIsKrCode(t) {
 // KIS는 클래스주/우선주를 슬래시로 쓰지만(BRK/B, BF/B — 미국 개별주 462종=6.9%),
 // Yahoo는 하이픈을 쓴다(BRK-B). 변환 안 하면 해당 종목 조회가 전부 실패.
 function smToYahooTicker(t) {
-  return String(t || "").trim().toUpperCase().replace(/\//g, "-");
+  const v = String(t || "").trim().toUpperCase().replace(/\//g, "-");
+  // 점 표기 클래스주(BRK.B·BF.B 등)도 하이픈으로. 단 해외 거래소 접미사(BP.L·7203.T 등)와
+  // 충돌하지 않도록 클래스 표기에만 쓰이는 A/B/C/K 접미사일 때만 변환.
+  return v.replace(/^([A-Z]{1,5})\.([ABCK])$/, "$1-$2");
 }
 
 // Yahoo 조회 1회. { results, failed } 반환 (실패 시 빈 값)
