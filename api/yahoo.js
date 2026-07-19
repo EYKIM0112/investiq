@@ -78,30 +78,47 @@ export default async function handler(req, res) {
 
       const regionParam = region ? `&region=${region}&lang=ko-KR` : "";
       const runSearch = async (term) => {
-        const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(term)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false${regionParam}`;
-        const rr = await fetch(url, { headers: HEADERS });
-        if (!rr.ok) return { ok: false, status: rr.status, data: null };
-        return { ok: true, status: 200, data: await rr.json() };
+        try {
+          const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(term)}&quotesCount=10&newsCount=0&enableFuzzyQuery=false${regionParam}`;
+          const rr = await fetch(url, { headers: HEADERS });
+          if (!rr.ok) return null;
+          return await rr.json();
+        } catch (e) {
+          return null;
+        }
       };
 
-      let out = await runSearch(q);
-
       // 클래스주 티커 표기 보정 — 국내 증권사/KIS는 BRK/B·BRK.B로 쓰지만 Yahoo는 BRK-B를 쓴다.
-      // 1차 검색 결과가 비었을 때만 하이픈 표기로 재시도(정상 검색어에는 영향 없음).
       // 해외 거래소 접미사(BP.L·7203.T 등)와 충돌하지 않도록 점(.) 변환은 클래스 표기 A/B/C/K에만 적용.
-      const alt = String(q).trim().toUpperCase()
+      const orig = String(q).trim();
+      const alt = orig.toUpperCase()
         .replace(/\//g, "-")
         .replace(/^([A-Z]{1,5})\.([ABCK])$/, "$1-$2");
-      const hasQuotes = (d) => !!(d && Array.isArray(d.quotes) && d.quotes.length);
-      if (!hasQuotes(out.data) && alt !== String(q).trim().toUpperCase()) {
-        const retry = await runSearch(alt);
-        if (hasQuotes(retry.data)) out = retry;
+
+      let data;
+      if (alt !== orig.toUpperCase()) {
+        // 표기 보정이 필요한 검색어 → 원본·보정본을 함께 조회하고 병합(보정본 우선).
+        // 조건부 재시도로는 원본이 엉뚱한 결과를 1건이라도 주면 보정이 건너뛰어져 실패한다.
+        const [dOrig, dAlt] = await Promise.all([runSearch(orig), runSearch(alt)]);
+        const merged = [];
+        const seen = new Set();
+        for (const d of [dAlt, dOrig]) {
+          for (const it of (d && Array.isArray(d.quotes) ? d.quotes : [])) {
+            const key = String(it.symbol || "").toUpperCase();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            merged.push(it);
+          }
+        }
+        data = { ...(dAlt || dOrig || {}), quotes: merged, _altQuery: alt };
+      } else {
+        data = await runSearch(orig);
       }
 
-      if (!out.ok && !out.data) return res.status(out.status || 502).json({ error: `Yahoo ${out.status || "unavailable"}` });
+      if (!data) return res.status(502).json({ error: "Yahoo search unavailable" });
 
       res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=120");
-      return res.status(200).json(out.data);
+      return res.status(200).json(data);
 
     } else {
       return res.status(400).json({ error: "type must be 'chart', 'dividends', or 'search'" });
