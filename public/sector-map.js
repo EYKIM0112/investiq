@@ -219,8 +219,8 @@ function smIndustryRules() {
     ["packaging & containers", "소비재"],
     ["education", "소비재"],
 
-    // --- 지주사 / 기타 ---
-    ["conglomerates", "지주사"],
+    // --- 기타 ---
+    // ※ conglomerates 는 국가에 따라 뜻이 달라 smSectorFromYahoo에서 별도 처리(아래 주석 참조)
     ["shell companies", "기타"],
   ];
 }
@@ -251,10 +251,18 @@ function smSectorFromYahoo(info) {
   const tk = smNormTicker(o.ticker);
   const industry = String(o.industry || "").toLowerCase();
   const sector = String(o.sector || "").toLowerCase().trim();
+  const country = String(o.country || "").toLowerCase();
 
   // ① 종목 단위 예외
   const exc = smExceptions();
   if (tk && exc[tk]) return exc[tk];
+
+  // ①-b Conglomerates 는 국가별로 의미가 다름 (실측 2026-07-19)
+  //   한국: 삼양홀딩스·SK·LG 등 순수 지주회사 → 지주사
+  //   미국 등: 3M·허니웰·다나허 등 복합 제조업체 → 산업재·건설
+  if (industry.indexOf("conglomerates") !== -1) {
+    return country.indexOf("korea") !== -1 ? "지주사" : "산업재·건설";
+  }
 
   // ② industry 키워드 (순서대로 첫 매칭 채택)
   if (industry) {
@@ -338,7 +346,7 @@ async function smFetchSectors(tickers) {
       if (out[orig]) return;
       if (v.type === "ETF" || v.type === "MUTUALFUND") return; // ETF는 이름 키워드 분류 사용
       if (!v.industry && !v.sector) return;                    // 정보 없으면 스킵(LLM에 넘김)
-      out[orig] = smSectorFromYahoo({ ticker: orig, industry: v.industry, sector: v.sector });
+      out[orig] = smSectorFromYahoo({ ticker: orig, industry: v.industry, sector: v.sector, country: v.country });
     });
   }
 
