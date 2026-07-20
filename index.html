@@ -1859,7 +1859,7 @@ const EXCHANGE_COUNTRY = {
 };
 
 // 캐싱 LLM 분류 결과(종목코드/이름 기준). getSectorLabel이 동기로 읽고, 백그라운드가 채움.
-const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v3"; // 분류 규칙 변경 시 뒤 숫자를 올리면 기존 캐시가 자동 무효화됨
+const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v4"; // 분류 규칙 변경 시 뒤 숫자를 올리면 기존 캐시가 자동 무효화됨
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
