@@ -1994,6 +1994,19 @@ function _editDistanceIsOne(a, b) {
   return true;
 }
 // 가드: 공백무시 비교 + 숫자 동일(100/200 구분 보호) + 한글 코어 6자 이상(코스피/코스닥 등 짧은 이름 제외)
+// 한 글자 차이지만 완전히 다른 상품이 되는 토큰들 — 그룹 내 구성이 다르면 오타 보정 금지.
+// 근거: ETF_DB 전수 대조에서 금↔은 ETN 18쌍이 편집거리 1로 서로 뒤바뀜(레버리지/인버스도 동일 위험).
+function _countOcc(s, t) { let n = 0, i = 0; while ((i = s.indexOf(t, i)) !== -1) { n++; i += t.length; } return n; }
+function _criticalTokensDiffer(a, b) {
+  const groups = [
+    ["금", "은", "구리", "니켈", "아연", "알루미늄", "백금", "팔라듐", "원유", "천연가스", "옥수수", "대두", "밀"],
+    ["레버리지", "인버스", "곱버스"],
+    ["코스피", "코스닥"],
+    ["달러", "엔화", "위안", "유로"],
+  ];
+  for (const g of groups) for (const t of g) if (_countOcc(a, t) !== _countOcc(b, t)) return true;
+  return false;
+}
 function _closeByOneCharName(query, target) {
   const norm = (x) => String(x || "").replace(/\s+/g, "").toLowerCase();
   const a = norm(query), b = norm(target);
@@ -2002,6 +2015,7 @@ function _closeByOneCharName(query, target) {
   const hangulCount = (x) => (x.match(/[가-힣]/g) || []).length;
   if (digitsOf(a) !== digitsOf(b)) return false;
   if (Math.max(hangulCount(a), hangulCount(b)) < 6) return false;
+  if (_criticalTokensDiffer(a, b)) return false;   // 1. 금↔은 등 치명 토큰 불일치는 보정 금지
   return _editDistanceIsOne(a, b);
 }
 // ETF_DB 1글자 오타 보정 조회 — 후보 단일 + 공식명이 한글일 때만(영문명/다중후보는 네이버 검색에 위임).
@@ -4978,7 +4992,7 @@ function Portfolio() {
         const fe = lookupETFByFuzzy(h.name);
         if (fe) {
           _dbHit++;
-          const note = { from: h.name, to: fe.n };
+          const note = { from: h.name, to: fe.n, via: "fuzzy" };
           if (batchCtx) batchCtx.corrections.push(note); else localCorrections.push(note);
           const isKR = isKrCode(fe.code);
           return { ...h, _fromDB: true, sector: fe.s, currency: fe.c,
@@ -4987,7 +5001,7 @@ function Portfolio() {
         const fs = lookupStockByNameFuzzy(h.name);
         if (fs && fs.code) {
           _dbHit++;
-          const note = { from: h.name, to: fs.n };
+          const note = { from: h.name, to: fs.n, via: "fuzzy" };
           if (batchCtx) batchCtx.corrections.push(note); else localCorrections.push(note);
           const isKR = isKrCode(fs.code);
           return { ...h, _fromDB: true, sector: fs.s,
@@ -5038,7 +5052,7 @@ function Portfolio() {
             const _code = krCodeOf(r.yahoo_ticker);
             const corrected = r._officialName && r._officialName !== h.name;
             if (corrected) {
-              const note = { from: h.name, to: r._officialName };
+              const note = { from: h.name, to: r._officialName, via: "search" };
               if (batchCtx) batchCtx.corrections.push(note);
               else localCorrections.push(note);
             }
@@ -5083,7 +5097,7 @@ function Portfolio() {
       // 다중 이미지 배치 처리 중에는 마지막에 한 번만 현재가 조회 (이미지별 updatePrices 동시 발화 → 덮어쓰기 방지)
       if (!skipPriceUpdate) setTimeout(() => updatePrices(latestPortfolio), 300);
       if (!batchCtx && localCorrections.length) {
-        alert("이름 자동 교정:\n" + localCorrections.map(c => `${c.from} → ${c.to}`).join("\n"));
+        alert("이름 자동 교정:\n" + localCorrections.map(c => `${c.from} → ${c.to}  [${c.via === "search" ? "검색 결과" : "1글자 보정"}]`).join("\n"));
       }
     } catch (e) {
       if (batchCtx) {
@@ -5138,7 +5152,7 @@ function Portfolio() {
       }
       // 1글자 오타 자동 교정 알림 (사용자가 인지 후 필요시 수정 가능)
       if (ctx && ctx.corrections.length) {
-        alert("이름 자동 교정 (OCR 1글자 오차 보정):\n" + ctx.corrections.map(c => `${c.from} → ${c.to}`).join("\n"));
+        alert("이름 자동 교정:\n" + ctx.corrections.map(c => `${c.from} → ${c.to}  [${c.via === "search" ? "검색 결과" : "1글자 보정"}]`).join("\n"));
       }
       // 등록한 계좌의 종목만 현재가 조회 (전체 포폴 재조회 안 함 → 토큰 절약)
       setTimeout(() => updatePrices(loadPortfolio(), false, trimmedName || null), 300);
@@ -5283,6 +5297,7 @@ function Portfolio() {
       if (!a || !b) return false;
       if (digitsOf(a) !== digitsOf(b)) return false;                 // 숫자 동일해야 (100/200/150 등 구분 보호)
       if (Math.max(hangulCount(a), hangulCount(b)) < 6) return false; // 한글 코어 6자 미만(코스피/코스닥 등) 제외
+      if (_criticalTokensDiffer(a, b)) return false;                  // 1. 금↔은 등 치명 토큰 불일치는 보정 금지
       return editDistanceIsOne(a, b);
     };
 
@@ -5317,8 +5332,10 @@ function Portfolio() {
                 const realName = vd.names && vd.names[code];
                 if (!realName) return false;
                 // 네이버 공식명이 사용자명/검색명과 정확·포함·1글자 일치할 때만 신뢰(환각 코드 차단)
+                // 1. 환각 차단은 반드시 '사용자(OCR) 이름 ↔ 네이버 공식명' 대조로만 한다.
+                // 2. offName은 LLM 자신이 만든 이름이라, 코드·이름을 일관되게 환각하면 realName과 저절로
+                //    일치해 무조건 통과함. 395160 오등록의 직접 원인이라 제거(실측 확인).
                 const ok = norm(h.name) === norm(realName) || nameMatches(h.name, realName)
-                        || norm(offName) === norm(realName) || nameMatches(offName, realName)
                         || closeByOneChar(h.name, realName);
                 if (!ok) return false;
                 tickerMap[h.name] = { symbol: sym, officialName: /[가-힣]/.test(realName) ? realName : null };
@@ -5336,8 +5353,10 @@ function Portfolio() {
           // 3순위: 한 글자 오타 보정 (가드 통과 + 후보 단일) → 티커 + 이름 교정
           const edCands = quotes.filter(q => closeByOneChar(h.name, q.longname || q.shortname || ""));
           if (edCands.length === 1) { if (await accept(edCands[0], true)) return; }
-          // 4순위: .KS/.KQ 후보가 단 1건이면 채택(브랜드/ETF판정 무관 — 단일 결과는 모호성 없음). 리브랜딩·이름 잘림 대응.
-          if (quotes.length === 1) { if (await accept(quotes[0], true)) return; }
+          // 4순위 폐지. 후보가 1건이라는 사실은 '정답'이 아니라 '검색엔진·LLM이 가장 가까운 것 하나를
+          // 골라줬다'는 뜻일 뿐이라, 무검증 채택 시 전혀 다른 종목이 조용히 등록됨(실측 확인).
+          // 1. 이름 검증은 위 1~3순위가 이미 전부 시도했으므로 여기서 별도 채택 없음.
+          // 2. 미채택분은 ticker 미할당 → updatePrices가 이름 기반으로 가격 조회(앱 안 깨짐).
           // 채택 실패(gemini 역검증 실패 포함) → 다음 엔드포인트 시도
         } catch(e) {}
       }
