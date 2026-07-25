@@ -1608,6 +1608,7 @@ const STOCK_SECTOR_DB = {
   "V":    { n:"비자",                s:"금융", x:"NYSE" }, // 카드
   "MA":   { n:"마스타카드",          s:"금융", x:"NYSE" }, // 카드
   "AXP":  { n:"아메리칸 엑스프레스",  s:"금융", x:"NYSE" },
+  "COIN": { n:"코인베이스 글로벌",     s:"가상화폐", x:"NASDAQ" }, // Yahoo는 금융(거래소)으로 잡지만 사용자 체감 테마는 가상화폐
   "BLK":  { n:"블랙록",              s:"금융", x:"NYSE" },
   "SCHW": { n:"찰스슈왑",            s:"금융", x:"NYSE" },
   "SPGI": { n:"S&P글로벌",           s:"금융", x:"NYSE" },
@@ -1925,7 +1926,7 @@ function cascadeTheme(name) {
   if (has("에너지","원유","오일","가스","ENERGY","OIL")) return "에너지";  // 8
   if (COMMODITY_KW.some(k => n.includes(k))) return "원자재";  // 9 (키워드 = 위 COMMODITY_KW 상수)
   if (has("자동차","AUTOMOBILE")) return "자동차";  // 10
-  if (has("AI","인공지능","로봇","로보틱스","로벗","피지컬AI","ROBOTICS","ARTIFICIAL INTELLIGENCE")) return "AI·로보틱스";  // 11
+  if (has("AI","인공지능","로봇","로보틱스","로벗","피지컬AI","자율주행","자율차","AUTONOMOUS","SELF DRIVING","ROBOTAXI","ROBOTICS","ARTIFICIAL INTELLIGENCE")) return "AI·로보틱스";  // 11 (자율주행 포함 — 단, 이름에 전기차/배터리 동반 시 위 6번이 먼저 가져감)
   if (has("빅테크","미국테크TOP10","BIG TECH")) return "미국빅테크";  // 12 (ETF 전용, 항상 미국)
   if (has("여행","호텔","리조트","크루즈","카지노","레저","항공운송","항공사","TRAVEL","HOTEL","RESORT","CRUISE","CASINO","LEISURE","AIRLINE")) return "여행·호텔";  // 12.5 (여객 항공·관광·숙박·카지노. 조선·방산·해운물류보다 위 — "항공운송">"운송". 호텔리츠는 REITs 1번 먼저)
   if (has("해운","물류","운송","SHIPPING","LOGISTICS","TRANSPORTATION")) return "해운·물류";  // 12.7 (화물 운송·물류. 여객 항공 제외 → 여행·호텔)
