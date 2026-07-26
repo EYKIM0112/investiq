@@ -36,6 +36,7 @@
   <script type="text/babel" data-presets="react-classic" src="/sector-map.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/sector-edit.js"></script>
   <script type="text/babel" data-presets="react-classic" src="/notify.js"></script>
+  <script type="text/babel" data-presets="react-classic" src="/fng.js"></script>
   <script type="text/babel" data-presets="react-classic">
 const { useState, useCallback, useEffect, useRef } = React;
 
@@ -1497,6 +1498,11 @@ ${SOURCE_RULES}`,
           {isLoad ? <Spinner size={13}/> : ""} {isLoad ? "분석 중..." : "분석 시작"}
         </button>
       </div>
+
+      {/* 공포·탐욕 지수 게이지 (분석 시작과 무관하게 항상 상단 표시) */}
+      {(activeTab === "summary" || activeTab === "us" || activeTab === "kr") && typeof FgGaugePanel === "function" && (
+        <FgGaugePanel kind={activeTab === "summary" ? "both" : activeTab} />
+      )}
 
       {/* 초기 안내 */}
       {!isLoad && !data && !err && (
