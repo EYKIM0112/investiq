@@ -11,18 +11,18 @@
 //   ※ 한국(KRX VKOSPI)은 프록시 준비되면 kind="kr"로 연결 예정. 지금은 미국만.
 //
 // 디자인: CNN Fear&Greed 스타일 — 얇은 도넛 게이지 + 허브에서 뻗는 바늘 + 아래 점수.
-//   등급 라벨은 영어 대문자(EXTREME FEAR/FEAR/NEUTRAL/GREED/EXTREME GREED),
+//   등급 라벨은 Title Case(Extreme Fear/Fear/Neutral/Greed/Extreme Greed),
 //   비교 항목 제목은 한글(전일/1주 전/1달 전). 좌 게이지 / 우 비교지표 가로 배치.
 
 // 0~100 → 5단계 등급 (CNN 공식 밴드: <25 / <45 / <55 / <75 / >=75)
 function fgBand(score) {
   var s = Number(score);
   if (!isFinite(s)) return { key: "na", label: "N/A", color: "#64748b" };
-  if (s < 25) return { key: "extreme-fear", label: "EXTREME FEAR", color: "#e5453b" };
-  if (s < 45) return { key: "fear", label: "FEAR", color: "#f0883e" };
-  if (s < 55) return { key: "neutral", label: "NEUTRAL", color: "#e8c14a" };
-  if (s < 75) return { key: "greed", label: "GREED", color: "#8cc152" };
-  return { key: "extreme-greed", label: "EXTREME GREED", color: "#3aa856" };
+  if (s < 25) return { key: "extreme-fear", label: "Extreme Fear", color: "#e5453b" };
+  if (s < 45) return { key: "fear", label: "Fear", color: "#f0883e" };
+  if (s < 55) return { key: "neutral", label: "Neutral", color: "#e8c14a" };
+  if (s < 75) return { key: "greed", label: "Greed", color: "#8cc152" };
+  return { key: "extreme-greed", label: "Extreme Greed", color: "#3aa856" };
 }
 
 // 점수(0~100) → 각도(0점=180°왼쪽, 100점=0°오른쪽)
@@ -56,19 +56,21 @@ function fgNeedlePath(cx, cy, angleDeg, length, baseHalf) {
          " L " + b2.x.toFixed(2) + " " + b2.y.toFixed(2) + " Z";
 }
 
-// 반원 게이지 SVG — 그라데이션 링 + 샤프 바늘 + 바늘끝 배지 + 아래 점수
+// 반원 게이지 SVG — 그라데이션 링 + 샤프 바늘(링 밖까지) + 링 바깥 배지
 function FgGaugeSvg(props) {
   var score = props.score;
   var band = fgBand(score);
   var hasScore = score != null && isFinite(Number(score));
-  var W = 200, H = 128, cx = W / 2, cy = 100, r = 74, sw = 11;   // 반지름 축소
+  var W = 220, H = 140, cx = 110, cy = 112, r = 72, sw = 10;   // 배지가 링 밖으로 나가도 안 잘리는 여유
   var na = fgScoreToAngle(score);
-  var needleLen = r - sw / 2 - 2;                                 // 바늘 더 길게(링 근처까지)
-  var badge = fgPolar(cx, cy, needleLen + 11, na);                // 바늘 끝 배지 위치
+  var ringOuter = r + sw / 2;
+  var badgeR = 11;
+  var needleLen = ringOuter + badgeR + 3;          // 바늘을 링 외경보다 길게
+  var badge = fgPolar(cx, cy, needleLen, na);       // 배지 = 바늘 끝(링 바깥)
   var gid = "fgGrad_" + (props.uid || "us");
 
   return (
-    <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", maxWidth: 210 }}>
+    <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", maxWidth: 230 }}>
       <defs>
         <linearGradient id={gid} x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#e5453b" />
@@ -78,27 +80,22 @@ function FgGaugeSvg(props) {
           <stop offset="100%" stopColor="#3aa856" />
         </linearGradient>
       </defs>
-      {/* 그라데이션 링 (반원 하나) */}
+      {/* 그라데이션 링 */}
       <path d={fgArcPath(cx, cy, r, 180, 0)} fill="none" stroke={"url(#" + gid + ")"} strokeWidth={sw} strokeLinecap="round" />
       {/* 눈금 0 / 100 */}
-      <text x={fgPolar(cx, cy, r, 180).x} y={cy + 15} fontSize="9" fill="#475569" textAnchor="middle">0</text>
-      <text x={fgPolar(cx, cy, r, 0).x} y={cy + 15} fontSize="9" fill="#475569" textAnchor="middle">100</text>
-      {/* 샤프 바늘 + 허브 */}
+      <text x={fgPolar(cx, cy, r, 180).x} y={cy + 16} fontSize="9" fill="#475569" textAnchor="middle">0</text>
+      <text x={fgPolar(cx, cy, r, 0).x} y={cy + 16} fontSize="9" fill="#475569" textAnchor="middle">100</text>
+      {/* 샤프 바늘(링 밖까지) + 허브 + 링 바깥 배지 */}
       {hasScore && (
         <g>
-          <path d={fgNeedlePath(cx, cy, na, needleLen, 4.5)} fill="#f8fafc" />
-          <circle cx={cx} cy={cy} r="5.5" fill="#f8fafc" />
-          <circle cx={cx} cy={cy} r="2.5" fill="#0a0a14" />
-          {/* 바늘 끝 배지 */}
-          <circle cx={badge.x.toFixed(2)} cy={badge.y.toFixed(2)} r="11" fill={band.color} />
-          <text x={badge.x.toFixed(2)} y={badge.y.toFixed(2)} fontSize="11" fontWeight="700" fill="#fff"
+          <path d={fgNeedlePath(cx, cy, na, needleLen - badgeR + 2, 4.5)} fill="#f8fafc" />
+          <circle cx={cx} cy={cy} r="6" fill="#f8fafc" />
+          <circle cx={cx} cy={cy} r="2.6" fill="#0a0a14" />
+          <circle cx={badge.x.toFixed(2)} cy={badge.y.toFixed(2)} r={badgeR} fill={band.color} />
+          <text x={badge.x.toFixed(2)} y={badge.y.toFixed(2)} fontSize="12" fontWeight="700" fill="#fff"
             textAnchor="middle" dominantBaseline="central">{Math.round(Number(score))}</text>
         </g>
       )}
-      {/* 점수 (게이지 아래 중앙, 크게) */}
-      <text x={cx} y={cy + 26} fontSize="28" fontWeight="800" fill={hasScore ? band.color : "#475569"} textAnchor="middle">
-        {hasScore ? Math.round(Number(score)) : "—"}
-      </text>
     </svg>
   );
 }
@@ -110,7 +107,7 @@ function FgCompareRow(props) {
   var has = value != null && isFinite(Number(value));
   var band = fgBand(value);
   // 게이지 옆 좁은 공간용 짧은 등급 라벨
-  var shortLabel = band.label.replace("EXTREME ", "EXT ");
+  var shortLabel = band.label.replace("Extreme ", "Ext. ");
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0" }}>
       <span style={{ fontSize: 11.5, color: "#64748b" }}>{label}</span>
@@ -181,8 +178,8 @@ function FgGauge(props) {
           {/* 좌: 게이지 */}
           <div style={{ flex: "1 1 190px", minWidth: 180 }}>
             <FgGaugeSvg score={data.score} uid={kind} />
-            <div style={{ textAlign: "center", marginTop: -2 }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: band.color, letterSpacing: 0.5 }}>{band.label}</span>
+            <div style={{ textAlign: "center", marginTop: 2 }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: band.color, letterSpacing: 0.3 }}>{band.label}</span>
             </div>
           </div>
           {/* 우: 비교 지표 */}
