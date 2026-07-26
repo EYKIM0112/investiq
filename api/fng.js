@@ -2,18 +2,16 @@
 // 목적: 브라우저에서 CNN 데이터를 직접 부르면 CORS·헤더 문제로 막히므로 서버리스로 중계.
 //
 // 엔드포인트:
-//   /api/fng                → 현재값 + 과거 비교(전일/1주/1달/1년) + 최근 히스토리
+//   /api/fng   → 현재값 + 과거 비교(전일/1주/1달/1년) + 스파크라인용 히스토리
 //
-// 근거(실측 확인된 공개 구조):
-// - CNN 비공식 데이터 URL: https://production.dataviz.cnn.io/index/fearandgreed/graphdata/
-//   (개발자 콘솔에서 노출된 공개 JSON. 여러 오픈소스 라이브러리가 동일 사용)
-// - 필수 헤더: User-Agent(브라우저 UA) + Accept: application/json. 없으면 CNN이 거부(403/418).
-// - 응답 구조:
-//     fear_and_greed: { score, rating, timestamp }
-//     fear_and_greed_historical: { data: [{ x: msUnix, y: score, rating }] }
-//     previous_close / previous_1_week / previous_1_month / previous_1_year (각 score 포함)
-//
-// 표시 정책: CNN은 미국 S&P500 기반 7개 지표 종합. 우리는 종합 score(0~100)와 rating만 사용.
+// 근거(실측):
+// - CNN 공개 JSON: https://production.dataviz.cnn.io/index/fearandgreed/graphdata/
+//   필수 헤더: User-Agent(브라우저) + Accept. 없으면 거부.
+// - 응답: fear_and_greed:{score,rating,timestamp},
+//         fear_and_greed_historical:{data:[{x:msUnix, y:score, rating}]}
+// - 실측 확인: previous_close/previous_1_week 등 상위 키는 현재 null로 옴 →
+//   과거 비교값은 상위 키에 의존하지 않고 historical.data에서 직접 계산한다(더 견고).
+// - rating 밴드(CNN 공식): <25 extreme fear / <45 fear / <55 neutral / <75 greed / >=75 extreme greed
 
 export const config = { maxDuration: 20 };
 
@@ -26,21 +24,26 @@ const HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
 };
 
-// score(0~100) → 표준 5단계 rating. CNN 기준 경계(0-25-45-55-75-100)를 따른다.
 function ratingOf(score) {
   const s = Number(score);
   if (!Number.isFinite(s)) return null;
   if (s < 25) return "extreme fear";
   if (s < 45) return "fear";
-  if (s <= 55) return "neutral";
-  if (s <= 75) return "greed";
+  if (s < 55) return "neutral";
+  if (s < 75) return "greed";
   return "extreme greed";
 }
 
-function pickScore(node) {
-  if (!node || typeof node !== "object") return null;
-  const v = Number(node.score);
-  return Number.isFinite(v) ? Math.round(v * 100) / 100 : null;
+const round2 = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
+
+// data(오름차순, [{x:ms,y}]) 에서 'targetMs 이전 중 가장 가까운' 값을 찾는다.
+function valueAtOrBefore(data, targetMs) {
+  let best = null;
+  for (const p of data) {
+    if (p.x <= targetMs) best = p;
+    else break;
+  }
+  return best ? round2(best.y) : null;
 }
 
 export default async function handler(req, res) {
@@ -51,37 +54,49 @@ export default async function handler(req, res) {
 
   try {
     const r = await fetch(CNN_URL, { headers: HEADERS, signal: AbortSignal.timeout(12000) });
-    if (!r.ok) {
-      return res.status(502).json({ error: `CNN HTTP ${r.status}` });
-    }
-    const d = await r.json().catch(() => null);
-    if (!d || !d.fear_and_greed) {
-      return res.status(502).json({ error: "CNN 응답 형식 예상과 다름" });
-    }
+    if (!r.ok) return res.status(502).json({ error: "CNN HTTP " + r.status });
 
-    const now = pickScore(d.fear_and_greed);
+    const d = await r.json().catch(() => null);
+    if (!d || !d.fear_and_greed) return res.status(502).json({ error: "CNN 응답 형식 예상과 다름" });
+
+    const now = round2(d.fear_and_greed.score);
+    const data = (d.fear_and_greed_historical && Array.isArray(d.fear_and_greed_historical.data))
+      ? d.fear_and_greed_historical.data.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(Number(p.y)))
+      : [];
+
+    const lastMs = data.length ? data[data.length - 1].x : Date.now();
+    const DAY = 86400000;
+
+    // 과거 비교: 상위 키가 있으면 우선 쓰고(향후 CNN이 복구할 수도 있음), 없으면 history로 역산.
+    const topClose = d.previous_close && round2(d.previous_close.score);
+    const topWeek = d.previous_1_week && round2(d.previous_1_week.score);
+    const topMonth = d.previous_1_month && round2(d.previous_1_month.score);
+    const topYear = d.previous_1_year && round2(d.previous_1_year.score);
+
     const out = {
       score: now,
       rating: (d.fear_and_greed.rating || ratingOf(now) || "").toString().trim() || null,
       timestamp: d.fear_and_greed.timestamp || null,
-      previous_close: pickScore(d.previous_close),
-      week_ago: pickScore(d.previous_1_week),
-      month_ago: pickScore(d.previous_1_month),
-      year_ago: pickScore(d.previous_1_year),
-      // 최근 30포인트만 잘라서 스파크라인용으로 전달(전체는 과함)
+      previous_close: topClose != null ? topClose : (data.length >= 2 ? round2(data[data.length - 2].y) : null),
+      week_ago: topWeek != null ? topWeek : valueAtOrBefore(data, lastMs - 7 * DAY),
+      month_ago: topMonth != null ? topMonth : valueAtOrBefore(data, lastMs - 30 * DAY),
+      year_ago: topYear != null ? topYear : valueAtOrBefore(data, lastMs - 365 * DAY),
+      // 스파크라인용: 최근 ~3개월(약 90일)만, 최대 60포인트로 솎아서 전달
       history: [],
       source: "cnn",
     };
 
-    const hist = d.fear_and_greed_historical && d.fear_and_greed_historical.data;
-    if (Array.isArray(hist)) {
-      out.history = hist.slice(-30).map((p) => ({
-        t: p.x,
-        v: Math.round(Number(p.y) * 100) / 100,
-      }));
+    if (data.length) {
+      const cutoff = lastMs - 92 * DAY;
+      let recent = data.filter((p) => p.x >= cutoff);
+      if (recent.length > 60) {
+        const step = Math.ceil(recent.length / 60);
+        recent = recent.filter((_, i) => i % step === 0 || i === recent.length - 1);
+      }
+      out.history = recent.map((p) => ({ t: p.x, v: round2(p.y) }));
     }
 
-    res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=3600"); // 30분 캐시
+    res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=3600");
     return res.status(200).json(out);
   } catch (e) {
     if (e.name === "TimeoutError" || e.name === "AbortError") {
