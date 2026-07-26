@@ -25,17 +25,6 @@ function fgBand(score) {
   return { key: "extreme-greed", label: "EXTREME GREED", color: "#3aa856" };
 }
 
-// 게이지 색 구간(좌 공포=빨강 → 우 탐욕=초록)
-function fgArcSegments() {
-  return [
-    { from: 0, to: 25, color: "#e5453b" },
-    { from: 25, to: 45, color: "#f0883e" },
-    { from: 45, to: 55, color: "#e8c14a" },
-    { from: 55, to: 75, color: "#8cc152" },
-    { from: 75, to: 100, color: "#3aa856" },
-  ];
-}
-
 // 점수(0~100) → 각도(0점=180°왼쪽, 100점=0°오른쪽)
 function fgScoreToAngle(score) {
   var s = Math.max(0, Math.min(100, Number(score) || 0));
@@ -57,42 +46,57 @@ function fgArcPath(cx, cy, r, startAngle, endAngle) {
          " A " + r + " " + r + " 0 " + large + " 1 " + e.x.toFixed(2) + " " + e.y.toFixed(2);
 }
 
-// 반원 게이지 SVG (얇은 링 + 허브 바늘 + 아래 점수)
+// 샤프한 삼각형 바늘 path (허브에서 끝점까지, 밑변 넓고 끝 뾰족)
+function fgNeedlePath(cx, cy, angleDeg, length, baseHalf) {
+  var tip = fgPolar(cx, cy, length, angleDeg);
+  var b1 = fgPolar(cx, cy, baseHalf, angleDeg + 90);
+  var b2 = fgPolar(cx, cy, baseHalf, angleDeg - 90);
+  return "M " + b1.x.toFixed(2) + " " + b1.y.toFixed(2) +
+         " L " + tip.x.toFixed(2) + " " + tip.y.toFixed(2) +
+         " L " + b2.x.toFixed(2) + " " + b2.y.toFixed(2) + " Z";
+}
+
+// 반원 게이지 SVG — 그라데이션 링 + 샤프 바늘 + 바늘끝 배지 + 아래 점수
 function FgGaugeSvg(props) {
   var score = props.score;
   var band = fgBand(score);
   var hasScore = score != null && isFinite(Number(score));
-  var W = 200, H = 132, cx = W / 2, cy = 108, r = 84, sw = 13;
-  var segs = fgArcSegments();
+  var W = 200, H = 128, cx = W / 2, cy = 100, r = 74, sw = 11;   // 반지름 축소
   var na = fgScoreToAngle(score);
-  var rIn = r - sw / 2 - 8;                 // 바늘 길이(링 안쪽까지만 → 숫자 안 건드림)
-  var tip = fgPolar(cx, cy, rIn, na);
+  var needleLen = r - sw / 2 - 2;                                 // 바늘 더 길게(링 근처까지)
+  var badge = fgPolar(cx, cy, needleLen + 11, na);                // 바늘 끝 배지 위치
+  var gid = "fgGrad_" + (props.uid || "us");
 
   return (
-    <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", maxWidth: 220 }}>
-      {/* 색 구간 (얇은 링) */}
-      {segs.map(function (seg, i) {
-        return (
-          <path key={i}
-            d={fgArcPath(cx, cy, r, fgScoreToAngle(seg.from), fgScoreToAngle(seg.to))}
-            fill="none" stroke={seg.color} strokeWidth={sw}
-            strokeLinecap={i === 0 || i === segs.length - 1 ? "round" : "butt"} />
-        );
-      })}
+    <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", maxWidth: 210 }}>
+      <defs>
+        <linearGradient id={gid} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#e5453b" />
+          <stop offset="28%" stopColor="#f0883e" />
+          <stop offset="50%" stopColor="#e8c14a" />
+          <stop offset="72%" stopColor="#8cc152" />
+          <stop offset="100%" stopColor="#3aa856" />
+        </linearGradient>
+      </defs>
+      {/* 그라데이션 링 (반원 하나) */}
+      <path d={fgArcPath(cx, cy, r, 180, 0)} fill="none" stroke={"url(#" + gid + ")"} strokeWidth={sw} strokeLinecap="round" />
       {/* 눈금 0 / 100 */}
       <text x={fgPolar(cx, cy, r, 180).x} y={cy + 15} fontSize="9" fill="#475569" textAnchor="middle">0</text>
       <text x={fgPolar(cx, cy, r, 0).x} y={cy + 15} fontSize="9" fill="#475569" textAnchor="middle">100</text>
-      {/* 바늘 (허브에서 뻗음) */}
+      {/* 샤프 바늘 + 허브 */}
       {hasScore && (
         <g>
-          <line x1={cx} y1={cy} x2={tip.x.toFixed(2)} y2={tip.y.toFixed(2)}
-            stroke="#e2e8f0" strokeWidth="2.4" strokeLinecap="round" />
-          <circle cx={cx} cy={cy} r="6.5" fill="#e2e8f0" />
-          <circle cx={cx} cy={cy} r="3" fill="#0a0a14" />
+          <path d={fgNeedlePath(cx, cy, na, needleLen, 4.5)} fill="#f8fafc" />
+          <circle cx={cx} cy={cy} r="5.5" fill="#f8fafc" />
+          <circle cx={cx} cy={cy} r="2.5" fill="#0a0a14" />
+          {/* 바늘 끝 배지 */}
+          <circle cx={badge.x.toFixed(2)} cy={badge.y.toFixed(2)} r="11" fill={band.color} />
+          <text x={badge.x.toFixed(2)} y={badge.y.toFixed(2)} fontSize="11" fontWeight="700" fill="#fff"
+            textAnchor="middle" dominantBaseline="central">{Math.round(Number(score))}</text>
         </g>
       )}
-      {/* 점수 (게이지 아래 중앙) */}
-      <text x={cx} y={cy + 24} fontSize="30" fontWeight="800" fill={hasScore ? band.color : "#475569"} textAnchor="middle">
+      {/* 점수 (게이지 아래 중앙, 크게) */}
+      <text x={cx} y={cy + 26} fontSize="28" fontWeight="800" fill={hasScore ? band.color : "#475569"} textAnchor="middle">
         {hasScore ? Math.round(Number(score)) : "—"}
       </text>
     </svg>
@@ -176,7 +180,7 @@ function FgGauge(props) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {/* 좌: 게이지 */}
           <div style={{ flex: "1 1 190px", minWidth: 180 }}>
-            <FgGaugeSvg score={data.score} />
+            <FgGaugeSvg score={data.score} uid={kind} />
             <div style={{ textAlign: "center", marginTop: -2 }}>
               <span style={{ fontSize: 14, fontWeight: 800, color: band.color, letterSpacing: 0.5 }}>{band.label}</span>
             </div>
