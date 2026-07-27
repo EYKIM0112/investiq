@@ -126,25 +126,21 @@ function FgCompareRow(props) {
   );
 }
 
-// 게이지 카드 (kind = "us" | "kr")
+// 미국(CNN) 게이지 카드
 function FgGauge(props) {
-  var kind = props.kind || "us";
-  var meta = kind === "kr"
-    ? { title: "한국 공포·탐욕", flag: "🇰🇷", note: "KRX VKOSPI 기반", api: "/api/fng-kr" }
-    : { title: "미국 공포·탐욕", flag: "🇺🇸", note: "CNN Fear & Greed", api: "/api/fng" };
+  var meta = { title: "미국 공포·탐욕", flag: "🇺🇸", note: "CNN Fear & Greed", api: "/api/fng" };
 
   var stateHook = React.useState({ loading: true, data: null, err: null });
   var st = stateHook[0], setSt = stateHook[1];
 
   React.useEffect(function () {
     var alive = true;
-    setSt({ loading: true, data: null, err: null });
     fetch(meta.api)
       .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j.error || ("HTTP " + r.status)); }); })
       .then(function (j) { if (alive) setSt({ loading: false, data: j, err: null }); })
       .catch(function (e) { if (alive) setSt({ loading: false, data: null, err: e.message || "불러오기 실패" }); });
     return function () { alive = false; };
-  }, [meta.api]);
+  }, []);
 
   var data = st.data;
   var band = data ? fgBand(data.score) : fgBand(null);
@@ -168,8 +164,8 @@ function FgGauge(props) {
 
       {st.err && !st.loading && (
         <div style={{ textAlign: "center", padding: "34px 12px", color: "#64748b", fontSize: 12.5, lineHeight: 1.6 }}>
-          {kind === "kr" ? "준비 중입니다" : "지금은 표시할 수 없어요"}
-          <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{kind === "kr" ? "KRX 연동 예정" : st.err}</div>
+          지금은 표시할 수 없어요
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{st.err}</div>
         </div>
       )}
 
@@ -177,7 +173,7 @@ function FgGauge(props) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {/* 좌: 게이지 */}
           <div style={{ flex: "1 1 190px", minWidth: 180 }}>
-            <FgGaugeSvg score={data.score} uid={kind} />
+            <FgGaugeSvg score={data.score} uid="us" />
             <div style={{ textAlign: "center", marginTop: 2 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: band.color, letterSpacing: 0.3 }}>{band.label}</span>
             </div>
@@ -195,13 +191,139 @@ function FgGauge(props) {
   );
 }
 
+// ── 한국(VKOSPI) 전용 ──────────────────────────────────────────
+// 미국(CNN)과 다름: 등급 라벨 없음(색+숫자+참조점만), 색 방향 반대(낮음=안정 초록 → 높음=위험 빨강).
+// 눈금은 VKOSPI 절대값 0~max(기본 100). VKOSPI엔 공식 등급 구간이 없어 Fear/Greed 단어를 붙이지 않는다.
+
+function krColorOf(v) {
+  var s = Number(v);
+  if (!isFinite(s)) return "#64748b";
+  if (s < 20) return "#3aa856";
+  if (s < 30) return "#8cc152";
+  if (s < 45) return "#e8c14a";
+  if (s < 65) return "#f0883e";
+  return "#e5453b";
+}
+
+// VKOSPI 게이지 SVG (값→각도는 0~max 선형, 색은 위험도 그라데이션 좌초록→우빨강)
+function FgKrGaugeSvg(props) {
+  var v = props.vkospi;
+  var max = props.max || 100;
+  var has = v != null && isFinite(Number(v));
+  var W = 220, H = 140, cx = 110, cy = 112, r = 72, sw = 10;
+  var pct = Math.max(0, Math.min(1, (Number(v) || 0) / max));
+  var na = 180 - pct * 180;                          // 0=왼쪽(안정), max=오른쪽(위험)
+  var ringOuter = r + sw / 2, badgeR = 12;
+  var needleLen = ringOuter + badgeR + 3;
+  var badge = fgPolar(cx, cy, needleLen, na);
+  var col = krColorOf(v);
+  var gid = "fgKrGrad";
+
+  return (
+    <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block", maxWidth: 230 }}>
+      <defs>
+        {/* 좌(안정)초록 → 우(위험)빨강 : 미국과 반대 방향 */}
+        <linearGradient id={gid} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#3aa856" />
+          <stop offset="30%" stopColor="#8cc152" />
+          <stop offset="52%" stopColor="#e8c14a" />
+          <stop offset="74%" stopColor="#f0883e" />
+          <stop offset="100%" stopColor="#e5453b" />
+        </linearGradient>
+      </defs>
+      <path d={fgArcPath(cx, cy, r, 180, 0)} fill="none" stroke={"url(#" + gid + ")"} strokeWidth={sw} strokeLinecap="round" />
+      {/* 눈금 0 / max */}
+      <text x={fgPolar(cx, cy, r, 180).x} y={cy + 16} fontSize="9" fill="#475569" textAnchor="middle">0</text>
+      <text x={fgPolar(cx, cy, r, 0).x} y={cy + 16} fontSize="9" fill="#475569" textAnchor="middle">{max}</text>
+      {has && (
+        <g>
+          <path d={fgNeedlePath(cx, cy, na, needleLen - badgeR + 2, 4.5)} fill="#f8fafc" />
+          <circle cx={cx} cy={cy} r="6" fill="#f8fafc" />
+          <circle cx={cx} cy={cy} r="2.6" fill="#0a0a14" />
+          <circle cx={badge.x.toFixed(2)} cy={badge.y.toFixed(2)} r={badgeR} fill={col} />
+          <text x={badge.x.toFixed(2)} y={badge.y.toFixed(2)} fontSize="11" fontWeight="700" fill="#fff"
+            textAnchor="middle" dominantBaseline="central">{Math.round(Number(v))}</text>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+// 한국 VKOSPI 카드
+function FgKrGauge() {
+  var stateHook = React.useState({ loading: true, data: null, err: null });
+  var st = stateHook[0], setSt = stateHook[1];
+
+  React.useEffect(function () {
+    var alive = true;
+    fetch("/api/fng-kr")
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (j) { throw new Error(j.error || ("HTTP " + r.status)); }); })
+      .then(function (j) { if (alive) setSt({ loading: false, data: j, err: null }); })
+      .catch(function (e) { if (alive) setSt({ loading: false, data: null, err: e.message || "불러오기 실패" }); });
+    return function () { alive = false; };
+  }, []);
+
+  var d = st.data;
+
+  return (
+    <div style={{ background: "#0d0d18", border: "1px solid #1e293b", borderRadius: 14, padding: "14px 16px", flex: "1 1 300px", minWidth: 290 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
+          <span style={{ marginRight: 6 }}>🇰🇷</span>한국 변동성(VKOSPI)
+        </div>
+        <div style={{ fontSize: 10, color: "#475569" }}>KRX 코스피200 변동성지수</div>
+      </div>
+
+      {st.loading && (
+        <div style={{ textAlign: "center", padding: "40px 0", color: "#64748b", fontSize: 13 }}>불러오는 중…</div>
+      )}
+
+      {st.err && !st.loading && (
+        <div style={{ textAlign: "center", padding: "34px 12px", color: "#64748b", fontSize: 12.5, lineHeight: 1.6 }}>
+          지금은 표시할 수 없어요
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{st.err}</div>
+        </div>
+      )}
+
+      {d && !st.loading && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {/* 좌: 게이지 */}
+          <div style={{ flex: "1 1 190px", minWidth: 180 }}>
+            <FgKrGaugeSvg vkospi={d.vkospi} max={d.max || 100} />
+            <div style={{ textAlign: "center", marginTop: 2 }}>
+              <span style={{ fontSize: 20, fontWeight: 800, color: krColorOf(d.vkospi) }}>{d.vkospi}</span>
+              <span style={{ fontSize: 11, color: "#475569", marginLeft: 6 }}>VKOSPI</span>
+            </div>
+          </div>
+          {/* 우: 참조점 (등급 단어 대신 위치 감각 제공) */}
+          <div style={{ flex: "1 1 130px", minWidth: 130, fontSize: 11.5, color: "#64748b", lineHeight: 1.9 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>평시 범위</span>
+              <span style={{ color: "#94a3b8", fontWeight: 600 }}>{(d.ref && d.ref.normalLow) || 15}~{(d.ref && d.ref.normalHigh) || 20}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>역대 최고</span>
+              <span style={{ color: "#94a3b8", fontWeight: 600 }}>{(d.ref && d.ref.allTimeHigh) || 95}</span>
+            </div>
+            <div style={{ fontSize: 10, color: "#475569", marginTop: 6, paddingTop: 6, borderTop: "1px solid #16213a" }}>
+              값이 높을수록 시장 변동성·불안이 큼. {d.basDd ? d.basDd.slice(0, 4) + "." + d.basDd.slice(4, 6) + "." + d.basDd.slice(6, 8) + " 기준" : ""}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 패널: kind = "both"(종합) | "us" | "kr"
 function FgGaugePanel(props) {
   var kind = props.kind || "both";
   var items = kind === "both" ? ["us", "kr"] : [kind];
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-      {items.map(function (k) { return <FgGauge key={k} kind={k} />; })}
+      {items.map(function (k) {
+        return k === "kr" ? <FgKrGauge key="kr" /> : <FgGauge key="us" kind="us" />;
+      })}
     </div>
   );
 }
