@@ -71,6 +71,19 @@ export default async function handler(req, res) {
   var authKey = process.env.KRX_AUTH_KEY;
   if (!authKey) return res.status(500).json({ error: "서버에 KRX_AUTH_KEY가 설정되지 않았습니다." });
 
+  // ── 임시 디버그: /api/fng-kr?debug=1 로 키 상태만 안전 확인 (값 노출 안 함) ──
+  if (req.query && req.query.debug === "1") {
+    var raw = process.env.KRX_AUTH_KEY || "";
+    return res.status(200).json({
+      exists: !!raw,
+      length: raw.length,
+      trimmedLength: raw.trim().length,
+      hasWhitespace: raw !== raw.trim(),
+      head3: raw.slice(0, 3),
+      tail3: raw.slice(-3),
+    });
+  }
+
   try {
     // 오늘부터 뒤로 최대 7일 — 휴장일 건너뛰고 최근 영업일 찾기
     var today = new Date();
