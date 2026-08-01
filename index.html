@@ -6696,6 +6696,7 @@ function Settings() {
           { done: true,  text: "배당 지급일 알림 기능" },
           { done: true,  text: "개별주 섹터 자동 분류 (Yahoo 업종 매핑) + 섹터 수동 지정" },
           { done: true,  text: "종목 마스터 자동 갱신 (KIS 원본 주간 자동 반영 — 신규상장·상폐·종목명 변경)" },
+          { done: true,  text: "공포·탐욕 지수 (미국 CNN Fear&Greed + 한국 코스피200 변동성지수 VKOSPI) 인사이트 탭 표시" },
           { done: false, text: "🟢 에러 로깅·모니터링 (베타 오류 수집)" },
           { done: false, text: "🔵 안드로이드 앱 (PWA 래핑·상용화 — 최종 목표)" },
         ].map((item, i) => (
@@ -6720,6 +6721,10 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.0 변경사항 (공포·탐욕 지수 추가)</div>
+            <div>· 미국 공포·탐욕 지수 신규 — CNN Fear & Greed Index를 인사이트 탭 상단에 반원 게이지로 표시(0~100, Extreme Fear~Extreme Greed). 전일·1주 전·1달 전 비교도 함께. 분석 시작을 누르지 않아도 바로 보입니다.</div>
+            <div>· 한국 변동성 지수 신규 — KRX 코스피200 변동성지수(VKOSPI)를 게이지로 표시. VKOSPI는 값이 높을수록 시장 불안이 큰 절대 지표라, 미국식 등급 대신 실제 수치와 참조점(평시 15~20 · 역대 최고 95)을 그대로 보여줍니다.</div>
+            <div>· 인사이트 탭 구성 — '종합'에서는 미국·한국을 나란히, '한국'/'미국' 탭에서는 각각의 지수를 표시합니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.4.0 변경사항 (종목 마스터 자동 갱신)</div>
             <div>· 종목 마스터 자동 갱신 도입 — 신규 상장·상장폐지·종목명 변경을 매주 자동으로 반영합니다. 종전에는 종목 정보(국내 약 3,900종목·미국 약 12,600종목)를 수동으로 갱신했으나, 이제 한국투자증권 원본 파일에서 주 1회 자동으로 최신화되어 새로 상장된 종목도 스크린샷 인식·검색에서 곧바로 잡힙니다. ※ 앱 사용 방식에는 변화가 없으며, 데이터 최신성만 향상됩니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.3.1 변경사항 (OCR 오등록 수정 · 섹터 보완)</div>
@@ -6742,13 +6747,13 @@ function Settings() {
             <div>· 시장 인사이트 분석 속도 최적화 — 웹 검색 모드에서 thinking을 끄도록(thinkingBudget:0) 옵션화해 분석 응답 시간을 기존 대비 절반 이하로 단축</div>
             <div>· 아시아 인사이트 탭 PC 흰 화면(React #31) 수정 — index_change 등 일부 필드가 객체로 반환될 때 렌더가 깨지던 문제를 안전 문자열화로 방어</div>
             <div>· 배당 캘린더 '보유 종목 변경됨' 알림 오탐 수정 — 무배당 종목이 목록에서 제외되며 항상 변경으로 오판하던 문제를, 조회 시점 보유종목 스냅샷과 비교하도록 개선</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.0.0 변경사항 (대가들의 포트폴리오 추가)</div>
-            <div>· 대가들의 포트폴리오 신규 — SEC EDGAR 13F 공시 기반으로 워런 버핏·빌 애크먼·레이 달리오·마이클 버리 등 18인의 미국주식 보유 종목·비중·평가액·주식수를 조회. 직전 분기 대비 신규/추가/축소/전량청산 변동까지 표시. '포트폴리오' 탭에 '내 포트폴리오 / 대가들의 포트폴리오' 서브탭으로 배치</div>
-            <div>· SEC EDGAR 13F 프록시(api/edgar.js) 신설 — submissions API로 13F-HR 이력 조회 후 information table XML을 파싱(네임스페이스 무관), 수정본(13F-HR/A) 분기별 최신본만 중복제거. 값 단위(달러/천달러) 자동 감지. 표시정책상 CUSIP→티커 매핑 없이 issuer명 그대로 사용. ※ gurus.js를 public/에, edgar.js를 api/에 배포해야 적용됨</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.0.0 변경사항 (대가들의 포트폴리오 추가)</div>
+            <div>· 대가들의 포트폴리오 신규 — SEC EDGAR 13F 공시 기반으로 워런 버핏·빌 애크먼·레이 달리오·마이클 버리 등 18인의 미국주식 보유 종목·비중·평가액·주식수를 조회. 직전 분기 대비 신규/추가/축소/전량청산 변동까지 표시. '포트폴리오' 탭에 '내 포트폴리오 / 대가들의 포트폴리오' 서브탭으로 배치</div>
+            <div>· SEC EDGAR 13F 프록시(api/edgar.js) 신설 — submissions API로 13F-HR 이력 조회 후 information table XML을 파싱(네임스페이스 무관), 수정본(13F-HR/A) 분기별 최신본만 중복제거. 값 단위(달러/천달러) 자동 감지. 표시정책상 CUSIP→티커 매핑 없이 issuer명 그대로 사용. ※ gurus.js를 public/에, edgar.js를 api/에 배포해야 적용됨</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v2.9.0 변경사항 (백테스팅 기능 추가)</div>
             <div>· 백테스트 신규 — 거치식·적립식·거치+적립(매월 말 종가 기준), 최대 5종목·최대 30년, 종목별 비중(%) 또는 금액 직접입력. 연도별 자산 변동 그래프·테이블, 종목별 상세, 연환산(IRR) 제공. '수익률비교' 탭을 '백테스트&비교'로 개편하고 첫 서브탭에 배치</div>
             <div>· 국내 장기 시세용 KIS 기간별시세 프록시(api/kis-history.js) 신설 — 월봉·수정주가(FID_ORG_ADJ_PRC=0), 100건 제한은 구간 분할 조회로 회피. 실증 결과 국내 ETF는 분배금이 반영된 총수익(TR), 국내 개별주는 현금배당 미반영(가격수익률)임을 확인(ETF 489030 분배락·SK텔레콤 017670 배당락 대조)</div>
@@ -8542,7 +8547,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.4.0";
+const APP_VERSION = "3.5.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
