@@ -622,6 +622,82 @@ const SOURCE_RULES = `[출처 신뢰도 규칙]
 - 종목토론방·개인블로그·리딩방·광고성 '급등/대박' 정보는 사용 금지
 - 수치는 가능하면 교차확인, 불확실하면 추측하지 말고 '불확실'로 표기`;
 
+// AI 조언 공통 규칙 (INSIGHT/SEARCH 모드 공용 — 프롬프트 중복 방지)
+const ADVICE_BASE_RULES = `규칙:
+- 마크다운(###, **, -) 절대 사용 금지. 일반 텍스트로만 작성
+- 핵심만 간결하게. 불필요한 인사말 없이 바로 본론
+- 질문에 딱 맞는 답변만
+- 종목 추천 시: [보유중] 또는 [신규] 표시 후 종목명 + 이유 + ETF(시총 3000억^ 우선)
+- ETF 시총 1000억v 추천 불가. 1000~3000억이면 "(소규모 주의)" 명시
+- 수치 기반 근거 제시
+- 답변 길이: 핵심만 간결하게
+
+[IRP/DC 계좌 규칙] 매우 중요:
+- IRP(개인형 퇴직연금)와 DC(확정기여형) 계좌는 법적으로 위험자산 70% 한도, 안전자산 30% 이상 의무 보유
+- 안전자산 해당 종목: 채권혼합형 ETF(주식 40% 미만), 채권형 ETF, CD금리액티브, KOFR금리액티브, 머니마켓액티브(MMF형), 단기채권 ETF, 국공채 ETF, 예금, CMA 등 금리연동형/원리금보장형 상품 전반
+- 위 안전자산 종목의 축소를 권고할 때는 반드시 해당 종목이 어느 계좌에 있는지 확인
+- 해당 종목이 IRP/DC 계좌에 있는 경우:
+  * 단순히 "비중이 높다", "중복이다" 등의 이유로는 축소 권고 금지
+  * 단, 아래 경우에는 축소 조언 가능 (단, 안전자산 30% 이상은 반드시 유지해야 함을 함께 안내):
+    - 해당 채권형/혼합형의 채권 수익률 전망이 부정적인 경우 (예: 금리 인상 전망으로 채권가격 하락 예상)
+    - 채권혼합형 내 편입된 주식/금 등의 전망이 부정적인 경우
+    - 동일 계좌 내 더 나은 안전자산 대안으로 교체를 권고하는 경우
+- 계좌 구분 없이 전체 포트폴리오 기준으로 조언하되, 위 안전자산 관련 조언 시에만 계좌 확인
+
+${SOURCE_RULES}
+
+[!] 참고용. 투자 손실 책임은 투자자 본인.`;
+
+// AI 조언이 실제 백데이터로 쓰는 인사이트 탭(종합·한국·미국)
+const ADVICE_SOURCE_TABS = [
+  { id: "summary", label: "종합" },
+  { id: "kr",      label: "한국" },
+  { id: "us",      label: "미국" },
+];
+
+// 조언 실사용 3탭의 신선도 상태 (present/missing/oldest) — 배너·프롬프트 기준일용
+function getAdviceSourceStatus() {
+  const present = [], missing = [];
+  let oldest = null;
+  ADVICE_SOURCE_TABS.forEach(({ id, label }) => {
+    let time = null;
+    try {
+      const item = localStorage.getItem(`market_cache_${id}`);
+      if (item) { const p = JSON.parse(item); if (p && p.time) { const d = new Date(p.time); if (!isNaN(d)) time = d; } }
+    } catch {}
+    if (time) { present.push({ id, label, time }); if (!oldest || time < oldest) oldest = time; }
+    else missing.push({ id, label });
+  });
+  return { present, missing, oldest };
+}
+
+// 조언 기준일 표기 (년월일 + 시:분) — 장중·장마감 다중 갱신 구분용
+function fmtAdviceSourceDate(d) {
+  if (!d) return "";
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// 자유입력 질문 라우팅 분류기 (flash-lite 초경량 1콜) → "INSIGHT" | "SEARCH" | "UNANSWERABLE"
+// 실패 시 기존 동작(INSIGHT)으로 안전 폴백
+async function classifyAdviceRoute(question, insightCtx) {
+  try {
+    const sys = `너는 투자 질문 라우터다. 아래 [시장 인사이트]와 사용자 포트폴리오 정보만으로 질문에 충분히 답할 수 있는지 판단해, 아래 셋 중 정확히 한 단어만 출력하라. 다른 말·설명·문장부호 절대 금지.
+- INSIGHT: 제공된 인사이트/포트폴리오만으로 답변 가능 (리밸런싱·목표비중·섹터 노출도·보유종목 리스크·인사이트에 이미 있는 섹터/지수 흐름 등)
+- SEARCH: 최신·개별 정보가 있어야 답변 가능 (특정 종목의 주가·실적·뉴스, 개별 종목·섹터의 향후/중장기 전망, 오늘의 이슈, 인사이트에 없는 종목·테마 등)
+- UNANSWERABLE: 검색을 해도 신뢰할 답이 불가능하거나 투자조언 범위 밖 (확정적 미래 가격 단언 요구, 미공개 내부정보, 비투자 잡담 등)
+출력: INSIGHT / SEARCH / UNANSWERABLE 중 한 단어만.`;
+    const usr = `[시장 인사이트]\n${insightCtx || "(없음)"}\n\n[질문] ${question}`;
+    const out = await callGemini({ system: sys, user: usr, maxTokens: 8, useSearch: false, temperature: 0 });
+    const t = (out || "").toUpperCase();
+    if (t.includes("UNANSWER")) return "UNANSWERABLE";
+    if (t.includes("SEARCH"))   return "SEARCH";
+    return "INSIGHT";
+  } catch (e) {
+    return "INSIGHT";
+  }
+}
+
 // 시장 인사이트 캐시 중 가장 최근 조회 시각 (기준일 표시용)
 function getMarketInsightDate() {
   let latest = null;
@@ -6365,14 +6441,14 @@ function Advisor() {
     if (window.confirm("AI 조언 대화 내용을 모두 지울까요?")) setChatHistory([]);
   };
 
-  const getAdvice = async (q, isRetry = false) => {
+  const getAdvice = async (q, isRetry = false, mode = "auto") => {
     if (!q) return;
     setLoading(true);
     const portfolioStr = portfolio
       ? portfolio.holdings.map(h => `${h.name}(${h.ticker}) ${h.shares}주 평단${h.avg_price}`).join(", ")
       : "포트폴리오 정보 없음";
     const insightCtx = getMarketInsightContext(1500); // 앱 내 시장 인사이트 재사용
-    const insightDateStr = fmtInsightDate(getMarketInsightDate());
+    const srcDateStr = fmtAdviceSourceDate(getAdviceSourceStatus().oldest);
     if (!isRetry) {
       setChatHistory(prev => [...prev, { role: "user", content: q }, { role: "ai", content: "" }]);
       setQuestion("");
@@ -6380,37 +6456,43 @@ function Advisor() {
       // 재시도 시 마지막 AI 응답만 초기화
       setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: "" }; return u; });
     }
+
+    // ── 라우팅 결정 ──
+    // mode: "insight"(프리셋=인사이트 고정) | "auto"(자유입력=분류 게이트) | 확정 route(재시도)
+    let route;
+    if (mode === "insight") route = "INSIGHT";
+    else if (mode === "auto") route = await classifyAdviceRoute(q, insightCtx);
+    else route = mode; // 재시도: 이미 확정된 route 재사용(재분류·재검색 방지)
+
+    // 답변 불가 → 추가 API 호출 없이 정직하게 안내(토큰 절약)
+    if (route === "UNANSWERABLE") {
+      const msg = "이 질문은 제가 가진 시장 인사이트 데이터로도, 실시간 검색으로도 신뢰할 만한 답을 드리기 어려운 주제예요. (예: 확정적인 미래 가격 예측, 공개되지 않은 정보 등)\n질문을 리밸런싱 방향, 특정 종목·섹터의 현재 상황이나 전망처럼 구체적인 투자 판단으로 바꿔주시면 도와드릴게요.";
+      setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: msg }; return u; });
+      setLoading(false);
+      return;
+    }
+
+    const useSearch = (route === "SEARCH");
+    const systemInsight = `당신은 실전 투자 어드바이저입니다. 아래 제공된 [시장 인사이트]와 포트폴리오를 근거로 답변하세요. 별도 웹 검색은 하지 말고, 인사이트에 없는 내용은 일반 투자 원칙으로 답하되 필요하면 '최신 확인 필요'로 표기하세요.
+
+${ADVICE_BASE_RULES}`;
+    const systemSearch = `당신은 실전 투자 어드바이저입니다. 제공된 [시장 인사이트]와 포트폴리오를 우선 근거로 삼되, 답변에 필요한 최신·개별 정보(종목의 주가·실적·뉴스, 개별 종목/섹터의 향후 전망 등)는 웹 검색으로 최신 데이터를 수집해 반영하세요.
+- 미래 전망(개별 종목·섹터의 향후/중장기 전망 등)을 답할 때는 반드시 맨 앞에 "※ 미래 전망은 불확실하며 실제와 다를 수 있습니다"를 적고, 확정적 단언 대신 근거와 함께 시나리오(강세/약세 요인)로 제시하세요.
+- 검색해도 신뢰할 근거를 못 찾으면 추측하지 말고 "현재 신뢰할 만한 자료로는 답변이 어렵다"고 솔직히 답하세요.
+
+${ADVICE_BASE_RULES}`;
+
+    // 검색 모드는 첫 청크까지 지연이 있으므로 안내 표시(onChunk가 곧 덮어씀)
+    if (useSearch) {
+      setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: "🔎 최신 정보 검색 중..." }; return u; });
+    }
+
     try {
       await callGeminiStream({
         maxTokens: 8000,
-        useSearch: false,
-        system: `당신은 실전 투자 어드바이저입니다. 아래 제공된 [시장 인사이트]와 포트폴리오를 근거로 답변하세요. 별도 웹 검색은 하지 말고, 인사이트에 없는 내용은 일반 투자 원칙으로 답하되 필요하면 '최신 확인 필요'로 표기하세요.
-
-규칙:
-- 마크다운(###, **, -) 절대 사용 금지. 일반 텍스트로만 작성
-- 핵심만 간결하게. 불필요한 인사말 없이 바로 본론
-- 질문에 딱 맞는 답변만
-- 종목 추천 시: [보유중] 또는 [신규] 표시 후 종목명 + 이유 + ETF(시총 3000억^ 우선)
-- ETF 시총 1000억v 추천 불가. 1000~3000억이면 "(소규모 주의)" 명시
-- 수치 기반 근거 제시
-- 답변 길이: 핵심만 간결하게
-
-[IRP/DC 계좌 규칙] 매우 중요:
-- IRP(개인형 퇴직연금)와 DC(확정기여형) 계좌는 법적으로 위험자산 70% 한도, 안전자산 30% 이상 의무 보유
-- 안전자산 해당 종목: 채권혼합형 ETF(주식 40% 미만), 채권형 ETF, CD금리액티브, KOFR금리액티브, 머니마켓액티브(MMF형), 단기채권 ETF, 국공채 ETF, 예금, CMA 등 금리연동형/원리금보장형 상품 전반
-- 위 안전자산 종목의 축소를 권고할 때는 반드시 해당 종목이 어느 계좌에 있는지 확인
-- 해당 종목이 IRP/DC 계좌에 있는 경우:
-  * 단순히 "비중이 높다", "중복이다" 등의 이유로는 축소 권고 금지
-  * 단, 아래 경우에는 축소 조언 가능 (단, 안전자산 30% 이상은 반드시 유지해야 함을 함께 안내):
-    - 해당 채권형/혼합형의 채권 수익률 전망이 부정적인 경우 (예: 금리 인상 전망으로 채권가격 하락 예상)
-    - 채권혼합형 내 편입된 주식/금 등의 전망이 부정적인 경우
-    - 동일 계좌 내 더 나은 안전자산 대안으로 교체를 권고하는 경우
-- 계좌 구분 없이 전체 포트폴리오 기준으로 조언하되, 위 안전자산 관련 조언 시에만 계좌 확인
-
-${SOURCE_RULES}
-
-[!] 참고용. 투자 손실 책임은 투자자 본인.`,
-        user: `[시장 인사이트 (${insightDateStr || "미조회"} 기준)]\n${insightCtx || "(없음 — 시장 인사이트 탭에서 먼저 조회 권장)"}\n\n[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
+        useSearch,
+        system: useSearch ? systemSearch : systemInsight,
+        user: `[시장 인사이트 (${srcDateStr || "미조회"} 기준)]\n${insightCtx || "(없음 — 시장 인사이트 탭에서 먼저 조회 권장)"}\n\n[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
         onChunk: (text) => {
           setChatHistory(prev => {
             const updated = [...prev];
@@ -6420,21 +6502,20 @@ ${SOURCE_RULES}
         },
       });
     } catch (e) {
-      // 자동 1회 재시도 (network error 등)
+      // 자동 1회 재시도 (network error 등) — 확정된 route 재사용
       if (!isRetry) {
         console.warn("AI 조언 실패, 재시도:", e.message);
         await new Promise(r => setTimeout(r, 1500));
-        return getAdvice(q, true);
+        return getAdvice(q, true, route);
       }
       setChatHistory(prev => {
         const updated = [...prev];
-        updated[updated.length - 1] = { role: "ai", content: `오류: ${e.message}`, retryQ: q };
+        updated[updated.length - 1] = { role: "ai", content: `오류: ${e.message}`, retryQ: q, retryMode: route };
         return updated;
       });
     }
     setLoading(false);
   };
-
   const chatBottomRef = useRef(null);
 
   // 스트리밍 중 자동 스크롤
@@ -6443,15 +6524,10 @@ ${SOURCE_RULES}
   }, [chatHistory, loading]);
 
   const quickActions = ["내 포폴 리밸런싱 방향 조언해줘", "현재 모멘텀 섹터에 내 포폴 노출도가 충분한가?", "지금 추가 매수하기 좋은 종목 추천해줘", "내 포폴의 리스크 분석해줘"];
-  const advInsightDate = getMarketInsightDate();
+  const advSrc = getAdviceSourceStatus();
 
   return (
     <div style={{ padding: "0 4px" }}>
-      <div style={{ background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "9px 12px", marginBottom: 14, fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
-        {advInsightDate
-          ? <>📅 <b style={{ color: "#38bdf8" }}>{fmtInsightDate(advInsightDate)}</b> 시장 인사이트 기준으로 답변합니다 (저장 데이터 재사용 · 별도 검색 안 함). 최신 기준이 필요하면 인사이트 탭에서 새로 조회하세요.</>
-          : <>⚠️ 저장된 시장 인사이트가 없어 일반 원칙 기준으로 답합니다. <b style={{ color: "#38bdf8" }}>인사이트 탭</b>에서 먼저 조회하면 더 정확해요.</>}
-      </div>
       {!portfolio && (
         <div style={{ background: "#1a0a0a", border: "1px solid #ef444433", borderRadius: 12, padding: 14, marginBottom: 16, fontSize: 15, color: "#fca5a5" }}>
           [!] 포트폴리오 탭에서 계좌를 등록하면 더 정확한 맞춤 조언을 받을 수 있어요
@@ -6462,12 +6538,32 @@ ${SOURCE_RULES}
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>빠른 질문</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
           {quickActions.map((q, i) => (
-            <button key={i} onClick={() => getAdvice(q)} disabled={loading} style={{ background: "#16162a", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 14 }}>
+            <button key={i} onClick={() => getAdvice(q, false, "insight")} disabled={loading} style={{ background: "#16162a", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 14 }}>
               {q}
             </button>
           ))}
         </div>
       </div>
+
+      {/* 조언 소스(종합·한국·미국) 기준일 안내 — 질문 여부와 무관하게 상시 표시 */}
+      {(() => {
+        const { present, missing, oldest } = advSrc;
+        const box = { background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 10, padding: "9px 12px", marginBottom: 16, fontSize: 11, color: "#94a3b8", lineHeight: 1.55 };
+        if (present.length === 0) {
+          return (
+            <div style={box}>
+              ⚠️ 저장된 <b style={{ color: "#38bdf8" }}>종합·한국·미국</b> 인사이트가 없어 일반 투자 원칙으로 답합니다. 인사이트 탭에서 각 서브탭의 <b style={{ color: "#38bdf8" }}>'분석 시작'</b>을 눌러 최신 데이터로 갱신하세요.
+            </div>
+          );
+        }
+        return (
+          <div style={box}>
+            📅 현재 조언은 <b style={{ color: "#38bdf8" }}>종합·한국·미국</b> 인사이트를 기반으로 분석 중입니다. (가장 오래된 분석 시점: <b style={{ color: "#38bdf8" }}>{fmtAdviceSourceDate(oldest)}</b>)
+            {missing.length > 0 && <> · <b style={{ color: "#fbbf24" }}>{missing.map(m => m.label).join("·")}</b> 인사이트는 없어 그 부분은 일반 원칙으로 답합니다.</>}
+            {" 최신 데이터 기반 분석이 필요하면 "}<b style={{ color: "#38bdf8" }}>인사이트</b>{" 탭에서 "}{missing.length > 0 ? "각 서브탭" : "종합·한국·미국"}{"의 "}<b style={{ color: "#38bdf8" }}>'분석 시작'</b>{"을 눌러 갱신하세요. "}<span style={{ color: "#64748b" }}>(직접 입력 질문은 필요 시 실시간 검색을 사용합니다.)</span>
+          </div>
+        );
+      })()}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <input
@@ -6496,14 +6592,14 @@ ${SOURCE_RULES}
         <div style={{ textAlign: "center", padding: "50px 20px", color: "#64748b" }}>
           <div style={{ fontSize: 44, marginBottom: 12 }}></div>
           <div style={{ fontSize: 16 }}>AI 투자 어드바이저에게 질문해보세요</div>
-          <div style={{ fontSize: 14, marginTop: 6 }}>실시간 웹 검색으로 최신 시장 정보를 반영합니다</div>
+          <div style={{ fontSize: 14, marginTop: 6 }}>빠른 질문은 저장된 인사이트로, 직접 입력 질문은 필요 시 실시간 검색으로 답합니다</div>
         </div>
       )}
 
       {loading && (
         <div style={{ textAlign: "center", padding: "20px", color: "#94a3b8", fontSize: 15 }}>
           <Spinner size={22} />
-          <div style={{ marginTop: 10 }}>시장 정보 검색 중...</div>
+          <div style={{ marginTop: 10 }}>분석 중...</div>
         </div>
       )}
 
@@ -6520,7 +6616,7 @@ ${SOURCE_RULES}
             </div>
             <div style={{ color: msg.retryQ ? "#ef4444" : "#cbd5e1", fontSize: 15, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.content}</div>
             {msg.retryQ && (
-              <button onClick={() => getAdvice(msg.retryQ, true)} style={{
+              <button onClick={() => getAdvice(msg.retryQ, true, msg.retryMode)} style={{
                 marginTop: 10, background: "#7c3aed22", border: "1px solid #7c3aed44",
                 borderRadius: 8, color: "#8b78f5", fontSize: 13, fontWeight: 700,
                 cursor: "pointer", padding: "6px 14px",
@@ -6721,6 +6817,10 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.1 변경사항 (AI 조언 개선 · 기준일 안내)</div>
+            <div>· AI 조언 답변 방식 개선 — 직접 입력한 질문은 저장된 인사이트만으로 답할 수 있는지 자동 판단해, 답할 수 있으면 그대로 답하고(빠르고 토큰 절약), 특정 종목의 주가·실적·뉴스나 개별 종목·섹터의 향후 전망처럼 최신·개별 정보가 필요한 질문은 실시간 검색으로 보완해 답합니다. 검색으로도 신뢰할 만한 답이 어려운 질문은 솔직하게 답변이 어렵다고 안내합니다. 빠른 질문(리밸런싱·노출도·추가매수·리스크)은 종전처럼 저장된 인사이트만으로 답합니다.</div>
+            <div>· 미래 전망 질문 주의 문구 — 개별 종목·섹터의 향후/중장기 전망을 물으면 답변 맨 앞에 "미래 전망은 불확실하며 실제와 다를 수 있다"는 전제를 함께 표시합니다.</div>
+            <div>· 조언 기준일 안내 정확화 — AI 조언이 실제 근거로 쓰는 인사이트(종합·한국·미국)의 가장 오래된 분석 시점을 '빠른 질문' 아래에 항상 표시합니다. 더 최신 판단이 필요하면 인사이트 탭에서 해당 서브탭의 '분석 시작'을 눌러 갱신하세요. (종전에는 실제 근거로 쓰지 않는 다른 탭의 최신 시각까지 반영돼 기준일이 실제와 어긋날 수 있었습니다.)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.0 변경사항 (공포·탐욕 지수 추가)</div>
             <div>· 미국 공포·탐욕 지수 신규 — CNN Fear & Greed Index를 인사이트 탭 상단에 반원 게이지로 표시(0~100, Extreme Fear~Extreme Greed). 전일·1주 전·1달 전 비교도 함께. 분석 시작을 누르지 않아도 바로 보입니다.</div>
             <div>· 한국 변동성 지수 신규 — KRX 코스피200 변동성지수(VKOSPI)를 게이지로 표시. VKOSPI는 값이 높을수록 시장 불안이 큰 절대 지표라, 미국식 등급 대신 실제 수치와 참조점(평시 15~20 · 역대 최고 95)을 그대로 보여줍니다.</div>
@@ -6742,15 +6842,15 @@ function Settings() {
             <div>· 해외 클래스주 검색 개선 — BRK.B·BF/B처럼 국내 증권사 표기로 입력해도 검색됩니다(기존에는 BRK-B 형태만 인식).</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.2.0 변경사항 (배당 지급일 알림 추가)</div>
             <div>· 배당 지급일 알림 신규 — 헤더 알림 벨(🔔)에서 보유 종목의 다가오는 배당 지급 예정을 확인합니다. 배당 캘린더 데이터의 지급월·지급일자 패턴에서 다음 예상 지급일을 산출해, 지급일자가 확정된 종목은 D-7 이내를 뱃지로 알리고 30일 이내 예정도 함께 표시합니다. 앱 진입·재활성화 시 추가 조회 없이 즉시 계산합니다(네트워크 미사용). 지급일은 과거 이력 기반 예상치이며, 배당 탭에서 한 번 조회한 뒤 동작합니다. ※ notify.js를 public/에 배포해야 적용됨</div>
+            <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
+              {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
+            </button>
+            {showAllHistory && (<>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.1.0 변경사항 (배당 KIS 조회 · 성능 최적화)</div>
             <div>· 배당 캘린더를 한국투자증권 예탁원(배당일정) API로 조회하도록 전환(api/kis-dividend.js 신설) — 국내 개별주·ETF·우선주의 주당 배당금·지급일을 예탁원 원천 데이터로 정확히 조회. 국내=KIS / 해외=Yahoo로 이원화하고 Gemini 검색 폴백을 제거, 동시 병렬 조회로 배당 조회 속도를 대폭 단축. ※ kis-dividend.js를 api/에 배포해야 적용됨</div>
             <div>· 시장 인사이트 분석 속도 최적화 — 웹 검색 모드에서 thinking을 끄도록(thinkingBudget:0) 옵션화해 분석 응답 시간을 기존 대비 절반 이하로 단축</div>
             <div>· 아시아 인사이트 탭 PC 흰 화면(React #31) 수정 — index_change 등 일부 필드가 객체로 반환될 때 렌더가 깨지던 문제를 안전 문자열화로 방어</div>
             <div>· 배당 캘린더 '보유 종목 변경됨' 알림 오탐 수정 — 무배당 종목이 목록에서 제외되며 항상 변경으로 오판하던 문제를, 조회 시점 보유종목 스냅샷과 비교하도록 개선</div>
-            <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
-              {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
-            </button>
-            {showAllHistory && (<>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.0.0 변경사항 (대가들의 포트폴리오 추가)</div>
             <div>· 대가들의 포트폴리오 신규 — SEC EDGAR 13F 공시 기반으로 워런 버핏·빌 애크먼·레이 달리오·마이클 버리 등 18인의 미국주식 보유 종목·비중·평가액·주식수를 조회. 직전 분기 대비 신규/추가/축소/전량청산 변동까지 표시. '포트폴리오' 탭에 '내 포트폴리오 / 대가들의 포트폴리오' 서브탭으로 배치</div>
             <div>· SEC EDGAR 13F 프록시(api/edgar.js) 신설 — submissions API로 13F-HR 이력 조회 후 information table XML을 파싱(네임스페이스 무관), 수정본(13F-HR/A) 분기별 최신본만 중복제거. 값 단위(달러/천달러) 자동 감지. 표시정책상 CUSIP→티커 매핑 없이 issuer명 그대로 사용. ※ gurus.js를 public/에, edgar.js를 api/에 배포해야 적용됨</div>
@@ -8547,7 +8647,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.5.0";
+const APP_VERSION = "3.5.1";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
