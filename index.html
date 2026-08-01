@@ -235,7 +235,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
           }
           throw new Error(errMsg);
         }
-        const chunk = parsed.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+        const chunk = parsed.candidates?.[0]?.content?.parts?.filter(p => !p.thought).map(p => p.text || "").join("") || "";
         if (parsed.candidates?.[0]?.finishReason) finishReason = parsed.candidates[0].finishReason;
         if (chunk) { fullText += chunk; onChunk && onChunk(fullText); }
       } catch (e) { if (e.message && !e.message.includes("JSON")) throw e; }
@@ -6491,6 +6491,7 @@ ${ADVICE_BASE_RULES}`;
       await callGeminiStream({
         maxTokens: 8000,
         useSearch,
+        thinkingBudget: 0,
         system: useSearch ? systemSearch : systemInsight,
         user: `[시장 인사이트 (${srcDateStr || "미조회"} 기준)]\n${insightCtx || "(없음 — 시장 인사이트 탭에서 먼저 조회 권장)"}\n\n[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
         onChunk: (text) => {
