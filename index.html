@@ -552,7 +552,7 @@ function isSupportedHolding(h) {
     return false;                                // 그 외 모든 해외 거래소 = 현재 미지원
   }
   // 서픽스 없음: 한국 코드 / 국내·미국 KIS 마스터(티커 또는 이름)에 있으면 지원
-  const tk = String(h.ticker || "").toUpperCase().trim();
+  const tk = t; // t = yahoo_ticker || ticker (해외 티커는 yahoo_ticker에 담기므로 이걸 써야 마스터 티커 조회가 됨)
   if (isKrCode(tk)) return true;
   try { if (typeof lookupMaster === "function" && lookupMaster(tk, h.name)) return true; } catch (e) {}      // 국내
   try { if (typeof lookupMasterUs === "function" && lookupMasterUs(tk, h.name)) return true; } catch (e) {}  // 미국
@@ -1763,7 +1763,7 @@ function guessRegion(h) {
   //  classifyOne: ETF는 이름(detectCountry), 개별주는 거래소, 사용자 지정(sector_manual)까지 반영.
   try {
     if (typeof classifyOne === "function") {
-      const label = classifyOne(holding.sector, holding.name, holding.ticker, holding.currency, holding.sector_manual);
+      const label = classifyOne(holding.sector, holding.name, (holding.yahoo_ticker || holding.ticker), holding.currency, holding.sector_manual);
       if (label && label !== "기타") {
         for (const p of COUNTRY_PREFIXES) if (label.startsWith(p)) return p; // 미국/글로벌/중국/일본/인도
         if (typeof SELF_CONTAINED_SECTORS !== "undefined" && SELF_CONTAINED_SECTORS.has(label)) {
@@ -3223,7 +3223,7 @@ function classifyOne(sector, name, ticker, currency, manual) {
 function getSectorContributions(h) {
   const name = (h && h.name) || "";
   const sector = h && h.sector;
-  const ticker = h && h.ticker;
+  const ticker = h && (h.yahoo_ticker || h.ticker); // 해외 티커는 yahoo_ticker에 담기므로 우선 사용
   const currency = h && h.currency;
   const manual = h && h.sector_manual;
   if (name.includes("혼합") && !isExplicitOther(name)) {
@@ -7243,6 +7243,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.3 변경사항 (티커 기반 종목 판별 정확화)</div>
+            <div>· 화면에 티커(심볼)가 표시된 해외 종목(예: ASML·BABA)이 종목 마스터에 있는데도 이름이 조금 달라 자동 등록되지 못하고 수동 입력으로 빠지던 문제를 고쳤습니다. 이제 티커가 있으면 티커로 먼저 마스터를 조회해, 미국 상장 ADR 등도 정확히 자동 등록되고 지역도 미국으로 잡힙니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.2 변경사항 (미지원 종목 자동등록 차단 강화)</div>
             <div>· 매입단가가 있는 화면이라도 홍콩·인도 등 해외 종목(예: 알리바바)이 원화·달러로 잘못 자동 등록되던 문제를 고쳤습니다. 티커에 거래소 표시가 없어도, 국내·미국 종목 마스터(티커·종목명 조회)에 없으면 해외로 보고 수동 입력으로 보냅니다. (한국·미국 종목은 그대로 자동 등록)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.1 변경사항 (지역 판정 정확화 — 거래소 기준)</div>
@@ -7256,13 +7258,12 @@ function Settings() {
             <div>· 자동 인식에 실패한 종목의 평단가·수량 입력을 전용 화면으로 새로 만들었습니다. 등록 시 지정한 계좌명과 종목이 미리 채워지고, 종목이 잘못됐으면 다시 검색해 바꿀 수 있습니다.</div>
             <div>· '어느 나라에서 종목을 찾을지(검색)'와 '어떻게 분류할지(투자 지역·섹터)'를 명확히 분리했습니다. 예: 호주 상장 나스닥 ETF는 검색은 전체로, 분류는 투자지역 '미국' + 섹터 '지수' = 미국지수로 지정할 수 있습니다.</div>
             <div>· 통화(원·달러·엔) 선택, 환율 미지원 통화 안내를 정리했고, 현재가는 등록 후 자동 조회되며 필요 시 직접 입력할 수 있습니다.</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.0 변경사항 (수동 입력 개선 · 검색 국가 추가)</div>
-            <div>· 평단가·수량을 못 읽은 종목의 직접 입력을 '종목 추가' 창과 동일한 방식으로 개선했습니다. 계좌·종목명·현재가·통화가 미리 채워진 채로 떠서, 평균단가·수량만 넣으면 됩니다. 종목이 잘못 인식됐으면 '✕ 변경'으로 다시 검색할 수 있고, 국가·섹터·통화도 그 자리에서 지정할 수 있습니다. 여러 종목이면 하나씩 순서대로(예: 1/2, 2/2) 진행합니다.</div>
-            <div>· 종목 검색 국가 필터에 '인도'를 추가했습니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.0 변경사항 (수동 입력 개선 · 검색 국가 추가)</div>
+            <div>· 평단가·수량을 못 읽은 종목의 직접 입력을 '종목 추가' 창과 동일한 방식으로 개선했습니다. 여러 종목이면 하나씩 순서대로 진행하고, 검색 국가 필터에 '인도'를 추가했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600, color:"#fca5a5" }}>v3.7.9 변경사항 (중요 · 포트폴리오 데이터 보호)</div>
             <div>· 일부 기기에서 기존 포트폴리오가 통째로 사라지던 심각한 버그를 수정했습니다. 이제 저장된 포트폴리오는 어떤 경우에도 자동으로 삭제되지 않습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.8 변경사항 (섹터 국가 분류 정확화)</div>
@@ -9117,7 +9118,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.9.2";
+const APP_VERSION = "3.9.3";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
