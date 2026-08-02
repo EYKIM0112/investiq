@@ -286,6 +286,18 @@ function smSectorFromYahoo(info) {
   return "기타";
 }
 
+// 야후 country(영문 국가명) → 앱 국가 접두. 한국="", 판별불가=null(호출부에서 서픽스/마스터 폴백).
+function smCountryFromYahoo(country) {
+  const c = String(country || "").toLowerCase();
+  if (!c) return null;
+  if (c.indexOf("korea") !== -1) return "";
+  if (c.indexOf("united states") !== -1 || c === "usa" || c === "us") return "미국";
+  if (c.indexOf("japan") !== -1) return "일본";
+  if (c.indexOf("china") !== -1 || c.indexOf("hong kong") !== -1 || c.indexOf("taiwan") !== -1) return "중국";
+  if (c.indexOf("india") !== -1) return "인도";
+  return "글로벌";
+}
+
 // ===== 프록시 호출 헬퍼 =====
 // 국내 6자리 코드 판별 (kis.js/index.html과 동일 규칙)
 function smIsKrCode(t) {
@@ -349,7 +361,11 @@ async function smFetchSectors(tickers) {
       if (out[orig]) return;
       if (v.type === "ETF" || v.type === "MUTUALFUND") return; // ETF는 이름 키워드 분류 사용
       if (!v.industry && !v.sector) return;                    // 정보 없으면 스킵(LLM에 넘김)
-      out[orig] = smSectorFromYahoo({ ticker: orig, industry: v.industry, sector: v.sector, country: v.country });
+      out[orig] = {
+        s: smSectorFromYahoo({ ticker: orig, industry: v.industry, sector: v.sector, country: v.country }),
+        c: smCountryFromYahoo(v.country),   // 거래소 국가(지역 판정용)
+        ccy: v.currency || null,            // 거래 통화(미지원 국가 필터용, API가 주면)
+      };
     });
   }
 
