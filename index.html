@@ -167,8 +167,10 @@ function safeParseJSON(text) {
 }
 
 // ---------- Gemini API 스트리밍 호출 ----------
-async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, thinkingBudget = null, onChunk, _retry = 0 }) {
+async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = false, thinkingBudget = null, purpose = null, onChunk, _retry = 0 }) {
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
+  // 재시도 시엔 카운트 안 되도록 :retry 표식을 붙인 purpose 사용 (논리적 1행동=최초 1회만 카운트)
+  const rp = (purpose && !purpose.includes(":retry")) ? purpose + ":retry" : purpose;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
   else contents.push({ role: "user", parts: [{ text: user }] });
@@ -185,25 +187,31 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
     res = await fetch(GEMINI_PROXY, {
       method: "POST",
       headers: await geminiHeaders(),
-      body: JSON.stringify({ model, body, stream: true }),
+      body: JSON.stringify({ model, body, stream: true, purpose }),
     });
   } catch (netErr) {
     // network error (Failed to fetch) 재시도
     if (_retry < 2) {
       await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
-      return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
+      return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, purpose: rp, onChunk, _retry: _retry + 1 });
     }
     throw new Error("network error");
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (err.rate_limited) {
+      const e = new Error(err.error || "오늘 사용 한도에 도달했어요.");
+      e.rateLimited = true;
+      e.usage = { used: err.used, limit: err.limit, feature: err.feature };
+      throw e; // 한도초과는 재시도 안 함
+    }
     const msg = err.error?.message || `HTTP ${res.status}`;
     // 과부하(429/503) 시 최대 3회 재시도
     if ((res.status === 429 || res.status === 503) && _retry < 3) {
       const delay = (res.status === 429 ? 5000 : 2000) * (_retry + 1);
       onChunk && onChunk(`[재시도 중... ${_retry + 1}/3]`);
       await new Promise(r => setTimeout(r, delay));
-      return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
+      return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, purpose: rp, onChunk, _retry: _retry + 1 });
     }
     throw new Error(msg);
   }
@@ -231,7 +239,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
           // 스트리밍 중 과부하 에러도 재시도
           if ((parsed.error.code === 429 || parsed.error.code === 503) && _retry < 3) {
             await new Promise(r => setTimeout(r, 2000 * (_retry + 1)));
-            return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
+            return callGeminiStream({ system, user, maxTokens, useSearch, thinkingBudget, purpose: rp, onChunk, _retry: _retry + 1 });
           }
           throw new Error(errMsg);
         }
@@ -244,12 +252,12 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
   // 토큰 한도로 응답이 잘린 경우: 토큰 2배로 1회 자동 재시도 (사용자가 다시 누를 필요 없게)
   if (finishReason === "MAX_TOKENS" && _retry < 1) {
     onChunk && onChunk("[응답이 길어 더 받는 중...]");
-    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, thinkingBudget, onChunk, _retry: _retry + 1 });
+    return callGeminiStream({ system, user, maxTokens: Math.min(maxTokens * 2, 16000), useSearch, thinkingBudget, purpose: rp, onChunk, _retry: _retry + 1 });
   }
   return fullText;}
 
 // ---------- Gemini API 일반 호출 (이미지 등 스트리밍 불필요한 경우) ----------
-async function callGemini({ system, user, maxTokens = 2000, useSearch = false, temperature = 0.7 }) {
+async function callGemini({ system, user, maxTokens = 2000, useSearch = false, temperature = 0.7, purpose = null }) {
   const model = useSearch ? GEMINI_MODEL : GEMINI_MODEL_FAST;
   const contents = [];
   if (system) contents.push({ role: "user", parts: [{ text: `[시스템 지시]\n${system}\n\n[사용자 질문]\n${user}` }] });
@@ -258,8 +266,14 @@ async function callGemini({ system, user, maxTokens = 2000, useSearch = false, t
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature, ...(useSearch ? {} : { thinkingConfig: { thinkingBudget: 0 } }) } };
   if (useSearch) body.tools = [{ googleSearch: {} }];
 
-  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model, body, stream: false }) });
+  const res = await fetch(GEMINI_PROXY, { method: "POST", headers: await geminiHeaders(), body: JSON.stringify({ model, body, stream: false, purpose }) });
   const data = await res.json();
+  if (data.rate_limited) {
+    const e = new Error(data.error || "오늘 사용 한도에 도달했어요.");
+    e.rateLimited = true;
+    e.usage = { used: data.used, limit: data.limit, feature: data.feature };
+    throw e;
+  }
   if (data.error) throw new Error(data.error.message);
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
 }
@@ -688,14 +702,46 @@ async function classifyAdviceRoute(question, insightCtx) {
 - UNANSWERABLE: 검색을 해도 신뢰할 답이 불가능하거나 투자조언 범위 밖 (확정적 미래 가격 단언 요구, 미공개 내부정보, 비투자 잡담 등)
 출력: INSIGHT / SEARCH / UNANSWERABLE 중 한 단어만.`;
     const usr = `[시장 인사이트]\n${insightCtx || "(없음)"}\n\n[질문] ${question}`;
-    const out = await callGemini({ system: sys, user: usr, maxTokens: 8, useSearch: false, temperature: 0 });
+    const out = await callGemini({ system: sys, user: usr, maxTokens: 8, useSearch: false, temperature: 0, purpose: "advice" });
     const t = (out || "").toUpperCase();
     if (t.includes("UNANSWER")) return "UNANSWERABLE";
     if (t.includes("SEARCH"))   return "SEARCH";
     return "INSIGHT";
   } catch (e) {
+    if (e && e.rateLimited) throw e; // 한도초과는 상위(getAdvice)로 전파 — 조용히 INSIGHT로 넘기지 않음
     return "INSIGHT";
   }
+}
+
+// ── 일일 사용 한도: 클라이언트 조회/토글 헬퍼 (표시·관리자 토글용. 강제는 서버 gemini.js) ──
+const ADMIN_EMAIL_CLIENT = "ilikeom@naver.com";
+function kstTodayStr() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+}
+async function loadUsageState() {
+  try {
+    const { data: cfgRows } = await supabaseClient.from("app_config").select("key,value");
+    const cfg = {};
+    (cfgRows || []).forEach(r => { cfg[r.key] = r.value; });
+    const enabled = cfg.usage_limit_enabled === "true";
+    const insightLimit = parseInt(cfg.insight_daily_limit || "2", 10) || 2;
+    const adviceLimit = parseInt(cfg.advice_daily_limit || "3", 10) || 3;
+    const { data: u } = await supabaseClient.auth.getUser();
+    const isAdmin = (u?.user?.email || "").toLowerCase() === ADMIN_EMAIL_CLIENT;
+    const counts = {};
+    if (enabled && !isAdmin) {
+      const { data: rows } = await supabaseClient.from("usage_counters").select("feature,count").eq("day", kstTodayStr());
+      (rows || []).forEach(r => { counts[r.feature] = r.count; });
+    }
+    return { ok: true, enabled, isAdmin, insightLimit, adviceLimit, counts };
+  } catch (e) {
+    return { ok: false, enabled: false, isAdmin: false, insightLimit: 2, adviceLimit: 3, counts: {} };
+  }
+}
+async function setUsageLimitEnabled(enabled) {
+  const { data, error } = await supabaseClient.rpc("set_usage_limit", { p_enabled: enabled });
+  if (error) throw error;
+  return data;
 }
 
 // 시장 인사이트 캐시 중 가장 최근 조회 시각 (기준일 표시용)
@@ -879,6 +925,11 @@ function MarketInsight({ onRefreshAll }) {
   const [errors, setErrors]       = useState({});
   const [updatedAt, setUpdatedAt] = useState(initTimes);
 
+  // ── 일일 사용 한도 상태(표시용) ──
+  const [usage, setUsage] = useState({ enabled: false, isAdmin: false, insightLimit: 2, counts: {} });
+  const loadUsageInto = async () => { const s = await loadUsageState(); setUsage(s); };
+  React.useEffect(() => { loadUsageInto(); }, []);
+
   // ── 세계 지수 Yahoo 직접 조회 ──────────────────────────────
   const [worldIndices, setWorldIndices] = useState(() => {
     try {
@@ -992,6 +1043,7 @@ function MarketInsight({ onRefreshAll }) {
           maxTokens: 8000,
           useSearch: true,
           thinkingBudget: 0,
+          purpose: "insight:" + tabId + (retryCount > 0 ? ":retry" : ""),
           system: `You are a global investment analyst with real-time market data access. CRITICAL RULES:
 1. Search the web for TODAY's or YESTERDAY's market data ONLY. Never use data older than 2 days.
 2. For index values (KOSPI, NASDAQ etc), find the most recent actual price from today's trading session.
@@ -1050,7 +1102,13 @@ ${SOURCE_RULES}`,
       setResults(r => ({ ...r, [tabId]: parsed }));
       setUpdatedAt(u => ({ ...u, [tabId]: new Date() }));
       try { localStorage.setItem(`market_cache_${tabId}`, JSON.stringify({ data: parsed, time: new Date().toISOString() })); } catch(e) {}
+      loadUsageInto(); // 사용량 갱신
     } catch(e) {
+      if (e && e.rateLimited) {
+        setErrors(er => ({ ...er, [tabId]: `오늘 이 탭 분석 한도(${e.usage?.limit ?? ""}회)를 다 썼어요. 내일 다시 이용할 수 있어요.` }));
+        loadUsageInto();
+        return; // 한도초과는 재시도 안 함
+      }
       if (retryCount < 2) {
         setTabLoading(tabId, false);
         setTimeout(() => fetchTab(tabId, retryCount + 1), 3000);
@@ -1088,6 +1146,8 @@ ${SOURCE_RULES}`,
   const err  = errors[activeTab];
   const isLoad = isLoading(activeTab);
   const upAt = updatedAt[activeTab];
+  const insUsed = usage.counts["insight:" + activeTab] || 0;
+  const insExhausted = usage.enabled && !usage.isAdmin && insUsed >= usage.insightLimit;
 
 
 
@@ -1564,16 +1624,28 @@ ${SOURCE_RULES}`,
         <div style={{ fontSize:14, color:"#94a3b8" }}>
           {upAt ? `📅 검색·분석: ${upAt.getMonth()+1}/${upAt.getDate()} ${String(upAt.getHours()).padStart(2,"0")}:${String(upAt.getMinutes()).padStart(2,"0")}` : "버튼을 눌러 분석 시작"}
         </div>
-        <button onClick={() => fetchTab(activeTab)} disabled={isLoad} style={{
+        <button onClick={() => fetchTab(activeTab)} disabled={isLoad || insExhausted} style={{
           background: tab.color==="#e2e8f0"?"#2a2a48":tab.color,
           color:"#fff", border:"none", borderRadius:8,
-          padding:"9px 18px", cursor:loading?"not-allowed":"pointer",
+          padding:"9px 18px", cursor:(isLoad||insExhausted)?"not-allowed":"pointer",
           fontWeight:700, fontSize:15, display:"flex", alignItems:"center", gap:6,
-          opacity:loading?0.7:1,
+          opacity:(isLoad||insExhausted)?0.5:1,
         }}>
           {isLoad ? <Spinner size={13}/> : ""} {isLoad ? "분석 중..." : "분석 시작"}
         </button>
       </div>
+
+      {/* 일일 사용 한도 안내 (토글 ON & 비관리자일 때만) */}
+      {usage.enabled && !usage.isAdmin && (
+        <div style={{ fontSize:11, color: insExhausted ? "#f87171" : "#64748b", marginBottom:12, marginTop:-6 }}>
+          {insExhausted
+            ? `오늘 이 탭 분석 한도(${usage.insightLimit}회)를 다 썼어요 · 내일 자정(KST) 리셋`
+            : `오늘 이 탭 분석 ${insUsed}/${usage.insightLimit}회 · 남은 ${usage.insightLimit - insUsed}회`}
+        </div>
+      )}
+      {usage.enabled && usage.isAdmin && (
+        <div style={{ fontSize:11, color:"#a8b4f8", marginBottom:12, marginTop:-6 }}>관리자 · 무제한</div>
+      )}
 
       {/* 공포·탐욕 지수 게이지 (분석 시작과 무관하게 항상 상단 표시) */}
       {(activeTab === "summary" || activeTab === "us" || activeTab === "kr") && typeof FgGaugePanel === "function" && (
@@ -6429,6 +6501,11 @@ function Advisor() {
   });
   const portfolio = loadPortfolio() || { holdings: [], cashByAccount: {}, cashFxByAccount: {} };
 
+  // ── 일일 사용 한도 상태(표시용) ──
+  const [advUsage, setAdvUsage] = useState({ enabled: false, isAdmin: false, adviceLimit: 3, counts: {} });
+  const loadAdviceUsage = async () => { const s = await loadUsageState(); setAdvUsage(s); };
+  React.useEffect(() => { loadAdviceUsage(); }, []);
+
   // chatHistory 변경 시 localStorage 저장 (스트리밍 도중 응답도 보존)
   React.useEffect(() => {
     try {
@@ -6457,41 +6534,45 @@ function Advisor() {
       setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: "" }; return u; });
     }
 
-    // ── 라우팅 결정 ──
-    // mode: "insight"(프리셋=인사이트 고정) | "auto"(자유입력=분류 게이트) | 확정 route(재시도)
-    let route;
-    if (mode === "insight") route = "INSIGHT";
-    else if (mode === "auto") route = await classifyAdviceRoute(q, insightCtx);
-    else route = mode; // 재시도: 이미 확정된 route 재사용(재분류·재검색 방지)
+    let route = mode; // catch(재시도)에서 접근 가능하도록 바깥 선언
+    try {
+      // ── 라우팅 결정 ──
+      // mode: "insight"(프리셋=인사이트 고정) | "auto"(자유입력=분류 게이트) | 확정 route(재시도)
+      // 질문 카운트: 프리셋은 답변호출(purpose "advice")에서, 자유입력은 분류(classifyAdviceRoute 내 purpose "advice")에서 1회.
+      if (mode === "insight") route = "INSIGHT";
+      else if (mode === "auto") route = await classifyAdviceRoute(q, insightCtx);
+      else route = mode; // 재시도: 이미 확정된 route 재사용(재분류·재카운트 방지)
 
-    // 답변 불가 → 추가 API 호출 없이 정직하게 안내(토큰 절약)
-    if (route === "UNANSWERABLE") {
-      const msg = "이 질문은 제가 가진 시장 인사이트 데이터로도, 실시간 검색으로도 신뢰할 만한 답을 드리기 어려운 주제예요. (예: 확정적인 미래 가격 예측, 공개되지 않은 정보 등)\n질문을 리밸런싱 방향, 특정 종목·섹터의 현재 상황이나 전망처럼 구체적인 투자 판단으로 바꿔주시면 도와드릴게요.";
-      setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: msg }; return u; });
-      setLoading(false);
-      return;
-    }
+      // 답변 불가 → 추가 API 호출 없이 정직하게 안내(토큰 절약)
+      if (route === "UNANSWERABLE") {
+        const msg = "이 질문은 제가 가진 시장 인사이트 데이터로도, 실시간 검색으로도 신뢰할 만한 답을 드리기 어려운 주제예요. (예: 확정적인 미래 가격 예측, 공개되지 않은 정보 등)\n질문을 리밸런싱 방향, 특정 종목·섹터의 현재 상황이나 전망처럼 구체적인 투자 판단으로 바꿔주시면 도와드릴게요.";
+        setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: msg }; return u; });
+        loadAdviceUsage();
+        setLoading(false);
+        return;
+      }
 
-    const useSearch = (route === "SEARCH");
-    const systemInsight = `당신은 실전 투자 어드바이저입니다. 아래 제공된 [시장 인사이트]와 포트폴리오를 근거로 답변하세요. 별도 웹 검색은 하지 말고, 인사이트에 없는 내용은 일반 투자 원칙으로 답하되 필요하면 '최신 확인 필요'로 표기하세요.
+      const useSearch = (route === "SEARCH");
+      // 답변호출 purpose: 프리셋=여기서 카운트("advice") / 자유입력=분류에서 이미 카운트("advice_ans") / 재시도=미카운트("advice_retry")
+      const answerPurpose = (mode === "insight") ? "advice" : (mode === "auto" ? "advice_ans" : "advice_retry");
+      const systemInsight = `당신은 실전 투자 어드바이저입니다. 아래 제공된 [시장 인사이트]와 포트폴리오를 근거로 답변하세요. 별도 웹 검색은 하지 말고, 인사이트에 없는 내용은 일반 투자 원칙으로 답하되 필요하면 '최신 확인 필요'로 표기하세요.
 
 ${ADVICE_BASE_RULES}`;
-    const systemSearch = `당신은 실전 투자 어드바이저입니다. 제공된 [시장 인사이트]와 포트폴리오를 우선 근거로 삼되, 답변에 필요한 최신·개별 정보(종목의 주가·실적·뉴스, 개별 종목/섹터의 향후 전망 등)는 웹 검색으로 최신 데이터를 수집해 반영하세요.
+      const systemSearch = `당신은 실전 투자 어드바이저입니다. 제공된 [시장 인사이트]와 포트폴리오를 우선 근거로 삼되, 답변에 필요한 최신·개별 정보(종목의 주가·실적·뉴스, 개별 종목/섹터의 향후 전망 등)는 웹 검색으로 최신 데이터를 수집해 반영하세요.
 - 미래 전망(개별 종목·섹터의 향후/중장기 전망 등)을 답할 때는 반드시 맨 앞에 "※ 미래 전망은 불확실하며 실제와 다를 수 있습니다"를 적고, 확정적 단언 대신 근거와 함께 시나리오(강세/약세 요인)로 제시하세요.
 - 검색해도 신뢰할 근거를 못 찾으면 추측하지 말고 "현재 신뢰할 만한 자료로는 답변이 어렵다"고 솔직히 답하세요.
 
 ${ADVICE_BASE_RULES}`;
 
-    // 검색 모드는 첫 청크까지 지연이 있으므로 안내 표시(onChunk가 곧 덮어씀)
-    if (useSearch) {
-      setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: "🔎 최신 정보 검색 중..." }; return u; });
-    }
+      // 검색 모드는 첫 청크까지 지연이 있으므로 안내 표시(onChunk가 곧 덮어씀)
+      if (useSearch) {
+        setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: "🔎 최신 정보 검색 중..." }; return u; });
+      }
 
-    try {
       await callGeminiStream({
         maxTokens: 8000,
         useSearch,
-        thinkingBudget: 0,
+        purpose: answerPurpose,
         system: useSearch ? systemSearch : systemInsight,
         user: `[시장 인사이트 (${srcDateStr || "미조회"} 기준)]\n${insightCtx || "(없음 — 시장 인사이트 탭에서 먼저 조회 권장)"}\n\n[포트폴리오] ${portfolioStr}\n\n[질문] ${q}`,
         onChunk: (text) => {
@@ -6502,8 +6583,17 @@ ${ADVICE_BASE_RULES}`;
           });
         },
       });
+      loadAdviceUsage(); // 성공 후 사용량 갱신
     } catch (e) {
-      // 자동 1회 재시도 (network error 등) — 확정된 route 재사용
+      // 한도초과 → 재시도 없이 안내
+      if (e && e.rateLimited) {
+        const msg = `오늘 AI 조언 질문 한도(${e.usage?.limit ?? ""}회)를 다 썼어요. 내일 자정(KST)에 리셋됩니다.`;
+        setChatHistory(prev => { const u = [...prev]; u[u.length-1] = { role: "ai", content: msg }; return u; });
+        loadAdviceUsage();
+        setLoading(false);
+        return;
+      }
+      // 자동 1회 재시도 (network error 등) — 확정된 route 재사용(재분류·재카운트 방지)
       if (!isRetry) {
         console.warn("AI 조언 실패, 재시도:", e.message);
         await new Promise(r => setTimeout(r, 1500));
@@ -6526,6 +6616,8 @@ ${ADVICE_BASE_RULES}`;
 
   const quickActions = ["내 포폴 리밸런싱 방향 조언해줘", "현재 모멘텀 섹터에 내 포폴 노출도가 충분한가?", "지금 추가 매수하기 좋은 종목 추천해줘", "내 포폴의 리스크 분석해줘"];
   const advSrc = getAdviceSourceStatus();
+  const advUsed = advUsage.counts["advice"] || 0;
+  const advExhausted = advUsage.enabled && !advUsage.isAdmin && advUsed >= advUsage.adviceLimit;
 
   return (
     <div style={{ padding: "0 4px" }}>
@@ -6539,7 +6631,7 @@ ${ADVICE_BASE_RULES}`;
         <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 700, letterSpacing: 1 }}>빠른 질문</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
           {quickActions.map((q, i) => (
-            <button key={i} onClick={() => getAdvice(q, false, "insight")} disabled={loading} style={{ background: "#16162a", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 14 }}>
+            <button key={i} onClick={() => getAdvice(q, false, "insight")} disabled={loading || advExhausted} style={{ background: "#16162a", color: "#94a3b8", border: "1px solid #334155", borderRadius: 20, padding: "6px 14px", cursor: (loading||advExhausted)?"not-allowed":"pointer", fontSize: 14, opacity: advExhausted?0.5:1 }}>
               {q}
             </button>
           ))}
@@ -6570,14 +6662,26 @@ ${ADVICE_BASE_RULES}`;
         <input
           value={question}
           onChange={e => setQuestion(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && !e.shiftKey && getAdvice(question)}
+          onKeyDown={e => e.key === "Enter" && !e.shiftKey && !advExhausted && getAdvice(question)}
           placeholder="투자 관련 질문을 입력하세요..."
           style={{ flex: 1, background: "#0f0f18", border: "1px solid #334155", borderRadius: 10, padding: "11px 14px", color: "#e2e8f0", fontSize: 16, outline: "none" }}
         />
-        <button onClick={() => getAdvice(question)} disabled={loading || !question} style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", cursor: "pointer", fontWeight: 700, opacity: loading || !question ? 0.5 : 1 }}>
+        <button onClick={() => getAdvice(question)} disabled={loading || !question || advExhausted} style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 10, padding: "11px 18px", cursor: "pointer", fontWeight: 700, opacity: loading || !question || advExhausted ? 0.5 : 1 }}>
           {loading ? <Spinner size={16} /> : "전송"}
         </button>
       </div>
+
+      {/* 일일 사용 한도 안내 (토글 ON & 비관리자일 때만) */}
+      {advUsage.enabled && !advUsage.isAdmin && (
+        <div style={{ fontSize: 11, color: advExhausted ? "#f87171" : "#64748b", marginTop: -10, marginBottom: 16 }}>
+          {advExhausted
+            ? `오늘 AI 조언 질문 한도(${advUsage.adviceLimit}회)를 다 썼어요 · 내일 자정(KST) 리셋`
+            : `오늘 AI 조언 질문 ${advUsed}/${advUsage.adviceLimit}회 · 남은 ${advUsage.adviceLimit - advUsed}회`}
+        </div>
+      )}
+      {advUsage.enabled && advUsage.isAdmin && (
+        <div style={{ fontSize: 11, color: "#a8b4f8", marginTop: -10, marginBottom: 16 }}>관리자 · 무제한</div>
+      )}
 
       {chatHistory.length > 0 && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
@@ -6637,6 +6741,21 @@ function Settings() {
   const restoreInputRef = useRef(null);
   const [userEmail, setUserEmail] = useState("");
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const isAdmin = (userEmail || "").toLowerCase() === ADMIN_EMAIL_CLIENT;
+  const [limitEnabled, setLimitEnabled] = useState(null);
+  const [limitBusy, setLimitBusy] = useState(false);
+  useEffect(() => { loadUsageState().then(s => setLimitEnabled(!!s.enabled)); }, []);
+  const toggleLimit = async () => {
+    if (limitBusy) return;
+    const next = !limitEnabled;
+    if (!window.confirm(next
+      ? "일일 사용 한도를 켤까요?\n베타 테스터에게 인사이트·AI 조언 횟수 제한이 적용됩니다."
+      : "일일 사용 한도를 끌까요?\n모든 사용자가 무제한이 됩니다.")) return;
+    setLimitBusy(true);
+    try { await setUsageLimitEnabled(next); setLimitEnabled(next); }
+    catch (e) { alert("변경 실패: " + (e.message || e)); }
+    setLimitBusy(false);
+  };
   useEffect(() => {
     supabaseClient.auth.getUser().then(({ data }) => setUserEmail(data?.user?.email || ""));
   }, []);
@@ -6704,6 +6823,25 @@ function Settings() {
           </button>
         </div>
       </div>
+
+      {/* 일일 사용 한도 (관리자 전용) */}
+      {isAdmin && (
+        <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
+          <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, letterSpacing:2, marginBottom:12 }}>일일 사용 한도 (관리자)</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+            <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.5 }}>
+              베타 테스터 인사이트·AI 조언 횟수 제한<br/>
+              <span style={{ fontSize:11, color:"#64748b" }}>한도값 변경은 Supabase app_config (insight/advice_daily_limit)</span>
+            </div>
+            <button onClick={toggleLimit} disabled={limitBusy || limitEnabled===null} style={{
+              flexShrink:0, padding:"8px 16px", borderRadius:9, border:"none", cursor:(limitBusy||limitEnabled===null)?"not-allowed":"pointer", fontSize:13, fontWeight:700,
+              background: limitEnabled ? "#10b981" : "#334155", color:"#fff", opacity:(limitBusy||limitEnabled===null)?0.6:1,
+            }}>
+              {limitEnabled===null ? "..." : (limitEnabled ? "켜짐 (ON)" : "꺼짐 (OFF)")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 히스토리 주기 설정 */}
       <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:14, padding:20, marginBottom:16 }}>
@@ -6818,6 +6956,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.0 변경사항 (일일 사용 한도 · AI 조언 thinking)</div>
+            <div>· 일일 사용 한도 기능 추가 — 인사이트는 서브탭별, AI 조언은 질문 단위로 하루 사용 횟수를 제한할 수 있습니다(서버에서 강제). 각 화면에 오늘 사용/남은 횟수와 소진 안내를 표시하며, 매일 자정(KST)에 리셋됩니다. 관리자는 무제한이고, 설정 탭의 관리자 전용 스위치로 기능을 켜고 끌 수 있습니다. (기본 꺼짐)</div>
+            <div>· AI 조언 SEARCH 답변 thinking 재활성화 — 검색이 필요한 질문의 답변 깊이를 높였습니다. 사고 과정은 화면에 노출되지 않습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.1 변경사항 (AI 조언 개선 · 기준일 안내)</div>
             <div>· AI 조언 답변 방식 개선 — 직접 입력한 질문은 저장된 인사이트만으로 답할 수 있는지 자동 판단해, 답할 수 있으면 그대로 답하고(빠르고 토큰 절약), 특정 종목의 주가·실적·뉴스나 개별 종목·섹터의 향후 전망처럼 최신·개별 정보가 필요한 질문은 실시간 검색으로 보완해 답합니다. 검색으로도 신뢰할 만한 답이 어려운 질문은 솔직하게 답변이 어렵다고 안내합니다. 빠른 질문(리밸런싱·노출도·추가매수·리스크)은 종전처럼 저장된 인사이트만으로 답합니다.</div>
             <div>· 미래 전망 질문 주의 문구 — 개별 종목·섹터의 향후/중장기 전망을 물으면 답변 맨 앞에 "미래 전망은 불확실하며 실제와 다를 수 있다"는 전제를 함께 표시합니다.</div>
@@ -6841,12 +6982,12 @@ function Settings() {
             <div>· 항공사가 방산으로 분류되던 문제 수정 — 대한항공·제주항공 등 여객 항공사가 '여행·호텔'로 올바르게 분류됩니다.</div>
             <div>· 섹터 분류의 AI 호출 제거 — 규칙 기반 판별로 대체해 분류 속도가 빨라지고 결과가 일관됩니다.</div>
             <div>· 해외 클래스주 검색 개선 — BRK.B·BF/B처럼 국내 증권사 표기로 입력해도 검색됩니다(기존에는 BRK-B 형태만 인식).</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.2.0 변경사항 (배당 지급일 알림 추가)</div>
-            <div>· 배당 지급일 알림 신규 — 헤더 알림 벨(🔔)에서 보유 종목의 다가오는 배당 지급 예정을 확인합니다. 배당 캘린더 데이터의 지급월·지급일자 패턴에서 다음 예상 지급일을 산출해, 지급일자가 확정된 종목은 D-7 이내를 뱃지로 알리고 30일 이내 예정도 함께 표시합니다. 앱 진입·재활성화 시 추가 조회 없이 즉시 계산합니다(네트워크 미사용). 지급일은 과거 이력 기반 예상치이며, 배당 탭에서 한 번 조회한 뒤 동작합니다. ※ notify.js를 public/에 배포해야 적용됨</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.2.0 변경사항 (배당 지급일 알림 추가)</div>
+            <div>· 배당 지급일 알림 신규 — 헤더 알림 벨(🔔)에서 보유 종목의 다가오는 배당 지급 예정을 확인합니다. 배당 캘린더 데이터의 지급월·지급일자 패턴에서 다음 예상 지급일을 산출해, 지급일자가 확정된 종목은 D-7 이내를 뱃지로 알리고 30일 이내 예정도 함께 표시합니다. 앱 진입·재활성화 시 추가 조회 없이 즉시 계산합니다(네트워크 미사용). 지급일은 과거 이력 기반 예상치이며, 배당 탭에서 한 번 조회한 뒤 동작합니다. ※ notify.js를 public/에 배포해야 적용됨</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.1.0 변경사항 (배당 KIS 조회 · 성능 최적화)</div>
             <div>· 배당 캘린더를 한국투자증권 예탁원(배당일정) API로 조회하도록 전환(api/kis-dividend.js 신설) — 국내 개별주·ETF·우선주의 주당 배당금·지급일을 예탁원 원천 데이터로 정확히 조회. 국내=KIS / 해외=Yahoo로 이원화하고 Gemini 검색 폴백을 제거, 동시 병렬 조회로 배당 조회 속도를 대폭 단축. ※ kis-dividend.js를 api/에 배포해야 적용됨</div>
             <div>· 시장 인사이트 분석 속도 최적화 — 웹 검색 모드에서 thinking을 끄도록(thinkingBudget:0) 옵션화해 분석 응답 시간을 기존 대비 절반 이하로 단축</div>
@@ -8648,7 +8789,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.5.1";
+const APP_VERSION = "3.6.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
