@@ -4947,7 +4947,8 @@ function Portfolio() {
 - current_price: 화면에 현재가/현재값이 보이면 숫자로 추출. 없으면 null
 - change_pct: 화면에 등락률(%)이 보이면 숫자로 추출 (예: +2.34 또는 -1.5). 없으면 null
 - TDF/MMF 등 현재가 조회가 어려운 종목도 화면에 표시된 값 그대로 추출
-- ticker, yahoo_ticker: 한국(KRW) 종목은 빈 문자열/null로 둘 것 (앱이 종목명으로 정확히 조회). 미국 등 해외 종목만 알면 yahoo_ticker에 심볼 기입
+- ticker, yahoo_ticker: 한국(KRW) 종목은 빈 문자열/null로 둘 것 (앱이 종목명으로 정확히 조회). 미국 등 해외 종목은 티커(심볼)를 yahoo_ticker에 반드시 기입.
+- 해외 종목이 '티커(대문자 알파벳 심볼) + 영문 회사명' 형태로 표시되면(예: 큰 글씨 MU / 작은 글씨 MICRON TECHNOLOGY INC, 또는 큰 글씨 SPCX / 작은 글씨 SPACE EXPLORATION...), 그 티커를 yahoo_ticker에 반드시 넣고 회사명을 name에 넣을 것. 회사명(영문)이 잘려도 티커가 명확하면 등록 가능하므로 partial_fail로 보내지 말 것.
 - account: 아래 규칙을 반드시 따를 것
   * 계좌명이 있으면 → 계좌명만 사용 (계좌번호, 계좌주 이름 모두 제외)
   * 계좌명이 없으면 → 계좌번호만 사용 (잘려도 OK, 계좌주 이름 제외)
@@ -4959,7 +4960,7 @@ function Portfolio() {
 
 [partial_fail 규칙 - 절대 원칙]
 아래 경우는 holdings에 절대 포함하지 말고 반드시 partial_fail에만 넣을 것:
-1. 종목명에 "..." 또는 "…"이 포함된 경우 (예: "KODEX 코리아밸...", "TIGER 미국우주테크...") → 이름이 완전하지 않으므로 무조건 partial_fail. 설령 수량과 금액이 읽혀도 절대 holdings에 넣지 말 것.
+1. 종목명에 "..." 또는 "…"이 포함된 경우 (예: "KODEX 코리아밸...", "TIGER 미국우주테크...") → 이름이 완전하지 않으므로 무조건 partial_fail. 설령 수량과 금액이 읽혀도 절대 holdings에 넣지 말 것. 단, 해외 종목이고 티커(대문자 알파벳 심볼)가 명확히 보이는 경우는 예외 — partial_fail로 보내지 말고 yahoo_ticker에 티커를 넣어 holdings에 포함할 것(회사명이 잘려도 티커로 정확히 조회 가능).
 2. 화면 하단에서 행 전체가 잘려서 수량/금액 중 하나라도 없는 경우
 3. 숫자가 흐리거나 가려져 정확히 읽을 수 없는 경우
 4. 보유수량이 0이거나 평가금액이 0인 경우 (전량 매도된 종목) → holdings에 넣지 말고 partial_fail로
@@ -4973,10 +4974,16 @@ function Portfolio() {
         parsed = safeParseJSON(text);
 
         // ── JS 레벨 강제 처리: "..." 포함된 종목명 → partial_fail (AI 프롬프트 의존 X)
+        // 단, 해외 티커(대문자 심볼, 한국 6자리 코드 아님)가 명확하면 티커로 조회 가능하므로 유지.
         if (parsed?.holdings) {
-          const truncated = parsed.holdings.filter(h => h.name && (h.name.includes("...") || h.name.includes("…")));
+          const hasForeignTicker = (h) => {
+            const tk = String(h.yahoo_ticker || h.ticker || "").trim().toUpperCase();
+            return !!tk && !isKrCode(tk) && /^[A-Z][A-Z0-9.\-]{0,9}$/.test(tk);
+          };
+          const isTrunc = (h) => h.name && (h.name.includes("...") || h.name.includes("…"));
+          const truncated = parsed.holdings.filter(h => isTrunc(h) && !hasForeignTicker(h));
           if (truncated.length > 0) {
-            parsed.holdings = parsed.holdings.filter(h => !h.name?.includes("...") && !h.name?.includes("…"));
+            parsed.holdings = parsed.holdings.filter(h => !isTrunc(h) || hasForeignTicker(h));
             parsed.partial_fail = [...(parsed.partial_fail || []), ...truncated.map(h => h.name)];
           }
         }
@@ -6932,6 +6939,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.3 변경사항 (해외 종목 티커 인식)</div>
+            <div>· 스크린샷 등록 시 해외 종목을 티커로 인식하도록 개선 — 종목이 '티커(예: MU, SPCX) + 영문 회사명'으로 표시되는 해외 계좌 화면에서, 회사명이 길어 잘리거나(…) 영문명으로는 조회가 안 되던 종목도 이제 티커를 기준으로 정확히 등록됩니다. 티커가 명확하면 미국 종목 마스터에서 정식 종목명·섹터까지 자동으로 채워집니다. (종전에는 회사명이 잘리면 '부분 인식 실패'로 빠져 아예 등록되지 않았습니다.)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.2 변경사항 (종목 수정 모달 정리)</div>
             <div>· 종목 수정 모달의 '추가매수'·'일부매도' 탭을 제거하고 '수정'만 남겼습니다. 두 기능은 예수금(현금)과 연동되지 않아 사실상 보유 수량·평단가를 바꾸는 것과 동일했기에, 혼동을 줄이기 위해 정리했습니다. 이제 연필(수정)에서 보유 수량·평균단가·종목명·섹터·현재가를 모두 직접 편집하면 됩니다. 매수·매도에 따른 현금 증감은 '💰 현금 잔고 조정'에서 관리합니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.1 변경사항 (지역별 구성 정확도 · 삭제 확인)</div>
@@ -6944,14 +6953,14 @@ function Settings() {
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.0 변경사항 (일일 사용 한도 · AI 조언 thinking)</div>
             <div>· 일일 사용 한도 기능 추가 — 인사이트는 서브탭별, AI 조언은 질문 단위로 하루 사용 횟수를 제한할 수 있습니다(서버에서 강제). 각 화면에 오늘 사용/남은 횟수와 소진 안내를 표시하며, 매일 자정(KST)에 리셋됩니다. 관리자는 무제한이고, 설정 탭의 관리자 전용 스위치로 기능을 켜고 끌 수 있습니다. (기본 꺼짐)</div>
             <div>· AI 조언 SEARCH 답변 thinking 재활성화 — 검색이 필요한 질문의 답변 깊이를 높였습니다. 사고 과정은 화면에 노출되지 않습니다.</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.1 변경사항 (AI 조언 개선 · 기준일 안내)</div>
-            <div>· AI 조언 답변 방식 개선 — 직접 입력한 질문은 저장된 인사이트만으로 답할 수 있는지 자동 판단해, 답할 수 있으면 그대로 답하고(빠르고 토큰 절약), 특정 종목의 주가·실적·뉴스나 개별 종목·섹터의 향후 전망처럼 최신·개별 정보가 필요한 질문은 실시간 검색으로 보완해 답합니다. 검색으로도 신뢰할 만한 답이 어려운 질문은 솔직하게 답변이 어렵다고 안내합니다. 빠른 질문(리밸런싱·노출도·추가매수·리스크)은 종전처럼 저장된 인사이트만으로 답합니다.</div>
-            <div>· 미래 전망 질문 주의 문구 — 개별 종목·섹터의 향후/중장기 전망을 물으면 답변 맨 앞에 "미래 전망은 불확실하며 실제와 다를 수 있다"는 전제를 함께 표시합니다.</div>
-            <div>· 조언 기준일 안내 정확화 — AI 조언이 실제 근거로 쓰는 인사이트(종합·한국·미국)의 가장 오래된 분석 시점을 '빠른 질문' 아래에 항상 표시합니다. 더 최신 판단이 필요하면 인사이트 탭에서 해당 서브탭의 '분석 시작'을 눌러 갱신하세요. (종전에는 실제 근거로 쓰지 않는 다른 탭의 최신 시각까지 반영돼 기준일이 실제와 어긋날 수 있었습니다.)</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.1 변경사항 (AI 조언 개선 · 기준일 안내)</div>
+            <div>· AI 조언 답변 방식 개선 — 직접 입력한 질문은 저장된 인사이트만으로 답할 수 있는지 자동 판단해, 답할 수 있으면 그대로 답하고(빠르고 토큰 절약), 특정 종목의 주가·실적·뉴스나 개별 종목·섹터의 향후 전망처럼 최신·개별 정보가 필요한 질문은 실시간 검색으로 보완해 답합니다. 검색으로도 신뢰할 만한 답이 어려운 질문은 솔직하게 답변이 어렵다고 안내합니다. 빠른 질문(리밸런싱·노출도·추가매수·리스크)은 종전처럼 저장된 인사이트만으로 답합니다.</div>
+            <div>· 미래 전망 질문 주의 문구 — 개별 종목·섹터의 향후/중장기 전망을 물으면 답변 맨 앞에 "미래 전망은 불확실하며 실제와 다를 수 있다"는 전제를 함께 표시합니다.</div>
+            <div>· 조언 기준일 안내 정확화 — AI 조언이 실제 근거로 쓰는 인사이트(종합·한국·미국)의 가장 오래된 분석 시점을 '빠른 질문' 아래에 항상 표시합니다. 더 최신 판단이 필요하면 인사이트 탭에서 해당 서브탭의 '분석 시작'을 눌러 갱신하세요. (종전에는 실제 근거로 쓰지 않는 다른 탭의 최신 시각까지 반영돼 기준일이 실제와 어긋날 수 있었습니다.)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.0 변경사항 (공포·탐욕 지수 추가)</div>
             <div>· 미국 공포·탐욕 지수 신규 — CNN Fear & Greed Index를 인사이트 탭 상단에 반원 게이지로 표시(0~100, Extreme Fear~Extreme Greed). 전일·1주 전·1달 전 비교도 함께. 분석 시작을 누르지 않아도 바로 보입니다.</div>
             <div>· 한국 변동성 지수 신규 — KRX 코스피200 변동성지수(VKOSPI)를 게이지로 표시. VKOSPI는 값이 높을수록 시장 불안이 큰 절대 지표라, 미국식 등급 대신 실제 수치와 참조점(평시 15~20 · 역대 최고 95)을 그대로 보여줍니다.</div>
@@ -8774,7 +8783,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.7.2";
+const APP_VERSION = "3.7.3";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
