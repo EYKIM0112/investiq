@@ -13,8 +13,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_g1nrFhcQzjLO8pirzWiy2g_aT8Ys-Fd";
 const ADMIN_EMAILS = ["ilikeom@naver.com"];
 
 // purpose → 제한 대상 feature 매핑. 여기서 null이면 무제한(가격조회·분류후속·재시도 등).
+// 재시도(:retry)·자유입력 답변후속(advice_ans)은 카운트 제외 — 논리적 1행동은 첫 통과 때 이미 1회 카운트됨.
 function limitedFeature(purpose) {
   if (!purpose || typeof purpose !== "string") return null;
+  if (purpose.includes(":retry") || purpose === "advice_ans" || purpose === "advice_retry") return null;
   if (purpose === "advice") return "advice";               // AI 조언 1질문
   if (purpose.startsWith("insight:")) return purpose;      // 인사이트 탭별 (insight:kr 등)
   return null;
