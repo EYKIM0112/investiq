@@ -1,12 +1,24 @@
 // Vercel 서버리스 함수 - Gemini API 프록시
 // API 키는 Vercel 환경변수(GEMINI_API_KEY)에만 저장, 클라이언트에 절대 노출 안 됨
 // 호출 권한: Supabase 로그인 세션 토큰(JWT)을 검증해 인증된 사용자만 허용
+// v3.5.1+: 일일 사용 한도 서버 강제(인사이트 탭별·AI 조언). 관리자 무제한. 토글은 Supabase app_config.
 
 export const config = { maxDuration: 60 };
 
 // Supabase (URL·publishable key는 공개값이라 하드코딩 가능. 원하면 env var로 빼도 됨)
 const SUPABASE_URL = "https://vqmuwmjdzskycxaqostt.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_g1nrFhcQzjLO8pirzWiy2g_aT8Ys-Fd";
+
+// 무제한(관리자) 이메일 — 소문자로 비교. 추가하려면 배열에 이메일만 넣으면 됨.
+const ADMIN_EMAILS = ["ilikeom@naver.com"];
+
+// purpose → 제한 대상 feature 매핑. 여기서 null이면 무제한(가격조회·분류후속·재시도 등).
+function limitedFeature(purpose) {
+  if (!purpose || typeof purpose !== "string") return null;
+  if (purpose === "advice") return "advice";               // AI 조언 1질문
+  if (purpose.startsWith("insight:")) return purpose;      // 인사이트 탭별 (insight:kr 등)
+  return null;
+}
 
 // 요청의 Bearer 토큰을 Supabase로 검증 → 유효하면 사용자 객체, 아니면 null
 async function verifyUser(req) {
@@ -26,6 +38,33 @@ async function verifyUser(req) {
   }
 }
 
+// 일일 한도 확인+증가 (Supabase RPC, 원자적). 반환: { blocked, used, limit } 또는 null(통과)
+// 토글 OFF·무제한 feature·오류(fail-open) 시엔 통과(null 반환).
+async function checkUsageLimit(req, feature) {
+  try {
+    const auth = req.headers.authorization || req.headers.Authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_and_increment_usage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ p_feature: feature }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return null; // RPC 실패 → fail-open(서비스 중단 방지)
+    const gate = await r.json().catch(() => null);
+    if (gate && gate.allowed === false && gate.reason === "limit") {
+      return { blocked: true, used: gate.used, limit: gate.limit };
+    }
+    return null; // 허용/무제한/토글off
+  } catch (e) {
+    return null; // fail-open
+  }
+}
+
 export default async function handler(req, res) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -41,8 +80,25 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다." });
 
-  const { model, body, stream } = req.body;
+  const { model, body, stream, purpose } = req.body;
   if (!model || !body) return res.status(400).json({ error: "model, body 필수" });
+
+  // ── 일일 사용 한도(서버 강제) ──
+  // 관리자는 무제한. 제한 대상 feature만 확인. purpose 없으면 무제한(기존 동작 그대로).
+  const feature = limitedFeature(purpose);
+  const isAdmin = !!(user.email && ADMIN_EMAILS.includes(String(user.email).toLowerCase()));
+  if (feature && !isAdmin) {
+    const gate = await checkUsageLimit(req, feature);
+    if (gate && gate.blocked) {
+      return res.status(429).json({
+        rate_limited: true,
+        feature,
+        used: gate.used,
+        limit: gate.limit,
+        error: `오늘 사용 한도(${gate.limit}회)에 도달했어요. 내일 다시 이용할 수 있어요.`,
+      });
+    }
+  }
 
   const endpoint = stream
     ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
