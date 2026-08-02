@@ -535,6 +535,34 @@ const FX_CACHE_KEY2 = "investiq_fx_v2";       // {USD:{rate,ts}, JPY:{rate,ts}}
 const FX_FALLBACK_MAP = { USD: 1380, JPY: 9.0 }; // 조회 실패 시 폴백(JPY/KRW ≈ 9원)
 const FX_PAIRS = { USD: "USDKRW=X", JPY: "JPYKRW=X" };
 
+// 환율·현재가·분류를 지원하는 통화. 이 목록에 없는 통화 종목은 자동등록하지 않고 수동입력으로 보낸다.
+const SUPPORTED_CCY = ["KRW", "USD", "JPY"];
+// 티커 서픽스로 거래 통화(거래소 국가)를 판별해 지원 여부 결정.
+//   서픽스 있음: .KS/.KQ=한국, .T=일본만 지원. 그 외 해외 거래소(.HK .SS .NS .CO .AX .L 등)는 전부 미지원.
+//   서픽스 없음: OCR이 준 currency(KRW/USD/JPY) 기준.
+// ★홍콩/중국 등 추가 지원 시: 아래 지원 서픽스 목록에 "HK"(또는 "SS","SZ") 추가 + SUPPORTED_CCY에 "HKD"("CNY") 추가 + FX_PAIRS에 환율쌍 추가.
+function isSupportedHolding(h) {
+  if (!h) return true;
+  const t = String(h.yahoo_ticker || h.ticker || "").toUpperCase().trim();
+  const m = t.match(/\.([A-Z]{1,3})$/);
+  if (m) {
+    const sfx = m[1];
+    if (["KS", "KQ"].includes(sfx)) return true; // 한국
+    if (sfx === "T") return true;                // 일본
+    return false;                                // 그 외 모든 해외 거래소 = 현재 미지원
+  }
+  return SUPPORTED_CCY.includes(h.currency || "KRW"); // 서픽스 없으면 OCR 통화 기준
+}
+// 티커 서픽스로 실제 거래 통화를 추정(수동입력에 정확한 통화·경고 전달용). 서픽스 없으면 null.
+function ccyFromTicker(ticker) {
+  const t = String(ticker || "").toUpperCase().trim();
+  const m = t.match(/\.([A-Z]{1,3})$/);
+  if (!m) return null;
+  return ({ KS:"KRW", KQ:"KRW", T:"JPY", HK:"HKD", SS:"CNY", SZ:"CNY", NS:"INR", BO:"INR",
+    CO:"DKK", AX:"AUD", L:"GBP", PA:"EUR", DE:"EUR", AS:"EUR", MI:"EUR", MC:"EUR", BR:"EUR",
+    SW:"CHF", TO:"CAD", HE:"EUR", ST:"SEK", OL:"NOK", VI:"EUR", LS:"EUR" }[m[1]] || "OTHER");
+}
+
 // 통화 → KRW 환율. KRW는 1.
 function getFxRate(ccy) {
   if (!ccy || ccy === "KRW") return 1;
@@ -4197,7 +4225,7 @@ function ManualEntryModal({ account, item, progress, existingAccounts = [], onSu
         <div style={{ marginBottom:4 }}>
           <div style={{ fontSize:12, color:"#64748b", marginBottom:6, fontWeight:600 }}>투자 지역 · 섹터 <span style={{ fontWeight:400, color:"#475569" }}>(어떻게 분류할지 · 검색 국가와 별개)</span></div>
           {typeof SeSectorPicker === "function"
-            ? <SeSectorPicker holding={{ name: selected?.name, ticker: selected?.ticker, currency }} value={sectorManual} onChange={v=>setSectorManual(v||"")} />
+            ? <SeSectorPicker holding={{ name: selected?.name, ticker: selected?.ticker }} value={sectorManual} onChange={v=>setSectorManual(v||"")} />
             : <div style={{ fontSize:11, color:"#f59e0b" }}>섹터 지정 모듈 미로드 — 등록 후 자동 분류됩니다.</div>}
         </div>
 
@@ -5159,12 +5187,12 @@ function Portfolio() {
         }
 
         // 수량/단가 없는 종목 처리. 현금성자산(avg_price=1이 정상)은 제외하고 판단.
-        // 종목명/티커가 있으면(무엇인지는 아는데 평단/수량만 없음) 버리지 않고 수동입력 대기열(manualNeeded)로.
+        // 종목명/티커가 있으면(무엇인지는 아는데 평단/수량만 없음), 또는 미지원 통화(원·달러·엔 외)면 버리지 않고 수동입력 대기열(manualNeeded)로.
         if (parsed?.holdings) {
           const isCash = (nm) => ["현금","mmf","머니마켓","cma","현금성"].some(k => (nm||"").toLowerCase().includes(k));
-          const missingData = parsed.holdings.filter(h => !isCash(h.name) && (!h.shares || h.shares <= 0 || !h.avg_price || h.avg_price <= 0));
+          const missingData = parsed.holdings.filter(h => !isCash(h.name) && (!h.shares || h.shares <= 0 || !h.avg_price || h.avg_price <= 0 || !isSupportedHolding(h)));
           if (missingData.length > 0) {
-            parsed.holdings = parsed.holdings.filter(h => isCash(h.name) || (h.shares > 0 && h.avg_price > 0));
+            parsed.holdings = parsed.holdings.filter(h => isCash(h.name) || (h.shares > 0 && h.avg_price > 0 && isSupportedHolding(h)));
             const named = (h) => !!(h.name || h.yahoo_ticker || h.ticker);
             const recoverable = missingData.filter(named);
             const unknown = missingData.filter(h => !named(h));
@@ -5494,7 +5522,7 @@ function Portfolio() {
             name: name || tkRaw,
             ticker: tkRaw,
             yahoo_ticker: tkRaw || null,
-            currency: h.currency || (isKr ? "KRW" : "USD"),
+            currency: ccyFromTicker(tkRaw) || h.currency || (isKr ? "KRW" : "USD"), // 서픽스로 실제 통화 우선(HKD·INR 등 → 미지원 경고 표시)
             current_price: (h.current_price && h.current_price > 0) ? h.current_price : null,
           });
         }
@@ -7171,6 +7199,10 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.0 변경사항 (지원·미지원 통화 구분)</div>
+            <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
+            <div>· 수동 입력에서 통화(원·달러·엔)를 바꿀 때마다 자동 분류 섹터의 국가가 따라 바뀌던 문제를 고쳤습니다. 평단가 입력 통화와 투자 지역·섹터는 이제 서로 무관하게 동작합니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.1 변경사항 (수동 입력 전용 화면)</div>
             <div>· 자동 인식에 실패한 종목의 평단가·수량 입력을 전용 화면으로 새로 만들었습니다. 등록 시 지정한 계좌명과 종목이 미리 채워지고, 종목이 잘못됐으면 다시 검색해 바꿀 수 있습니다.</div>
             <div>· '어느 나라에서 종목을 찾을지(검색)'와 '어떻게 분류할지(투자 지역·섹터)'를 명확히 분리했습니다. 예: 호주 상장 나스닥 ETF는 검색은 전체로, 분류는 투자지역 '미국' + 섹터 '지수' = 미국지수로 지정할 수 있습니다.</div>
@@ -7183,16 +7215,14 @@ function Settings() {
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.8 변경사항 (섹터 국가 분류 정확화)</div>
             <div>· 미국·호주 등 해외 상장 ETF가 '한국' 섹터로 잘못 분류되던 문제 수정 — 종목명의 영문 지수 키워드(NASDAQ 등)를 인식하고, 국가를 특정하기 어려운 해외 종목은 '글로벌'로 분류합니다(국내 종목은 그대로 국내 유지). 예: 호주 상장 나스닥100 ETF → '미국지수'.</div>
             <div>· 섹터를 직접 지정할 때 통화에 따라 국가가 바뀌던 문제 수정 — 사용자가 고른 국가를 그대로 존중합니다. 섹터 국가 선택에 '한국' 추가('없음' 대체, 한국은 접두 없이 표시). ※ sector-edit.js 함께 배포 필요</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.7 변경사항 (수동 입력 통화 선택)</div>
-            <div>· 평단가·수량 직접 입력 창에서 통화를 선택할 수 있게 했습니다(원·달러·엔). 미국·일본 종목은 원래 통화로 평단가를 넣을 수 있고, 원화로 환산해 넣을 수도 있습니다. (종전에는 원화로만 입력돼 달러·엔화 종목의 평단이 왜곡됐습니다.)</div>
-            <div>· 환율 자동 환산은 원·달러·엔만 지원합니다. 그 외 통화(예: 호주달러) 종목은 '환율 미지원'으로 안내하고, 원·달러·엔 중 하나로 환산한 값을 입력하도록 합니다. 이 경우 화면의 현재가(외화)는 통화가 달라 저장하지 않습니다.</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.6 변경사항 (AI 조언·인사이트 환각 방지 강화)</div>
-            <div>· AI 조언·인사이트가 실제와 다른 주가·종가를 지어내던 문제를 줄였습니다. 주가·종가·시가총액 등 구체적 수치는 신뢰 출처(한국경제·매일경제·Reuters·CNBC 등)에서 검색으로 확인한 값이나 앱에 이미 있는 데이터만 쓰도록 규칙을 강화했고, 확인되지 않은 가격은 지어내지 말고 '확인 필요'로 안내하도록 했습니다.</div>
-            <div>· 특정 종목의 가격·시세를 묻는 질문은 반드시 실시간 검색으로 답하도록 라우팅을 보완했습니다. 검색을 하지 않는 답변에서는 실시간 시세를 특정 숫자로 답하지 않고 포트폴리오 화면에서 확인하도록 안내합니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.7 변경사항 (수동 입력 통화 선택)</div>
+            <div>· 평단가·수량 직접 입력 창에서 통화를 선택할 수 있게 했습니다(원·달러·엔). 미국·일본 종목은 원래 통화로 평단가를 넣을 수 있고, 원화로 환산해 넣을 수도 있습니다.</div>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.6 변경사항 (AI 조언·인사이트 환각 방지 강화)</div>
+            <div>· AI 조언·인사이트가 실제와 다른 주가·종가를 지어내던 문제를 줄였습니다. 주가·종가 등 구체적 수치는 신뢰 출처에서 검색으로 확인한 값이나 앱에 이미 있는 데이터만 쓰도록 했고, 확인 안 된 가격은 지어내지 말고 '확인 필요'로 안내합니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.5 변경사항 (수동 입력 안내 오류 수정)</div>
             <div>· 스크린샷의 모든 종목이 평단가·수량 미인식으로 수동 입력 대상이 될 때, 잘못 뜨던 '분석 실패' 경고를 제거했습니다. 이제 그 경우 직접 입력 창만 바로 뜹니다.</div>
             <div>· 수동 입력 창 위에 'AI가 계좌 이미지 분석 중' 메시지가 겹쳐 보이던 문제를 고쳤습니다.</div>
@@ -9038,7 +9068,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.8.1";
+const APP_VERSION = "3.9.0";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
