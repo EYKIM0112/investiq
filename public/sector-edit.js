@@ -13,23 +13,25 @@
 // 목적: Yahoo 프로필 공백(코스닥 중소형주에 흔함) 등으로 "기타"가 된 종목을 사용자가 직접 교정.
 
 // 국가 접두 목록 — index.html COUNTRY_PREFIXES와 동일해야 함(로드 순서 무관하게 자체 보유)
-function seCountries() { return ["", "미국", "글로벌", "중국", "일본", "인도"]; }
+// '한국'은 국가 접두를 붙이지 않는 국가(=국내 기본). "없음" 역할을 겸한다.
+function seCountries() { return ["한국", "미국", "일본", "중국", "인도", "글로벌"]; }
 
-// 라벨에서 국가 접두 분리 → { country, base }
+// 라벨에서 국가 접두 분리 → { country, base }. 접두가 없으면 한국(접두 안 붙는 국가)으로 본다.
 function seSplitLabel(label) {
   const s = String(label || "");
   const cs = seCountries();
-  for (let i = 1; i < cs.length; i++) {
-    if (s.startsWith(cs[i])) return { country: cs[i], base: s.slice(cs[i].length) };
+  for (let i = 0; i < cs.length; i++) {
+    if (cs[i] && cs[i] !== "한국" && s.startsWith(cs[i])) return { country: cs[i], base: s.slice(cs[i].length) };
   }
-  return { country: "", base: s };
+  return { country: s ? "한국" : "", base: s };
 }
 
-// base + country → 최종 라벨. 자체완결 섹터는 접두 없음.
+// base + country → 최종 라벨. 자체완결 섹터·한국은 접두 없음.
 function seJoinLabel(base, country) {
   if (!base) return "";
   var selfContained = ["미국빅테크", "가상화폐", "원자재", "채권", "파킹형"];
   if (selfContained.indexOf(base) !== -1) return base;
+  if (country === "한국") return base; // 한국은 국가 접두를 붙이지 않음(국내 기본)
   return (country || "") + base;
 }
 
