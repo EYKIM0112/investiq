@@ -5080,7 +5080,7 @@ function Portfolio() {
             const named = (h) => !!(h.name || h.yahoo_ticker || h.ticker);
             const recoverable = missingData.filter(named);
             const unknown = missingData.filter(h => !named(h));
-            if (batchCtx && recoverable.length) batchCtx.manualNeeded.push(...recoverable);
+            if (batchCtx && recoverable.length) { batchCtx.manualNeeded.push(...recoverable); parsed._manualQueued = true; }
             else if (recoverable.length) parsed.partial_fail = [...(parsed.partial_fail || []), ...recoverable.map(h => `${h.name || h.yahoo_ticker || h.ticker} (수량/단가 없음)`)];
             if (unknown.length) parsed.partial_fail = [...(parsed.partial_fail || []), ...unknown.map(h => `${h.name || "?"} (수량/단가 없음)`)];
           }
@@ -5096,7 +5096,7 @@ function Portfolio() {
           parsed.partial_fail = [...(parsed.partial_fail || []), ...Array(missingCount).fill("(미확인 종목 - 스크롤 후 재업로드 권장)")];
         }
 
-        if (!parsed?.holdings?.length && !(parsed.partial_fail?.length)) throw new Error("종목을 인식할 수 없습니다.\n계좌 잔고 화면의 스크린샷을 올려주세요.");
+        if (!parsed?.holdings?.length && !(parsed.partial_fail?.length) && !parsed._manualQueued) throw new Error("종목을 인식할 수 없습니다.\n계좌 잔고 화면의 스크린샷을 올려주세요.");
 
         if ((parsed.partial_fail?.length || 0) > 0) {
           const realFails = parsed.partial_fail.filter(f => !f.startsWith("(미확인"));
@@ -5118,7 +5118,7 @@ function Portfolio() {
           }
         }
         if (!parsed?.holdings?.length) {
-          if (batchCtx) { setUploading(false); return; } // 이 이미지엔 등록할 종목 없음 → 조용히 건너뜀
+          if (batchCtx) { setUploading(false); setUploadMsg(""); return; } // 이 이미지엔 등록할 종목 없음 → 조용히 건너뜀
           throw new Error("등록할 수 있는 종목이 없습니다.\n수량과 평균단가가 보이는 화면을 올려주세요.");
         }
 
@@ -5386,6 +5386,8 @@ function Portfolio() {
         alert("이름 자동 교정:\n" + ctx.corrections.map(c => `${c.from} → ${c.to}  [${c.via === "search" ? "검색 결과" : "1글자 보정"}]`).join("\n"));
       }
       // 평단/수량을 못 읽은 종목 → 티커로 종목명 보강 후 수동입력 대기열 모달로 (버리지 않음)
+      // 배치 처리 완료 → 로딩 표시 정리 (수동입력 모달과 "분석 중" 메시지가 겹치지 않게)
+      setUploading(false); setUploadMsg("");
       if (ctx && ctx.manualNeeded && ctx.manualNeeded.length) {
         try { await loadKisMasterUs(); } catch (e) {}
         const seen = new Set();
@@ -7069,6 +7071,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.5 변경사항 (수동 입력 안내 오류 수정)</div>
+            <div>· 스크린샷의 모든 종목이 평단가·수량 미인식으로 수동 입력 대상이 될 때, 잘못 뜨던 '분석 실패' 경고를 제거했습니다. 이제 그 경우 '평단가·수량 직접 입력' 창만 바로 뜹니다.</div>
+            <div>· 수동 입력 창 위에 'AI가 계좌 이미지 분석 중' 메시지가 겹쳐 보이던 문제를 고쳤습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.4 변경사항 (평단·수량 못 읽은 종목 수동 입력)</div>
             <div>· 스크린샷에서 매입단가·수량을 읽지 못한 종목을 그냥 버리지 않고 직접 입력할 수 있게 개선 — 종목을 티커로 확인한 경우, 등록 후 '평단가·수량 직접 입력' 창이 떠서 못 읽은 종목들을 한 화면에 리스트로 보여줍니다. 종목명은 티커로 자동 조회해 채워지고(예: MU→마이크론), 평균단가·수량만 넣으면 등록됩니다. 필요 없는 종목은 '제외', 전부 나중에 하려면 '모두 건너뛰기'를 누르면 됩니다. (시세·관심종목 화면처럼 매입단가가 안 보이는 스크린샷도 이제 활용할 수 있습니다.)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.3 변경사항 (해외 종목 티커 인식)</div>
@@ -7080,12 +7085,12 @@ function Settings() {
             <div>· 종목 삭제 확인 추가 — 포트폴리오 종목 목록에서 ×(삭제)를 누르면 바로 지워지지 않고, 삭제 여부를 한 번 더 확인하는 팝업이 뜹니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.0 변경사항 (에러 로깅·모니터링)</div>
             <div>· 앱 오류 자동 수집 기능 추가 — 사용 중 예기치 못한 오류가 발생하면 오류 내용·발생 위치·앱 버전·접속 환경이 자동으로 서버에 기록됩니다. 관리자는 설정 탭의 '에러 로그(관리자)'에서 최근 오류 50건을 확인할 수 있어, 베타 기간 중 문제를 빠르게 파악하고 대응할 수 있습니다. 포트폴리오 등 개인 데이터는 수집하지 않으며 오류 정보만 기록합니다. ※ Supabase error_logs 테이블 생성 필요</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.1 변경사항 (신규 계정 빈 포트폴리오)</div>
-            <div>· 신규 계정 포트폴리오 초기화 버그 수정 — 새 계정으로 처음 로그인하면 데모 포트폴리오가 자동으로 채워지던 문제를 고쳤습니다. 이제 새 사용자는 빈 포트폴리오로 시작합니다. 기존에 데모 데이터가 남아있던 브라우저도 접속 시 자동으로 정리됩니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.1 변경사항 (신규 계정 빈 포트폴리오)</div>
+            <div>· 신규 계정 포트폴리오 초기화 버그 수정 — 새 계정으로 처음 로그인하면 데모 포트폴리오가 자동으로 채워지던 문제를 고쳤습니다. 이제 새 사용자는 빈 포트폴리오로 시작합니다. 기존에 데모 데이터가 남아있던 브라우저도 접속 시 자동으로 정리됩니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.0 변경사항 (일일 사용 한도 · AI 조언 thinking)</div>
             <div>· 일일 사용 한도 기능 추가 — 인사이트는 서브탭별, AI 조언은 질문 단위로 하루 사용 횟수를 제한할 수 있습니다(서버에서 강제). 각 화면에 오늘 사용/남은 횟수와 소진 안내를 표시하며, 매일 자정(KST)에 리셋됩니다. 관리자는 무제한이고, 설정 탭의 관리자 전용 스위치로 기능을 켜고 끌 수 있습니다. (기본 꺼짐)</div>
             <div>· AI 조언 SEARCH 답변 thinking 재활성화 — 검색이 필요한 질문의 답변 깊이를 높였습니다. 사고 과정은 화면에 노출되지 않습니다.</div>
@@ -8915,7 +8920,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.7.4";
+const APP_VERSION = "3.7.5";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
