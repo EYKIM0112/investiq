@@ -4067,6 +4067,87 @@ function TradeModal({ mode, holdings, accounts, onClose, onConfirm, currentCash 
   );
 }
 
+// OCR이 평단가·수량을 못 읽은 종목들을 한 화면 리스트로 보여주고 직접 입력받아 등록
+function ManualBatchModal({ account, items, onComplete, onCancel }) {
+  const [rows, setRows] = useState(items.map(it => ({ ...it, avgInput: "", shInput: "", excluded: false })));
+  const upd = (i, patch) => setRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r));
+  const ccySym = (c) => c === "USD" ? "$" : c === "JPY" ? "¥" : "₩";
+  const inputS = { width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"9px 10px", color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" };
+
+  const isReady = (r) => !r.excluded && (parseFloat(String(r.avgInput).replace(/,/g,"")) > 0) && (parseFloat(String(r.shInput).replace(/,/g,"")) > 0);
+  const activeCount = rows.filter(isReady).length;
+
+  const submit = () => {
+    const out = [];
+    for (const r of rows) {
+      if (!isReady(r)) continue;
+      out.push({
+        ticker: r.ticker || "",
+        yahoo_ticker: r.yahoo_ticker || (r.ticker || null),
+        name: r.name,
+        avg_price: parseFloat(String(r.avgInput).replace(/,/g,"")) || 0,
+        shares: parseFloat(String(r.shInput).replace(/,/g,"")) || 0,
+        currency: r.currency || "KRW",
+        sector: "기타",
+        account,
+        current_price: (r.current_price && r.current_price > 0) ? r.current_price : null,
+      });
+    }
+    onComplete(out);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:320, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+      onClick={e => e.target===e.currentTarget && onCancel()}>
+      <div style={{ width:"100%", maxWidth:480, background:"#0f0f18", borderRadius:"20px 20px 0 0", padding:"22px 18px 40px", maxHeight:"88vh", overflowY:"auto", border:"1px solid #1e293b" }}>
+        <div style={{ marginBottom:6, fontSize:16, fontWeight:800, color:"#e2e8f0" }}>평단가·수량 직접 입력</div>
+        <div style={{ fontSize:12.5, color:"#94a3b8", lineHeight:1.6, marginBottom:16 }}>
+          아래 종목은 화면에서 <b style={{color:"#fca5a5"}}>매입단가·수량을 읽지 못했어요.</b> 종목은 티커로 확인됐으니 평단가·수량만 넣으면 등록됩니다.{account ? <> · 계좌 <b style={{color:"#a8b4f8"}}>{account}</b></> : null}
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {rows.map((r, i) => (
+            <div key={i} style={{ background:r.excluded?"#0a0a14":"#16162a", border:`1px solid ${r.excluded?"#1e293b":"#2a2a48"}`, borderRadius:12, padding:"12px 14px", opacity:r.excluded?0.55:1 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:r.excluded?0:10 }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#e2e8f0", wordBreak:"break-word" }}>{r.name}</div>
+                  <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>
+                    {r.ticker || "티커 없음"}{r.current_price ? ` · 현재가 ${ccySym(r.currency)}${Number(r.current_price).toLocaleString()}` : ""}
+                  </div>
+                </div>
+                <button onClick={()=>upd(i,{excluded:!r.excluded})} style={{ flexShrink:0, fontSize:12, fontWeight:700, padding:"5px 10px", borderRadius:8, cursor:"pointer", border:`1px solid ${r.excluded?"#334155":"#ef444455"}`, background:r.excluded?"#16162a":"#ef444418", color:r.excluded?"#94a3b8":"#fca5a5" }}>
+                  {r.excluded ? "되돌리기" : "제외"}
+                </button>
+              </div>
+              {!r.excluded && (
+                <div style={{ display:"flex", gap:8 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:11, color:"#94a3b8", marginBottom:4 }}>평균단가 ({ccySym(r.currency)})</div>
+                    <input value={r.avgInput} onChange={e=>upd(i,{avgInput:e.target.value})} inputMode="decimal" placeholder="0" style={inputS} />
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:11, color:"#94a3b8", marginBottom:4 }}>보유 수량</div>
+                    <input value={r.shInput} onChange={e=>upd(i,{shInput:e.target.value})} inputMode="decimal" placeholder="0" style={inputS} />
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", gap:8, marginTop:18 }}>
+          <button onClick={onCancel} style={{ flex:1, padding:"13px", borderRadius:10, border:"1px solid #334155", background:"none", color:"#94a3b8", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            모두 건너뛰기
+          </button>
+          <button onClick={submit} disabled={activeCount===0} style={{ flex:2, padding:"13px", borderRadius:10, border:"none", cursor:activeCount===0?"not-allowed":"pointer", fontSize:14, fontWeight:800, color:"#fff", opacity:activeCount===0?0.5:1, background:"linear-gradient(135deg,#7c3aed,#4c1d95)" }}>
+            {activeCount>0 ? `${activeCount}개 종목 추가` : "평단가·수량 입력"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ManualInputModal({ onClose, onAdd, existingAccounts = [], defaultAccount = "" }) {
   const [account, setAccount]         = useState(defaultAccount || existingAccounts[0] || "");
   const [newAccountName, setNewAccountName] = useState("");
@@ -4792,6 +4873,7 @@ function Portfolio() {
   const [updating, setUpdating]     = useState(false);
   const [dragOver, setDragOver]     = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [pendingManual, setPendingManual] = useState(null); // OCR이 평단/수량 못 읽은 종목들 { account, items:[...] }
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [autoUpdated, setAutoUpdated] = useState(false);
@@ -4988,14 +5070,19 @@ function Portfolio() {
           }
         }
 
-        // 수량/단가 없는 종목 → 해당 종목만 partial_fail로 분리 (전량 매도 후 0으로 남은 종목 등)
-        // 현금성자산(avg_price=1이 정상)은 제외하고 판단
+        // 수량/단가 없는 종목 처리. 현금성자산(avg_price=1이 정상)은 제외하고 판단.
+        // 종목명/티커가 있으면(무엇인지는 아는데 평단/수량만 없음) 버리지 않고 수동입력 대기열(manualNeeded)로.
         if (parsed?.holdings) {
           const isCash = (nm) => ["현금","mmf","머니마켓","cma","현금성"].some(k => (nm||"").toLowerCase().includes(k));
           const missingData = parsed.holdings.filter(h => !isCash(h.name) && (!h.shares || h.shares <= 0 || !h.avg_price || h.avg_price <= 0));
           if (missingData.length > 0) {
             parsed.holdings = parsed.holdings.filter(h => isCash(h.name) || (h.shares > 0 && h.avg_price > 0));
-            parsed.partial_fail = [...(parsed.partial_fail || []), ...missingData.map(h => `${h.name} (수량/단가 없음)`)];
+            const named = (h) => !!(h.name || h.yahoo_ticker || h.ticker);
+            const recoverable = missingData.filter(named);
+            const unknown = missingData.filter(h => !named(h));
+            if (batchCtx && recoverable.length) batchCtx.manualNeeded.push(...recoverable);
+            else if (recoverable.length) parsed.partial_fail = [...(parsed.partial_fail || []), ...recoverable.map(h => `${h.name || h.yahoo_ticker || h.ticker} (수량/단가 없음)`)];
+            if (unknown.length) parsed.partial_fail = [...(parsed.partial_fail || []), ...unknown.map(h => `${h.name || "?"} (수량/단가 없음)`)];
           }
         }
 
@@ -5283,7 +5370,7 @@ function Portfolio() {
         const ok = window.confirm(`"${trimmedName}" 계좌가 이미 등록되어 있습니다.\n이 계좌의 종목 정보를 새로 올린 내용으로 교체할까요?`);
         if (!ok) return;
       }
-      ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [], errors: [], corrections: [] };
+      ctx = { accountName: trimmedName, preBatchAccounts, batchTouched: new Set(), partialFails: [], manualNeeded: [], errors: [], corrections: [] };
     }
     (async () => {
       // 파일별 현재가 조회는 건너뛰고(skipPriceUpdate), 전부 등록 후 누적 포폴로 한 번만 조회
@@ -5298,6 +5385,31 @@ function Portfolio() {
       if (ctx && ctx.corrections.length) {
         alert("이름 자동 교정:\n" + ctx.corrections.map(c => `${c.from} → ${c.to}  [${c.via === "search" ? "검색 결과" : "1글자 보정"}]`).join("\n"));
       }
+      // 평단/수량을 못 읽은 종목 → 티커로 종목명 보강 후 수동입력 대기열 모달로 (버리지 않음)
+      if (ctx && ctx.manualNeeded && ctx.manualNeeded.length) {
+        try { await loadKisMasterUs(); } catch (e) {}
+        const seen = new Set();
+        const items = [];
+        for (const h of ctx.manualNeeded) {
+          const tkRaw = String(h.yahoo_ticker || h.ticker || "").trim().toUpperCase();
+          const key = tkRaw || (h.name || "");
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          let name = h.name || "";
+          const isKr = tkRaw && isKrCode(tkRaw);
+          if (tkRaw && !isKr) {
+            try { const mUs = lookupMasterUs(tkRaw, name); if (mUs && mUs.name) name = mUs.name; } catch (e) {}
+          }
+          items.push({
+            name: name || tkRaw,
+            ticker: tkRaw,
+            yahoo_ticker: tkRaw || null,
+            currency: h.currency || (isKr ? "KRW" : "USD"),
+            current_price: (h.current_price && h.current_price > 0) ? h.current_price : null,
+          });
+        }
+        if (items.length) setPendingManual({ account: trimmedName, items });
+      }
       // 등록한 계좌의 종목만 현재가 조회 (전체 포폴 재조회 안 함 → 토큰 절약)
       setTimeout(() => updatePrices(loadPortfolio(), false, trimmedName || null), 300);
     })();
@@ -5311,6 +5423,16 @@ function Portfolio() {
     savePortfolio(updated);
     setPortfolio(updated);
     setTimeout(() => updatePrices(updated, true), 400); // 새로 추가한 종목만 현재가 조회
+  };
+
+  // 여러 종목을 한 번에 등록 (수동입력 대기열 확정용)
+  const addManualHoldings = (list) => {
+    if (!list || !list.length) return;
+    const base = loadPortfolio() || { holdings: [], account_type: "혼합", broker: "", uploadedAt: new Date().toISOString() };
+    const updated = { ...base, holdings: [...base.holdings, ...list], updatedAt: new Date().toISOString() };
+    savePortfolio(updated);
+    setPortfolio(updated);
+    setTimeout(() => updatePrices(updated, false, list[0]?.account || null), 400);
   };
 
   // 종목 삭제
@@ -5966,6 +6088,14 @@ function Portfolio() {
           onAdd={h => { addManualHolding(h); setShowManual(false); }}
           existingAccounts={orderedAccounts(portfolio)}
           defaultAccount={viewMode !== "all" ? viewMode : ""}
+        />
+      )}
+      {pendingManual && (
+        <ManualBatchModal
+          account={pendingManual.account}
+          items={pendingManual.items}
+          onComplete={list => { if (list && list.length) addManualHoldings(list); setPendingManual(null); }}
+          onCancel={() => setPendingManual(null)}
         />
       )}
       {acctModal && (
@@ -6939,6 +7069,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.4 변경사항 (평단·수량 못 읽은 종목 수동 입력)</div>
+            <div>· 스크린샷에서 매입단가·수량을 읽지 못한 종목을 그냥 버리지 않고 직접 입력할 수 있게 개선 — 종목을 티커로 확인한 경우, 등록 후 '평단가·수량 직접 입력' 창이 떠서 못 읽은 종목들을 한 화면에 리스트로 보여줍니다. 종목명은 티커로 자동 조회해 채워지고(예: MU→마이크론), 평균단가·수량만 넣으면 등록됩니다. 필요 없는 종목은 '제외', 전부 나중에 하려면 '모두 건너뛰기'를 누르면 됩니다. (시세·관심종목 화면처럼 매입단가가 안 보이는 스크린샷도 이제 활용할 수 있습니다.)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.3 변경사항 (해외 종목 티커 인식)</div>
             <div>· 스크린샷 등록 시 해외 종목을 티커로 인식하도록 개선 — 종목이 '티커(예: MU, SPCX) + 영문 회사명'으로 표시되는 해외 계좌 화면에서, 회사명이 길어 잘리거나(…) 영문명으로는 조회가 안 되던 종목도 이제 티커를 기준으로 정확히 등록됩니다. 티커가 명확하면 미국 종목 마스터에서 정식 종목명·섹터까지 자동으로 채워집니다. (종전에는 회사명이 잘리면 '부분 인식 실패'로 빠져 아예 등록되지 않았습니다.)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.2 변경사항 (종목 수정 모달 정리)</div>
@@ -6950,13 +7082,13 @@ function Settings() {
             <div>· 앱 오류 자동 수집 기능 추가 — 사용 중 예기치 못한 오류가 발생하면 오류 내용·발생 위치·앱 버전·접속 환경이 자동으로 서버에 기록됩니다. 관리자는 설정 탭의 '에러 로그(관리자)'에서 최근 오류 50건을 확인할 수 있어, 베타 기간 중 문제를 빠르게 파악하고 대응할 수 있습니다. 포트폴리오 등 개인 데이터는 수집하지 않으며 오류 정보만 기록합니다. ※ Supabase error_logs 테이블 생성 필요</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.1 변경사항 (신규 계정 빈 포트폴리오)</div>
             <div>· 신규 계정 포트폴리오 초기화 버그 수정 — 새 계정으로 처음 로그인하면 데모 포트폴리오가 자동으로 채워지던 문제를 고쳤습니다. 이제 새 사용자는 빈 포트폴리오로 시작합니다. 기존에 데모 데이터가 남아있던 브라우저도 접속 시 자동으로 정리됩니다.</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.0 변경사항 (일일 사용 한도 · AI 조언 thinking)</div>
-            <div>· 일일 사용 한도 기능 추가 — 인사이트는 서브탭별, AI 조언은 질문 단위로 하루 사용 횟수를 제한할 수 있습니다(서버에서 강제). 각 화면에 오늘 사용/남은 횟수와 소진 안내를 표시하며, 매일 자정(KST)에 리셋됩니다. 관리자는 무제한이고, 설정 탭의 관리자 전용 스위치로 기능을 켜고 끌 수 있습니다. (기본 꺼짐)</div>
-            <div>· AI 조언 SEARCH 답변 thinking 재활성화 — 검색이 필요한 질문의 답변 깊이를 높였습니다. 사고 과정은 화면에 노출되지 않습니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.6.0 변경사항 (일일 사용 한도 · AI 조언 thinking)</div>
+            <div>· 일일 사용 한도 기능 추가 — 인사이트는 서브탭별, AI 조언은 질문 단위로 하루 사용 횟수를 제한할 수 있습니다(서버에서 강제). 각 화면에 오늘 사용/남은 횟수와 소진 안내를 표시하며, 매일 자정(KST)에 리셋됩니다. 관리자는 무제한이고, 설정 탭의 관리자 전용 스위치로 기능을 켜고 끌 수 있습니다. (기본 꺼짐)</div>
+            <div>· AI 조언 SEARCH 답변 thinking 재활성화 — 검색이 필요한 질문의 답변 깊이를 높였습니다. 사고 과정은 화면에 노출되지 않습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.1 변경사항 (AI 조언 개선 · 기준일 안내)</div>
             <div>· AI 조언 답변 방식 개선 — 직접 입력한 질문은 저장된 인사이트만으로 답할 수 있는지 자동 판단해, 답할 수 있으면 그대로 답하고(빠르고 토큰 절약), 특정 종목의 주가·실적·뉴스나 개별 종목·섹터의 향후 전망처럼 최신·개별 정보가 필요한 질문은 실시간 검색으로 보완해 답합니다. 검색으로도 신뢰할 만한 답이 어려운 질문은 솔직하게 답변이 어렵다고 안내합니다. 빠른 질문(리밸런싱·노출도·추가매수·리스크)은 종전처럼 저장된 인사이트만으로 답합니다.</div>
             <div>· 미래 전망 질문 주의 문구 — 개별 종목·섹터의 향후/중장기 전망을 물으면 답변 맨 앞에 "미래 전망은 불확실하며 실제와 다를 수 있다"는 전제를 함께 표시합니다.</div>
@@ -8783,7 +8915,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.7.3";
+const APP_VERSION = "3.7.4";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
