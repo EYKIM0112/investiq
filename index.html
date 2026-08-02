@@ -551,7 +551,12 @@ function isSupportedHolding(h) {
     if (sfx === "T") return true;                // 일본
     return false;                                // 그 외 모든 해외 거래소 = 현재 미지원
   }
-  return SUPPORTED_CCY.includes(h.currency || "KRW"); // 서픽스 없으면 OCR 통화 기준
+  // 서픽스 없음: 야후 통화 캐시가 있으면 그걸로(서픽스 없는 홍콩·중국 종목 등 판별), 없으면 OCR 통화 기준
+  try {
+    const scc = STOCK_LLM_CACHE[h.ticker] || STOCK_LLM_CACHE[h.name];
+    if (scc && scc.ccy) return SUPPORTED_CCY.includes(scc.ccy);
+  } catch (e) {}
+  return SUPPORTED_CCY.includes(h.currency || "KRW");
 }
 // 티커 서픽스로 실제 거래 통화를 추정(수동입력에 정확한 통화·경고 전달용). 서픽스 없으면 null.
 function ccyFromTicker(ticker) {
@@ -1748,21 +1753,33 @@ const PIE_COLORS = ["#0ea5e9","#7c3aed","#f59e0b","#10b981","#ef4444","#ec4899",
 // KRW·미지정이면 이름 키워드로 세분화(KRW로 거래되는 해외 ETF 포함). 구 호출(문자열) 호환.
 function guessRegion(h) {
   const holding = (typeof h === "string") ? { name: h } : (h || {});
-  const cur = holding.currency;
-  // 1순위: 통화 — 미국 개별주(USD)·일본(JPY) 등 정확 판정
-  if (cur === "USD") return "미국";
-  if (cur === "JPY") return "일본";
-  // 2순위: 이름 키워드 (KRW/미지정 종목 세분화)
+  // ★지역은 섹터 분류 결과의 국가 접두에서 가져온다. 통화로 판정하지 않는다.
+  //  (한국 상장 미국 ETF는 원화, 미국 상장 중국 ETF는 달러 — 상장 통화와 투자 대상은 완전히 별개)
+  //  classifyOne: ETF는 이름(detectCountry), 개별주는 거래소, 사용자 지정(sector_manual)까지 반영.
+  try {
+    if (typeof classifyOne === "function") {
+      const label = classifyOne(holding.sector, holding.name, holding.ticker, holding.currency, holding.sector_manual);
+      if (label && label !== "기타") {
+        for (const p of COUNTRY_PREFIXES) if (label.startsWith(p)) return p; // 미국/글로벌/중국/일본/인도
+        if (typeof SELF_CONTAINED_SECTORS !== "undefined" && SELF_CONTAINED_SECTORS.has(label)) {
+          // 원자재·채권 등 국가 무관 섹터 → 이름 폴백으로
+        } else {
+          return "한국"; // 국가 접두 없음 = 국내
+        }
+      }
+    }
+  } catch (e) {}
+  // 폴백(분류 불가): 이름 키워드만 사용 (통화는 쓰지 않음)
   const n = (holding.name || "").toUpperCase();
-  if (!n) return "한국";
-  if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("우주테크")||n.includes("배당다우")||n.includes("테크TOP")||n.includes("서학개미")) return "미국";
+  if (n.includes("미국")||n.includes("S&P")||n.includes("나스닥")||n.includes("빅테크")||n.includes("서학개미")) return "미국";
   if (n.includes("차이나")||n.includes("중국")||n.includes("항셍")||n.includes("항생")) return "중국";
-  if (n.includes("인도")||n.includes("빌리언")) return "인도";
+  if (n.includes("인도")) return "인도";
   if (n.includes("일본")||n.includes("니케이")||n.includes("닛케이")) return "일본";
   if (n.includes("베트남")) return "베트남";
   if (n.includes("유럽")||n.includes("독일")||n.includes("유로")) return "유럽";
-  if (n.includes("글로벌")||n.includes("TOP4")||n.includes("원자력")||n.includes("K방산")||n.includes("조선")) return "글로벌";
-  return "한국";
+  if (n.includes("글로벌")) return "글로벌";
+  if (/[가-힣]/.test(holding.name || "")) return "한국"; // 한글 종목명 = 국내
+  return "글로벌"; // 영문·판별 불가 = 해외(글로벌). 통화로 미국 단정하지 않음.
 }
 
 // ============================================================
@@ -2092,7 +2109,7 @@ const EXCHANGE_COUNTRY = {
 };
 
 // 캐싱 LLM 분류 결과(종목코드/이름 기준). getSectorLabel이 동기로 읽고, 백그라운드가 채움.
-const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v5"; // 분류 규칙 변경 시 뒤 숫자를 올리면 기존 캐시가 자동 무효화됨
+const STOCK_LLM_CACHE_KEY = "investiq_stock_sector_llm_v6"; // 분류 규칙 변경 시 뒤 숫자를 올리면 기존 캐시가 자동 무효화됨
 let STOCK_LLM_CACHE = (() => { try { return JSON.parse(localStorage.getItem(STOCK_LLM_CACHE_KEY) || "{}"); } catch (e) { return {}; } })();
 
 // 새 24개 베이스 테마(국가 접두 분리). 사용자 선택/캐시가 이 집합에 속해야 라벨로 인정.
@@ -2123,6 +2140,26 @@ function isExplicitOther(name) {
 }
 function isETFName(name) { return ETF_BRAND_RE.test((name || "").trim()); }
 function countryFromCurrency(cur) { return cur === "USD" ? "미국" : (cur === "JPY" ? "일본" : ""); }
+// ★개별종목 지역 판별 — 거래소 기준(통화 아님). 서픽스 → KIS 마스터(티커/이름) → 글로벌.
+//  통화로 국가를 판단하지 않는다(한국 상장 미국ETF·미국 상장 중국주 등 상장통화와 투자대상은 별개).
+//  일본·홍콩 KIS 마스터를 추가하면 서픽스 없는 그 나라 개별주도 자동으로 잡힘(현재는 글로벌).
+function exchangeCountryOf(ticker, name) {
+  const raw = String(ticker || "").trim().toUpperCase();
+  const m = raw.match(/\.([A-Z]{1,3})$/);
+  if (m) {
+    const sfx = m[1];
+    if (["KS", "KQ"].includes(sfx)) return "";      // 한국(접두 없음)
+    if (sfx === "T") return "일본";
+    if (["HK", "SS", "SZ"].includes(sfx)) return "중국";
+    if (["NS", "BO"].includes(sfx)) return "인도";
+    return "글로벌";                                 // 그 외 해외 거래소
+  }
+  const t = raw;
+  if (isKrCode(t)) return "";                         // 한국 6자리 코드
+  try { if (typeof lookupMaster === "function" && lookupMaster(t, name)) return ""; } catch (e) {}      // 국내 마스터(티커/이름) → 한국
+  try { if (typeof lookupMasterUs === "function" && lookupMasterUs(t, name)) return "미국"; } catch (e) {} // 미국 마스터(티커/이름) → 미국
+  return "글로벌";                                    // 어디에도 없음 = 해외(글로벌). 통화로 미국 단정 안 함.
+}
 function stripCountry(label) {
   for (const p of COUNTRY_PREFIXES) { if (label && label.startsWith(p)) return label.slice(p.length); }
   return label || "";
@@ -3133,12 +3170,12 @@ function classifyOne(sector, name, ticker, currency, manual) {
   if (typeof smAssetType === "function" && smAssetType(ticker, raw) === "stock") {
     const sdb = lookupStockDB(ticker);
     if (sdb) {
-      const sc = (EXCHANGE_COUNTRY[sdb.x] != null) ? EXCHANGE_COUNTRY[sdb.x] : (countryFromCurrency(currency) || fallbackCountry(ticker, raw));
+      const sc = (EXCHANGE_COUNTRY[sdb.x] != null) ? EXCHANGE_COUNTRY[sdb.x] : exchangeCountryOf(ticker, raw);
       return withCountry(sdb.s, sc);
     }
     const scc = STOCK_LLM_CACHE[ticker] || STOCK_LLM_CACHE[raw];
     if (scc && scc.s) {
-      const sc2 = (scc.c != null) ? scc.c : countryFromCurrency(currency);
+      const sc2 = (scc.c != null) ? scc.c : exchangeCountryOf(ticker, raw);
       return withCountry(scc.s, sc2);
     }
     const scomp = lookupCompany(raw);
@@ -3159,18 +3196,18 @@ function classifyOne(sector, name, ticker, currency, manual) {
   // 4a. 개별주 DB (국가는 거래소, 없으면 통화)
   const db = lookupStockDB(ticker);
   if (db) {
-    const c = (EXCHANGE_COUNTRY[db.x] != null) ? EXCHANGE_COUNTRY[db.x] : (countryFromCurrency(currency) || fallbackCountry(ticker, raw));
+    const c = (EXCHANGE_COUNTRY[db.x] != null) ? EXCHANGE_COUNTRY[db.x] : exchangeCountryOf(ticker, raw);
     return withCountry(db.s, c);
   }
   // 4b. 사용자가 직접 고른 새 테마(국가 접두 떼고 매칭)면 존중
   const userBase = stripCountry(sector || "");
   if (sector && SECTOR_THEME_SET.has(userBase)) {
-    return COUNTRY_PREFIXES.some(p => sector.startsWith(p)) ? sector : withCountry(userBase, countryFromCurrency(currency));
+    return COUNTRY_PREFIXES.some(p => sector.startsWith(p)) ? sector : withCountry(userBase, exchangeCountryOf(ticker, raw));
   }
   // 4c. 캐싱 LLM 결과
   const cached = STOCK_LLM_CACHE[ticker] || STOCK_LLM_CACHE[raw];
   if (cached && cached.s) {
-    const c = (cached.c != null) ? cached.c : countryFromCurrency(currency);
+    const c = (cached.c != null) ? cached.c : exchangeCountryOf(ticker, raw);
     return withCountry(cached.s, c);
   }
   // 4d. 미분류 → 기타(백그라운드 LLM이 채움)
@@ -5043,9 +5080,9 @@ function Portfolio() {
         const chunk = withTicker.slice(i, i + 20);
         const map = await smFetchSectors(chunk.map(t => t.ticker));
         for (const t of chunk) {
-          const sec = map[t.ticker];
-          if (!sec || sec === "기타" || !SECTOR_THEME_SET.has(sec)) continue;
-          STOCK_LLM_CACHE[t.key] = { s: sec }; // 국가는 거래소/통화로 폴백(classifyOne에서 처리)
+          const r = map[t.ticker];
+          if (!r || !r.s || r.s === "기타" || !SECTOR_THEME_SET.has(r.s)) continue;
+          STOCK_LLM_CACHE[t.key] = { s: r.s, c: r.c, ccy: r.ccy }; // 섹터 + 거래소 국가(지역) + 거래 통화(미지원 필터)
           wrote++;
         }
       }
@@ -7199,6 +7236,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.1 변경사항 (지역 판정 정확화 — 거래소 기준)</div>
+            <div>· 지역별 구성이 통화로 국가를 판단하던 것을 거래소 기준으로 바로잡았습니다. 한국 상장 미국 ETF(원화)·미국 상장 개별주(달러)처럼 상장 통화와 투자 대상이 다른 종목이 통화 때문에 잘못 분류되던 문제를 해결했습니다. 개별종목은 티커·종목명으로 국내·미국 종목 마스터를 조회해 거래소 국가를 판별하고, 어디에도 없으면 '글로벌'로 둡니다(통화로 미국이라 단정하지 않음).</div>
+            <div>· 종목 정보를 조회할 때 거래소 국가·통화를 함께 저장해 홍콩·인도 등 해외 종목의 지역·미지원 판별 정확도를 높였습니다. ※ sector-map.js 함께 배포 필요</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.0 변경사항 (지원·미지원 통화 구분)</div>
             <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
@@ -7212,13 +7252,13 @@ function Settings() {
             <div>· 종목 검색 국가 필터에 '인도'를 추가했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600, color:"#fca5a5" }}>v3.7.9 변경사항 (중요 · 포트폴리오 데이터 보호)</div>
             <div>· 일부 기기에서 기존 포트폴리오가 통째로 사라지던 심각한 버그를 수정했습니다. 앱을 처음 데모 상태에서 시작한 뒤 실제 종목을 등록한 경우, 내부 정리 로직이 실제 데이터를 데모로 잘못 판단해 삭제하는 문제가 있었습니다. 이제 저장된 포트폴리오는 어떤 경우에도 자동으로 삭제되지 않습니다.</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.8 변경사항 (섹터 국가 분류 정확화)</div>
-            <div>· 미국·호주 등 해외 상장 ETF가 '한국' 섹터로 잘못 분류되던 문제 수정 — 종목명의 영문 지수 키워드(NASDAQ 등)를 인식하고, 국가를 특정하기 어려운 해외 종목은 '글로벌'로 분류합니다(국내 종목은 그대로 국내 유지). 예: 호주 상장 나스닥100 ETF → '미국지수'.</div>
-            <div>· 섹터를 직접 지정할 때 통화에 따라 국가가 바뀌던 문제 수정 — 사용자가 고른 국가를 그대로 존중합니다. 섹터 국가 선택에 '한국' 추가('없음' 대체, 한국은 접두 없이 표시). ※ sector-edit.js 함께 배포 필요</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.8 변경사항 (섹터 국가 분류 정확화)</div>
+            <div>· 미국·호주 등 해외 상장 ETF가 '한국' 섹터로 잘못 분류되던 문제 수정 — 종목명의 영문 지수 키워드(NASDAQ 등)를 인식하고, 국가를 특정하기 어려운 해외 종목은 '글로벌'로 분류합니다(국내 종목은 그대로 국내 유지).</div>
+            <div>· 섹터를 직접 지정할 때 통화에 따라 국가가 바뀌던 문제 수정. 섹터 국가 선택에 '한국' 추가.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.7 변경사항 (수동 입력 통화 선택)</div>
             <div>· 평단가·수량 직접 입력 창에서 통화를 선택할 수 있게 했습니다(원·달러·엔). 미국·일본 종목은 원래 통화로 평단가를 넣을 수 있고, 원화로 환산해 넣을 수도 있습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.6 변경사항 (AI 조언·인사이트 환각 방지 강화)</div>
@@ -9068,7 +9108,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.9.0";
+const APP_VERSION = "3.9.1";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
