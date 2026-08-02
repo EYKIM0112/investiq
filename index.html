@@ -2356,13 +2356,13 @@ function setKisMaster(d) {
 }
 async function loadKisMaster() {
   if (_kisMaster) return _kisMaster;
-  const c = readMasterCache("investiq_kis_master_v1");
+  const c = readMasterCache("investiq_kis_master_v2");
   if (c) return setKisMaster(c);
   try {
     const r = await fetch("/kis_master.json", { signal: AbortSignal.timeout(10000) });
     if (!r.ok) return null;
     const d = await r.json();
-    writeMasterCache("investiq_kis_master_v1", d);
+    writeMasterCache("investiq_kis_master_v2", d);
     return setKisMaster(d);
   } catch (e) { return null; }
 }
@@ -2402,20 +2402,20 @@ function setKisMasterUs(d) {
 }
 async function loadKisMasterUs() {
   if (_kisMasterUs) return _kisMasterUs;
-  const c = readMasterCache("investiq_kis_master_us_v1");
+  const c = readMasterCache("investiq_kis_master_us_v2");
   if (c) return setKisMasterUs(c);
   try {
     const r = await fetch("/kis_master_us.json", { signal: AbortSignal.timeout(10000) });
     if (!r.ok) return null;
     const d = await r.json();
-    writeMasterCache("investiq_kis_master_us_v1", d);
+    writeMasterCache("investiq_kis_master_us_v2", d);
     return setKisMasterUs(d);
   } catch (e) { return null; }
 }
 // 앱 시작 시 캐시가 있으면 동기 복원 → 첫 렌더부터 ETF/개별주 판별이 정확해짐(최초 실행만 네트워크).
 try {
-  const _c1 = readMasterCache("investiq_kis_master_v1"); if (_c1) setKisMaster(_c1);
-  const _c2 = readMasterCache("investiq_kis_master_us_v1"); if (_c2) setKisMasterUs(_c2);
+  const _c1 = readMasterCache("investiq_kis_master_v2"); if (_c1) setKisMaster(_c1);
+  const _c2 = readMasterCache("investiq_kis_master_us_v2"); if (_c2) setKisMasterUs(_c2);
 } catch (e) {}
 // 해외 마스터 조회: 심볼 우선(정확), 없으면 이름(정확/공백무시). {code, name, type} 또는 null.
 function lookupMasterUs(symbol, name) {
@@ -2427,7 +2427,16 @@ function lookupMasterUs(symbol, name) {
   }
   if (name && _kisMasterUsNameIdx) {
     const key = String(name).replace(/\s+/g, "").toLowerCase();
-    if (_kisMasterUsNameIdx[key]) return _kisMasterUsNameIdx[key];
+    if (_kisMasterUsNameIdx[key]) return _kisMasterUsNameIdx[key]; // 완전일치
+    // 부분 매칭: OCR 이름이 마스터 정식명에 포함되고 '유일'할 때만 채택(알리바바 → 알리바바 그룹 홀딩(ADR)).
+    // 여러 개 걸리면 모호하므로 null 반환 → 티커 미확정 → 수동입력(엉뚱한 매칭 방지).
+    if (key.length >= 3) {
+      let hit = null, cnt = 0;
+      for (const k in _kisMasterUsNameIdx) {
+        if (k.indexOf(key) !== -1) { hit = _kisMasterUsNameIdx[k]; if (++cnt > 1) return null; }
+      }
+      if (cnt === 1) return hit;
+    }
   }
   return null;
 }
@@ -6728,7 +6737,7 @@ function Portfolio() {
                         <span style={{ fontWeight: 700, color: "#e2e8f0", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
                           {h.name || ""}
                         </span>
-                        {h.ticker && <span style={{ fontSize:9, color:"#64748b", fontWeight:400, flexShrink:0 }}>{h.ticker}</span>}
+                        {(h.ticker || h.yahoo_ticker) && <span style={{ fontSize:9, color:"#64748b", fontWeight:400, flexShrink:0 }}>{(h.ticker || h.yahoo_ticker || "").replace(/\.(KS|KQ)$/, "")}</span>}
                       </div>
                       <div style={{ fontSize: 10, color: "#7c8db5" }}>
                         <span style={{ color: "#cbd5e1" }}>{h.shares}주</span>
@@ -7243,6 +7252,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.4 변경사항 (종목명으로 티커 확정 · 목록 티커 표시)</div>
+            <div>· 화면에 티커가 안 보이는 해외 종목(예: 알리바바)도 종목명으로 미국 마스터에서 티커를 찾아(유일하게 매칭될 때만) 정확히 자동 등록합니다. 이름이 모호해 여러 종목과 겹치면 잘못 매칭하지 않고 수동 입력으로 보냅니다.</div>
+            <div>· 보유 종목 목록에서 해외 종목의 티커도 표시되도록 했습니다(종전에는 국내 종목코드만 보였습니다). 종목 마스터 캐시를 최신으로 갱신했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.3 변경사항 (티커 기반 종목 판별 정확화)</div>
             <div>· 화면에 티커(심볼)가 표시된 해외 종목(예: ASML·BABA)이 종목 마스터에 있는데도 이름이 조금 달라 자동 등록되지 못하고 수동 입력으로 빠지던 문제를 고쳤습니다. 이제 티커가 있으면 티커로 먼저 마스터를 조회해, 미국 상장 ADR 등도 정확히 자동 등록되고 지역도 미국으로 잡힙니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.2 변경사항 (미지원 종목 자동등록 차단 강화)</div>
@@ -7254,14 +7266,12 @@ function Settings() {
             <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
             <div>· 수동 입력에서 통화(원·달러·엔)를 바꿀 때마다 자동 분류 섹터의 국가가 따라 바뀌던 문제를 고쳤습니다. 평단가 입력 통화와 투자 지역·섹터는 이제 서로 무관하게 동작합니다.</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.1 변경사항 (수동 입력 전용 화면)</div>
-            <div>· 자동 인식에 실패한 종목의 평단가·수량 입력을 전용 화면으로 새로 만들었습니다. 등록 시 지정한 계좌명과 종목이 미리 채워지고, 종목이 잘못됐으면 다시 검색해 바꿀 수 있습니다.</div>
-            <div>· '어느 나라에서 종목을 찾을지(검색)'와 '어떻게 분류할지(투자 지역·섹터)'를 명확히 분리했습니다. 예: 호주 상장 나스닥 ETF는 검색은 전체로, 분류는 투자지역 '미국' + 섹터 '지수' = 미국지수로 지정할 수 있습니다.</div>
-            <div>· 통화(원·달러·엔) 선택, 환율 미지원 통화 안내를 정리했고, 현재가는 등록 후 자동 조회되며 필요 시 직접 입력할 수 있습니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.1 변경사항 (수동 입력 전용 화면)</div>
+            <div>· 자동 인식 실패 종목의 평단가·수량 입력을 전용 화면으로 새로 만들고, 검색 국가와 투자 지역·섹터를 분리했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.0 변경사항 (수동 입력 개선 · 검색 국가 추가)</div>
             <div>· 평단가·수량을 못 읽은 종목의 직접 입력을 '종목 추가' 창과 동일한 방식으로 개선했습니다. 여러 종목이면 하나씩 순서대로 진행하고, 검색 국가 필터에 '인도'를 추가했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600, color:"#fca5a5" }}>v3.7.9 변경사항 (중요 · 포트폴리오 데이터 보호)</div>
@@ -9118,7 +9128,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.9.3";
+const APP_VERSION = "3.9.4";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
