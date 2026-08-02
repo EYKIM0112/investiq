@@ -35,7 +35,7 @@ const Y_HEADERS = {
   "Accept-Language": "en-US,en;q=0.9",
 };
 
-const MODULES = "assetProfile,quoteType,fundProfile,topHoldings";
+const MODULES = "assetProfile,quoteType,fundProfile,topHoldings,price";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -126,12 +126,14 @@ function shape(d) {
   const qt = d.quoteType || {};
   const fp = d.fundProfile || {};
   const th = d.topHoldings || {};
+  const pr = d.price || {};
   return {
     type: String(qt.quoteType || "").trim() || null,       // EQUITY / ETF / MUTUALFUND
     name: String(qt.longName || qt.shortName || "").trim() || null,
     sector: String(ap.sector || "").trim() || null,        // GICS 기반 11섹터 (개별주)
     industry: String(ap.industry || "").trim() || null,    // 세부 산업
     country: String(ap.country || "").trim() || null,
+    currency: String(pr.currency || "").trim() || null,    // 거래 통화(미지원 국가 필터용)
     fundCategory: String(fp.categoryName || "").trim() || null, // ETF/펀드 카테고리
     sectorWeights: flattenWeights(th.sectorWeightings),         // ETF 섹터 비중
   };
