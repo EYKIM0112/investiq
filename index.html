@@ -3555,9 +3555,6 @@ function EditHoldingModal({ holding, onClose, onSave }) {
   const [mode, setMode] = useState("edit");
   const [shares, setShares] = useState(String(holding.shares || ""));
   const [avgPrice, setAvgPrice] = useState(String(holding.avg_price || 0));
-  const [addShares, setAddShares] = useState("");
-  const [addPrice, setAddPrice] = useState("");
-  const [sellShares, setSellShares] = useState("");
   const [stockOverride, setStockOverride] = useState(null); // 종목명/티커 변경 시
   const [showNameEdit, setShowNameEdit] = useState(!holding.ticker); // ticker 없으면 바로 열기
   const [showPriceInput, setShowPriceInput] = useState(false);
@@ -3575,7 +3572,6 @@ function EditHoldingModal({ holding, onClose, onSave }) {
     };
     setAvgPrice(conv(avgPrice));
     if (currentPriceInput) setCurrentPriceInput(conv(currentPriceInput));
-    if (addPrice) setAddPrice(conv(addPrice));
     setPriceUnit(newCcy);
   };
 
@@ -3595,18 +3591,6 @@ function EditHoldingModal({ holding, onClose, onSave }) {
       if (showPriceInput && cp > 0) base.current_price = toNativePrice(currentPriceInput, priceUnit, nativeCcy);
       if (sectorManual) base.sector_manual = sectorManual; else delete base.sector_manual;
       onSave(base);
-    } else if (mode === "buy") {
-      const addSh = parseFloat(addShares)||0;
-      const addPr = toNativePrice(addPrice, priceUnit, nativeCcy); // 종목통화로 환산
-      const newShares = (holding.shares||0) + addSh;
-      const rawAvg = newShares>0 ? ((holding.shares||0)*(holding.avg_price||0)+addSh*addPr)/newShares : (holding.avg_price||0);
-      const newAvg = nativeCcy === "KRW" ? Math.round(rawAvg) : Math.round(rawAvg*100)/100;
-      onSave({ ...holding, shares: newShares, avg_price: newAvg });
-    } else if (mode === "sell") {
-      const sellSh = parseFloat(sellShares)||0;
-      const newShares = (holding.shares||0) - sellSh;
-      if (newShares <= 0) { onSave(null); return; }
-      onSave({ ...holding, shares: newShares });
     }
   };
 
@@ -3650,19 +3634,6 @@ function EditHoldingModal({ holding, onClose, onSave }) {
     setFetchingPrice(false);
   };
 
-  const tabBtn = (t, label) => (
-    <button onClick={() => setMode(t)} style={{
-      flex:1, padding:"8px 4px", border:"none", borderRadius:8, cursor:"pointer", fontSize:14, fontWeight:mode===t?700:400,
-      background: mode===t?(t==="buy"?"#0ea5e9":t==="sell"?"#ef4444":"#7c3aed"):"#16162a",
-      color: mode===t?"#fff":"#364875",
-    }}>{label}</button>
-  );
-
-  const newSharesCalc = (holding.shares||0)+(parseFloat(addShares)||0);
-  const newAvgCalc = newSharesCalc>0
-    ? (() => { const ap = toNativePrice(addPrice, priceUnit, nativeCcy); const raw = ((holding.shares||0)*(holding.avg_price||0)+(parseFloat(addShares)||0)*ap)/newSharesCalc; return nativeCcy==="KRW"?Math.round(raw):Math.round(raw*100)/100; })()
-    : 0;
-
   return (
     <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:300, display:"flex", alignItems:"flex-end" }}
       onClick={e => e.target===e.currentTarget && onClose()}>
@@ -3673,11 +3644,6 @@ function EditHoldingModal({ holding, onClose, onSave }) {
             <div style={{ fontSize:13, color:"#94a3b8", marginTop:3 }}>현재 {holding.shares}주 · 평단 {(holding.avg_price||0).toLocaleString()}{ccySymbol(nativeCcy)}{holding.account?` · ${holding.account}`:""}</div>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", fontSize:22, cursor:"pointer" }}>x</button>
-        </div>
-        <div style={{ display:"flex", gap:6, marginBottom:20, background:"#16162a", borderRadius:10, padding:4 }}>
-          {tabBtn("edit","수정")}
-          {tabBtn("buy","추가매수")}
-          {tabBtn("sell","v 일부매도")}
         </div>
         {mode==="edit" && (
           <>
@@ -3754,54 +3720,12 @@ function EditHoldingModal({ holding, onClose, onSave }) {
             )}
           </>
         )}
-        {mode==="buy" && (
-          <>
-            <div style={{ background:"#0ea5e911", border:"1px solid #0ea5e933", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#7dd3fc" }}>추가매수 시 평단가가 자동으로 재계산됩니다</div>
-            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>추가 매수 수량</div>
-            <input value={addShares} onChange={e=>setAddShares(e.target.value)} inputMode="decimal"
-              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-              <div style={{ fontSize:13, color:"#94a3b8" }}>매수 단가</div>
-              <CcyToggle value={priceUnit} onChange={changeInputCcy} nativeCcy={nativeCcy} />
-            </div>
-            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-              <input value={addPrice} onChange={e=>setAddPrice(e.target.value)} inputMode="decimal"
-                style={{ flex:1, background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none" }} />
-              <div style={{ padding:"0 16px", borderRadius:8, background:"#16162a", border:"1px solid #334155", color:"#94a3b8", fontSize:15, fontWeight:700, display:"flex", alignItems:"center", minWidth:44, justifyContent:"center" }}>{ccySymbol(priceUnit)}</div>
-            </div>
-            {addShares && addPrice && (
-              <div style={{ background:"#16162a", borderRadius:8, padding:"12px 14px", marginBottom:12 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:14 }}>
-                  <span style={{ color:"#94a3b8" }}>총 수량</span>
-                  <span style={{ color:"#e2e8f0", fontWeight:700 }}>{newSharesCalc}주</span>
-                </div>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, marginTop:4 }}>
-                  <span style={{ color:"#94a3b8" }}>새 평단가</span>
-                  <span style={{ color:"#0ea5e9", fontWeight:700 }}>{newAvgCalc.toLocaleString()}{ccySymbol(nativeCcy)}</span>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-        {mode==="sell" && (
-          <>
-            <div style={{ background:"#ef444411", border:"1px solid #ef444433", borderRadius:8, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#fca5a5" }}>전량매도 시 종목이 삭제됩니다</div>
-            <div style={{ fontSize:13, color:"#94a3b8", marginBottom:6 }}>매도 수량 (보유: {holding.shares}주)</div>
-            <input value={sellShares} onChange={e=>setSellShares(e.target.value)} inputMode="decimal"
-              style={{ width:"100%", background:"#020617", border:"1px solid #334155", borderRadius:8, padding:"11px 12px", color:"#e2e8f0", fontSize:16, outline:"none", marginBottom:12 }} />
-            {sellShares && (
-              <div style={{ fontSize:13, marginBottom:12, color:parseFloat(sellShares)>=(holding.shares||0)?"#ef4444":"#10b981" }}>
-                {parseFloat(sellShares)>=(holding.shares||0)?"[!] 전량매도 - 종목 삭제":`잔여 ${(holding.shares||0)-(parseFloat(sellShares)||0)}주`}
-              </div>
-            )}
-          </>
-        )}
         <button onClick={handleSave} style={{
           width:"100%", padding:"14px", borderRadius:10, border:"none", cursor:"pointer",
           fontWeight:700, fontSize:16, color:"#fff", marginTop:8,
-          background: mode==="buy"?"linear-gradient(135deg,#0ea5e9,#0369a1)":mode==="sell"?"linear-gradient(135deg,#ef4444,#b91c1c)":"linear-gradient(135deg,#7c3aed,#4c1d95)",
+          background:"linear-gradient(135deg,#7c3aed,#4c1d95)",
         }}>
-          {mode==="edit"?"저장":mode==="buy"?"매수 반영":"매도 반영"}
+          저장
         </button>
       </div>
     </div>
@@ -7008,6 +6932,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.2 변경사항 (종목 수정 모달 정리)</div>
+            <div>· 종목 수정 모달의 '추가매수'·'일부매도' 탭을 제거하고 '수정'만 남겼습니다. 두 기능은 예수금(현금)과 연동되지 않아 사실상 보유 수량·평단가를 바꾸는 것과 동일했기에, 혼동을 줄이기 위해 정리했습니다. 이제 연필(수정)에서 보유 수량·평균단가·종목명·섹터·현재가를 모두 직접 편집하면 됩니다. 매수·매도에 따른 현금 증감은 '💰 현금 잔고 조정'에서 관리합니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.7.1 변경사항 (지역별 구성 정확도 · 삭제 확인)</div>
             <div>· 지역별 구성 판정 수정 — 미국 개별주(엔비디아·애플 등)가 지역별 구성 그래프에서 '한국'으로 잘못 집계되던 문제를 고쳤습니다. 이제 종목의 실제 거래 통화(달러=미국, 엔=일본 등)를 기준으로 판정하고, 원화로 거래되는 해외 ETF는 종목명(미국·나스닥·차이나 등)으로 세분화합니다. ※ 종전에는 종목명에 '미국' 글자가 없으면 전부 한국으로 분류되었습니다.</div>
             <div>· 종목 삭제 확인 추가 — 포트폴리오 종목 목록에서 ×(삭제)를 누르면 바로 지워지지 않고, 삭제 여부를 한 번 더 확인하는 팝업이 뜹니다.</div>
@@ -7022,14 +6948,14 @@ function Settings() {
             <div>· AI 조언 답변 방식 개선 — 직접 입력한 질문은 저장된 인사이트만으로 답할 수 있는지 자동 판단해, 답할 수 있으면 그대로 답하고(빠르고 토큰 절약), 특정 종목의 주가·실적·뉴스나 개별 종목·섹터의 향후 전망처럼 최신·개별 정보가 필요한 질문은 실시간 검색으로 보완해 답합니다. 검색으로도 신뢰할 만한 답이 어려운 질문은 솔직하게 답변이 어렵다고 안내합니다. 빠른 질문(리밸런싱·노출도·추가매수·리스크)은 종전처럼 저장된 인사이트만으로 답합니다.</div>
             <div>· 미래 전망 질문 주의 문구 — 개별 종목·섹터의 향후/중장기 전망을 물으면 답변 맨 앞에 "미래 전망은 불확실하며 실제와 다를 수 있다"는 전제를 함께 표시합니다.</div>
             <div>· 조언 기준일 안내 정확화 — AI 조언이 실제 근거로 쓰는 인사이트(종합·한국·미국)의 가장 오래된 분석 시점을 '빠른 질문' 아래에 항상 표시합니다. 더 최신 판단이 필요하면 인사이트 탭에서 해당 서브탭의 '분석 시작'을 눌러 갱신하세요. (종전에는 실제 근거로 쓰지 않는 다른 탭의 최신 시각까지 반영돼 기준일이 실제와 어긋날 수 있었습니다.)</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.0 변경사항 (공포·탐욕 지수 추가)</div>
-            <div>· 미국 공포·탐욕 지수 신규 — CNN Fear & Greed Index를 인사이트 탭 상단에 반원 게이지로 표시(0~100, Extreme Fear~Extreme Greed). 전일·1주 전·1달 전 비교도 함께. 분석 시작을 누르지 않아도 바로 보입니다.</div>
-            <div>· 한국 변동성 지수 신규 — KRX 코스피200 변동성지수(VKOSPI)를 게이지로 표시. VKOSPI는 값이 높을수록 시장 불안이 큰 절대 지표라, 미국식 등급 대신 실제 수치와 참조점(평시 15~20 · 역대 최고 95)을 그대로 보여줍니다.</div>
-            <div>· 인사이트 탭 구성 — '종합'에서는 미국·한국을 나란히, '한국'/'미국' 탭에서는 각각의 지수를 표시합니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.5.0 변경사항 (공포·탐욕 지수 추가)</div>
+            <div>· 미국 공포·탐욕 지수 신규 — CNN Fear & Greed Index를 인사이트 탭 상단에 반원 게이지로 표시(0~100, Extreme Fear~Extreme Greed). 전일·1주 전·1달 전 비교도 함께. 분석 시작을 누르지 않아도 바로 보입니다.</div>
+            <div>· 한국 변동성 지수 신규 — KRX 코스피200 변동성지수(VKOSPI)를 게이지로 표시. VKOSPI는 값이 높을수록 시장 불안이 큰 절대 지표라, 미국식 등급 대신 실제 수치와 참조점(평시 15~20 · 역대 최고 95)을 그대로 보여줍니다.</div>
+            <div>· 인사이트 탭 구성 — '종합'에서는 미국·한국을 나란히, '한국'/'미국' 탭에서는 각각의 지수를 표시합니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.4.0 변경사항 (종목 마스터 자동 갱신)</div>
             <div>· 종목 마스터 자동 갱신 도입 — 신규 상장·상장폐지·종목명 변경을 매주 자동으로 반영합니다. 종전에는 종목 정보(국내 약 3,900종목·미국 약 12,600종목)를 수동으로 갱신했으나, 이제 한국투자증권 원본 파일에서 주 1회 자동으로 최신화되어 새로 상장된 종목도 스크린샷 인식·검색에서 곧바로 잡힙니다. ※ 앱 사용 방식에는 변화가 없으며, 데이터 최신성만 향상됩니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.3.1 변경사항 (OCR 오등록 수정 · 섹터 보완)</div>
@@ -8848,7 +8774,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.7.1";
+const APP_VERSION = "3.7.2";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
