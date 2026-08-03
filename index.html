@@ -662,11 +662,14 @@ function fmtFxCash(amt, ccy, dispCcy) {
 }
 
 // 리밸런싱 AI 추천이 우선 참고할 고정 신뢰 출처 (매번 사이트 탐색하지 않도록 박아둠)
-const TRUSTED_SOURCES = "한국: 한국경제(hankyung.com)·매일경제(mk.co.kr) / 미국: Reuters(reuters.com)·CNBC(cnbc.com)";
+const TRUSTED_SOURCES = "글로벌: Bloomberg·Reuters·CNBC / 한국: 한국경제(hankyung.com)·매일경제(mk.co.kr)·연합인포맥스·네이버페이증권·DART(전자공시) / 미국: WSJ·MarketWatch·CNBC·Yahoo Finance·SEC EDGAR(공시) / 아시아(일본·중국·홍콩·대만·아세안): Nikkei(닛케이)·JPX(일본) / Nikkei Asia·Caixin(차이신)·SCMP(일본 외) / 유럽: Financial Times(FT)·Handelsblatt·Euronews / 가상화폐: CoinDesk(뉴스·규제)·CoinMarketCap·CoinGecko(시세)·Glassnode(온체인) / 원자재: Trading Economics(표준데이터)·EIA(원유·천연가스 공식)·Kitco(귀금속)·Bloomberg·Reuters / 신규상장(IPO): DART(공시)·네이버페이증권·한국경제·매일경제 / 채권·거시: Bloomberg·Reuters / 차트·데이터: TradingView·Investing.com";
 
 // 웹 검색 출처 신뢰도 규칙 (가벼운 버전 — 우선순위 + 신뢰도 필터)
 const SOURCE_RULES = `[출처 신뢰도 규칙]
 - 신뢰 출처 우선 참고: ${TRUSTED_SOURCES}
+- 글로벌 전 지역·전 자산 최우선 매체: Reuters·Bloomberg·CNBC (어느 지역·자산이든 우선 확인). 이 중 Reuters·CNBC는 무료라 본문까지 참고 가능, Bloomberg는 유료라 제목·논조만 인용
+- 질문·맥락의 지역·자산에 맞는 출처를 추가로 참고: 한국주식→네이버증권·DART, 미국주식→SEC EDGAR·WSJ·CNBC, 아시아(일본→닛케이·JPX / 중국·홍콩·대만·아세안→Caixin·SCMP·Nikkei Asia), 유럽→FT, 가상화폐→CoinDesk·CoinGecko·Glassnode(온체인), 원자재→Trading Economics·EIA(원유)·Kitco(귀금속), 신규상장(IPO)→DART·네이버증권·한경/매경, 공시·실적 원본→각국 전자공시(DART·EDGAR·JPX)
+- 유료·구독 매체(Bloomberg·FT·WSJ·Seeking Alpha 등)는 제목·논조 언급은 가능하나, 접근 불가한 기사의 본문·구체적 수치·인용문을 추측으로 지어내지 말 것
 - 우선순위: (1)공식·원본(거래소·전자공시·한국은행·기업IR) (2)주요 매체·통신사(연합뉴스·한경·매경·블룸버그·로이터·WSJ) (3)증권사 리서치
 - 종목토론방·개인블로그·리딩방·광고성 '급등/대박' 정보는 사용 금지
 - 수치는 가능하면 교차확인, 불확실하면 추측하지 말고 '불확실'로 표기
@@ -7252,6 +7255,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.5 변경사항 (신뢰 출처 확장 · 환각 방지 강화)</div>
+            <div>· 인사이트·AI 조언·리밸런싱이 참고하는 신뢰 출처를 지역·자산별로 넓혔습니다. 한국: DART·연합인포맥스·네이버증권 / 미국: SEC EDGAR·WSJ / 일본·아시아: 닛케이·Nikkei Asia·Caixin·SCMP / 유럽: FT / 가상화폐: CoinDesk·CoinGecko·Glassnode(온체인) / 원자재: Trading Economics·EIA(원유)·Kitco(귀금속) / 신규상장: DART·네이버증권. 질문·탭 맥락에 맞는 출처를 우선 참고하고, 유료 매체의 접근 불가한 본문·수치를 지어내지 않도록 가이드를 강화했습니다. (검색 여부 규칙은 종전과 동일 — 빠른 질문은 인사이트만 참고, 직접 입력만 검색)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.4 변경사항 (종목명으로 티커 확정 · 목록 티커 표시)</div>
             <div>· 화면에 티커가 안 보이는 해외 종목(예: 알리바바)도 종목명으로 미국 마스터에서 티커를 찾아(유일하게 매칭될 때만) 정확히 자동 등록합니다. 이름이 모호해 여러 종목과 겹치면 잘못 매칭하지 않고 수동 입력으로 보냅니다.</div>
             <div>· 보유 종목 목록에서 해외 종목의 티커도 표시되도록 했습니다(종전에는 국내 종목코드만 보였습니다). 종목 마스터 캐시를 최신으로 갱신했습니다.</div>
@@ -7264,12 +7269,12 @@ function Settings() {
             <div>· 종목 정보를 조회할 때 거래소 국가·통화를 함께 저장해 홍콩·인도 등 해외 종목의 지역·미지원 판별 정확도를 높였습니다. ※ sector-map.js 함께 배포 필요</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.0 변경사항 (지원·미지원 통화 구분)</div>
             <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
-            <div>· 수동 입력에서 통화(원·달러·엔)를 바꿀 때마다 자동 분류 섹터의 국가가 따라 바뀌던 문제를 고쳤습니다. 평단가 입력 통화와 투자 지역·섹터는 이제 서로 무관하게 동작합니다.</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
+            <div>· 수동 입력에서 통화를 바꿀 때 자동 분류 섹터의 국가가 따라 바뀌던 문제를 고쳤습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.1 변경사항 (수동 입력 전용 화면)</div>
             <div>· 자동 인식 실패 종목의 평단가·수량 입력을 전용 화면으로 새로 만들고, 검색 국가와 투자 지역·섹터를 분리했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.0 변경사항 (수동 입력 개선 · 검색 국가 추가)</div>
@@ -9128,7 +9133,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.9.4";
+const APP_VERSION = "3.9.5";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
