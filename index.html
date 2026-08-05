@@ -224,10 +224,10 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
+    if (value) buf += decoder.decode(value, { stream: true });
+    if (done) buf += decoder.decode(); // 남은 멀티바이트 flush
     const lines = buf.split("\n");
-    buf = lines.pop();
+    buf = done ? "" : lines.pop(); // ★done이면 마지막 라인까지 처리(마지막 조각 손실 방지)
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const json = line.slice(6).trim();
@@ -248,6 +248,7 @@ async function callGeminiStream({ system, user, maxTokens = 2000, useSearch = fa
         if (chunk) { fullText += chunk; onChunk && onChunk(fullText); }
       } catch (e) { if (e.message && !e.message.includes("JSON")) throw e; }
     }
+    if (done) break;
   }
   // 토큰 한도로 응답이 잘린 경우: 토큰 2배로 1회 자동 재시도 (사용자가 다시 누를 필요 없게)
   if (finishReason === "MAX_TOKENS" && _retry < 1) {
@@ -805,7 +806,8 @@ async function loadUsageState() {
     (cfgRows || []).forEach(r => { cfg[r.key] = r.value; });
     const enabled = cfg.usage_limit_enabled === "true";
     const insightLimit = parseInt(cfg.insight_daily_limit || "2", 10) || 2;
-    const adviceLimit = parseInt(cfg.advice_daily_limit || "3", 10) || 3;
+    const adviceLimit = parseInt(cfg.advice_daily_limit || "3", 10) || 3;        // 자유입력(직접 질문)
+    const quickLimit = parseInt(cfg.advice_quick_daily_limit || "4", 10) || 4;   // 빠른 질문(프리셋)
     const { data: u } = await supabaseClient.auth.getUser();
     const isAdmin = (u?.user?.email || "").toLowerCase() === ADMIN_EMAIL_CLIENT;
     const counts = {};
@@ -813,9 +815,9 @@ async function loadUsageState() {
       const { data: rows } = await supabaseClient.from("usage_counters").select("feature,count").eq("day", kstTodayStr());
       (rows || []).forEach(r => { counts[r.feature] = r.count; });
     }
-    return { ok: true, enabled, isAdmin, insightLimit, adviceLimit, counts };
+    return { ok: true, enabled, isAdmin, insightLimit, adviceLimit, quickLimit, counts };
   } catch (e) {
-    return { ok: false, enabled: false, isAdmin: false, insightLimit: 2, adviceLimit: 3, counts: {} };
+    return { ok: false, enabled: false, isAdmin: false, insightLimit: 2, adviceLimit: 3, quickLimit: 4, counts: {} };
   }
 }
 async function setUsageLimitEnabled(enabled) {
@@ -6847,8 +6849,8 @@ function Advisor() {
       }
 
       const useSearch = (route === "SEARCH");
-      // 답변호출 purpose: 프리셋=여기서 카운트("advice") / 자유입력=분류에서 이미 카운트("advice_ans") / 재시도=미카운트("advice_retry")
-      const answerPurpose = (mode === "insight") ? "advice" : (mode === "auto" ? "advice_ans" : "advice_retry");
+      // 답변호출 purpose: 프리셋(빠른질문)=여기서 카운트("advice_quick") / 자유입력=분류에서 이미 카운트("advice_ans") / 재시도=미카운트("advice_retry")
+      const answerPurpose = (mode === "insight") ? "advice_quick" : (mode === "auto" ? "advice_ans" : "advice_retry");
       const systemInsight = `당신은 실전 투자 어드바이저입니다. 아래 제공된 [시장 인사이트]와 포트폴리오를 근거로 답변하세요. 별도 웹 검색은 하지 말고, 인사이트에 없는 내용은 일반 투자 원칙으로 답하되 필요하면 '최신 확인 필요'로 표기하세요.
 - 이 답변은 웹 검색을 하지 않으므로 개별 종목의 현재가·종가·실시간 시세는 알 수 없습니다. 그런 수치를 절대 특정 숫자로 지어내지 말고, "실시간 시세는 포트폴리오 화면에서 확인하세요"로 안내하세요.
 
@@ -6912,8 +6914,10 @@ ${ADVICE_BASE_RULES}`;
 
   const quickActions = ["내 포폴 리밸런싱 방향 조언해줘", "현재 모멘텀 섹터에 내 포폴 노출도가 충분한가?", "지금 추가 매수하기 좋은 종목 추천해줘", "내 포폴의 리스크 분석해줘"];
   const advSrc = getAdviceSourceStatus();
-  const advUsed = advUsage.counts["advice"] || 0;
+  const advUsed = advUsage.counts["advice"] || 0;              // 직접 입력(자유 질문)
+  const quickUsed = advUsage.counts["advice_quick"] || 0;      // 빠른 질문(프리셋)
   const advExhausted = advUsage.enabled && !advUsage.isAdmin && advUsed >= advUsage.adviceLimit;
+  const quickExhausted = advUsage.enabled && !advUsage.isAdmin && quickUsed >= (advUsage.quickLimit || 4);
 
   return (
     <div style={{ padding: "0 4px" }}>
@@ -6969,10 +6973,10 @@ ${ADVICE_BASE_RULES}`;
 
       {/* 일일 사용 한도 안내 (토글 ON & 비관리자일 때만) */}
       {advUsage.enabled && !advUsage.isAdmin && (
-        <div style={{ fontSize: 11, color: advExhausted ? "#f87171" : "#64748b", marginTop: -10, marginBottom: 16 }}>
-          {advExhausted
-            ? `오늘 AI 조언 질문 한도(${advUsage.adviceLimit}회)를 다 썼어요 · 내일 자정(KST) 리셋`
-            : `오늘 AI 조언 질문 ${advUsed}/${advUsage.adviceLimit}회 · 남은 ${advUsage.adviceLimit - advUsed}회`}
+        <div style={{ fontSize: 11, color: (advExhausted && quickExhausted) ? "#f87171" : "#64748b", marginTop: -10, marginBottom: 16 }}>
+          {`오늘 · 빠른 질문 `}<span style={{ color: quickExhausted ? "#f87171" : "#94a3b8", fontWeight: 600 }}>{quickUsed}/{advUsage.quickLimit || 4}</span>
+          {` · 직접 입력 `}<span style={{ color: advExhausted ? "#f87171" : "#94a3b8", fontWeight: 600 }}>{advUsed}/{advUsage.adviceLimit}</span>
+          {` · 자정(KST) 리셋`}
         </div>
       )}
       {advUsage.enabled && advUsage.isAdmin && (
@@ -7127,7 +7131,7 @@ function Settings() {
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
             <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.5 }}>
               베타 테스터 인사이트·AI 조언 횟수 제한<br/>
-              <span style={{ fontSize:11, color:"#64748b" }}>한도값 변경은 Supabase app_config (insight/advice_daily_limit)</span>
+              <span style={{ fontSize:11, color:"#64748b" }}>한도값 변경은 Supabase app_config (insight_daily_limit · advice_daily_limit · advice_quick_daily_limit)</span>
             </div>
             <button onClick={toggleLimit} disabled={limitBusy || limitEnabled===null} style={{
               flexShrink:0, padding:"8px 16px", borderRadius:9, border:"none", cursor:(limitBusy||limitEnabled===null)?"not-allowed":"pointer", fontSize:13, fontWeight:700,
@@ -7255,6 +7259,9 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.6 변경사항 (답변 잘림 수정 · AI 조언 한도 분리)</div>
+            <div>· AI 조언 답변이 가끔 중간에 잘리던 문제를 고쳤습니다. 응답을 받아 처리하는 과정에서 마지막 조각이 버려지던 버그였습니다(길이와 무관하게 발생).</div>
+            <div>· AI 조언의 일일 한도를 '빠른 질문'과 '직접 입력'으로 나눴습니다. 빠른 질문은 검색 없이 인사이트만 참고해 더 넉넉하게, 직접 입력(검색 포함)은 별도로 제한합니다. 남은 횟수도 각각 표시됩니다. ※ gemini.js 함께 배포 + Supabase app_config에 advice_quick_daily_limit 추가 필요</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.5 변경사항 (신뢰 출처 확장 · 환각 방지 강화)</div>
             <div>· 인사이트·AI 조언·리밸런싱이 참고하는 신뢰 출처를 지역·자산별로 넓혔습니다. 한국: DART·연합인포맥스·네이버증권 / 미국: SEC EDGAR·WSJ / 일본·아시아: 닛케이·Nikkei Asia·Caixin·SCMP / 유럽: FT / 가상화폐: CoinDesk·CoinGecko·Glassnode(온체인) / 원자재: Trading Economics·EIA(원유)·Kitco(귀금속) / 신규상장: DART·네이버증권. 질문·탭 맥락에 맞는 출처를 우선 참고하고, 유료 매체의 접근 불가한 본문·수치를 지어내지 않도록 가이드를 강화했습니다. (검색 여부 규칙은 종전과 동일 — 빠른 질문은 인사이트만 참고, 직접 입력만 검색)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.4 변경사항 (종목명으로 티커 확정 · 목록 티커 표시)</div>
@@ -7267,12 +7274,12 @@ function Settings() {
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.1 변경사항 (지역 판정 정확화 — 거래소 기준)</div>
             <div>· 지역별 구성이 통화로 국가를 판단하던 것을 거래소 기준으로 바로잡았습니다. 한국 상장 미국 ETF(원화)·미국 상장 개별주(달러)처럼 상장 통화와 투자 대상이 다른 종목이 통화 때문에 잘못 분류되던 문제를 해결했습니다. 개별종목은 티커·종목명으로 국내·미국 종목 마스터를 조회해 거래소 국가를 판별하고, 어디에도 없으면 '글로벌'로 둡니다(통화로 미국이라 단정하지 않음).</div>
             <div>· 종목 정보를 조회할 때 거래소 국가·통화를 함께 저장해 홍콩·인도 등 해외 종목의 지역·미지원 판별 정확도를 높였습니다. ※ sector-map.js 함께 배포 필요</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.0 변경사항 (지원·미지원 통화 구분)</div>
-            <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.0 변경사항 (지원·미지원 통화 구분)</div>
+            <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
             <div>· 수동 입력에서 통화를 바꿀 때 자동 분류 섹터의 국가가 따라 바뀌던 문제를 고쳤습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.1 변경사항 (수동 입력 전용 화면)</div>
@@ -9133,7 +9140,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.9.5";
+const APP_VERSION = "3.9.6";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
