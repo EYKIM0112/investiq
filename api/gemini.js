@@ -17,7 +17,8 @@ const ADMIN_EMAILS = ["ilikeom@naver.com"];
 function limitedFeature(purpose) {
   if (!purpose || typeof purpose !== "string") return null;
   if (purpose.includes(":retry") || purpose === "advice_ans" || purpose === "advice_retry") return null;
-  if (purpose === "advice") return "advice";               // AI 조언 1질문
+  if (purpose === "advice") return "advice";               // AI 조언: 자유입력 1질문
+  if (purpose === "advice_quick") return "advice_quick";   // AI 조언: 빠른 질문(프리셋) 1질문 — 별도 한도
   if (purpose.startsWith("insight:")) return purpose;      // 인사이트 탭별 (insight:kr 등)
   return null;
 }
