@@ -132,8 +132,12 @@ export default async function handler(req, res) {
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
-          res.write(decoder.decode(value, { stream: true }));
+          if (value) {
+            const ok = res.write(decoder.decode(value, { stream: true }));
+            // 백프레셔: 버퍼가 가득 차면(write가 false) drain 이벤트를 기다린 뒤 계속 (미전송 청크 손실 방지)
+            if (!ok) await new Promise((resolve) => res.once("drain", resolve));
+          }
+          if (done) { res.write(decoder.decode()); break; } // 마지막 멀티바이트 flush
         }
       } finally {
         res.end();
