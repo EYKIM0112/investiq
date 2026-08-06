@@ -1393,14 +1393,14 @@ ${SOURCE_RULES}`,
         <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 이벤트</div>
       
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {e}</div>)}
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {evText(e)}</div>)}
         
     </div>
       )}
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
           <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>[!] 리스크</div>
-          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>- {r}</div>)}
+          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>- {evText(r)}</div>)}
         </div>
       )}
     </>
@@ -1455,7 +1455,7 @@ ${SOURCE_RULES}`,
         <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#0ea5e9", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 동인</div>
       
-          {d.drivers.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {e}</div>)}
+          {d.drivers.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {evText(e)}</div>)}
         
     </div>
       )}
@@ -1493,7 +1493,7 @@ ${SOURCE_RULES}`,
       {(d.events||[]).length > 0 && (
         <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
           <div style={{ fontSize:13, color:"#10b981", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 이벤트</div>
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:15, color:"#94a3b8", marginBottom:6 }}>- {e}</div>)}
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:15, color:"#94a3b8", marginBottom:6 }}>- {evText(e)}</div>)}
         </div>
       )}
     </>
@@ -1550,7 +1550,7 @@ ${SOURCE_RULES}`,
       {d.risks?.length > 0 && (
         <div style={{ background:"#1a0a0a", border:"1px solid #ef444433", borderRadius:12, padding:18 }}>
           <div style={{ fontSize:13, color:"#ef4444", fontWeight:700, marginBottom:10, letterSpacing:2 }}>[!] 리스크</div>
-          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>- {r}</div>)}
+          {d.risks.map((r,i) => <div key={i} style={{ fontSize:15, color:"#fca5a5", marginBottom:6 }}>- {evText(r)}</div>)}
         </div>
       )}
     </>
@@ -1606,7 +1606,7 @@ ${SOURCE_RULES}`,
         <div style={{ background:"#0f0f18", border:"1px solid #1e293b", borderRadius:12, padding:18, marginBottom:14 }}>
       <div style={{ fontSize:13, color:"#f59e0b", fontWeight:700, marginBottom:12, letterSpacing:2 }}>주요 이벤트</div>
       
-          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {e}</div>)}
+          {d.events.map((e,i) => <div key={i} style={{ fontSize:16, color:"#cbd5e1", marginBottom:8 }}>- {evText(e)}</div>)}
         
     </div>
       )}
@@ -1761,6 +1761,18 @@ const PIE_COLORS = ["#0ea5e9","#7c3aed","#f59e0b","#10b981","#ef4444","#ec4899",
 
 // 지역 판정: 통화(currency)를 1순위로 — 앱 전체가 통화로 국가·환율을 판정하므로 가장 정확.
 // KRW·미지정이면 이름 키워드로 세분화(KRW로 거래되는 해외 ETF 포함). 구 호출(문자열) 호환.
+// 인사이트 events 항목 안전 렌더 — Gemini가 문자열 대신 {name/event/title, date, impact} 객체로 줄 때 크래시(React error #31) 방지
+function evText(e) {
+  if (e == null) return "";
+  if (typeof e === "string") return e;
+  if (typeof e === "object") {
+    const label = e.name || e.event || e.title || e.text || e.headline || "";
+    const parts = [e.date, label, e.impact].filter(v => v != null && v !== "" && typeof v !== "object");
+    return parts.length ? parts.join(" · ") : JSON.stringify(e);
+  }
+  return String(e);
+}
+
 function guessRegion(h) {
   const holding = (typeof h === "string") ? { name: h } : (h || {});
   // ★지역은 섹터 분류 결과의 국가 접두에서 가져온다. 통화로 판정하지 않는다.
@@ -7259,6 +7271,8 @@ function Settings() {
           </div>
           <div style={{ fontSize:13, color:"#64748b" }}>AI 투자 어드바이저</div>
           <div style={{ marginTop: 12, fontSize: 12, color: "#475569", lineHeight:1.7, borderTop:"1px solid #1e293b", paddingTop:12 }}>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.7 변경사항 (인사이트 탭 블랙화면 수정)</div>
+            <div>· 인사이트 일부 탭(주로 아시아)에서 화면이 검게 비며 아무것도 안 뜨던 문제를 고쳤습니다. AI가 주요 일정·리스크 항목을 문자열 대신 객체 형태로 내놓을 때 화면이 깨지던 것으로, 어떤 형태로 와도 안전하게 표시하도록 했습니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.6 변경사항 (답변 잘림 수정 · AI 조언 한도 분리)</div>
             <div>· AI 조언 답변이 가끔 중간에 잘리던 문제를 고쳤습니다. 응답을 받아 처리하는 과정에서 마지막 조각이 버려지던 버그였습니다(길이와 무관하게 발생).</div>
             <div>· AI 조언의 일일 한도를 '빠른 질문'과 '직접 입력'으로 나눴습니다. 빠른 질문은 검색 없이 인사이트만 참고해 더 넉넉하게, 직접 입력(검색 포함)은 별도로 제한합니다. 남은 횟수도 각각 표시됩니다. ※ gemini.js 함께 배포 + Supabase app_config에 advice_quick_daily_limit 추가 필요</div>
@@ -7271,13 +7285,13 @@ function Settings() {
             <div>· 화면에 티커(심볼)가 표시된 해외 종목(예: ASML·BABA)이 종목 마스터에 있는데도 이름이 조금 달라 자동 등록되지 못하고 수동 입력으로 빠지던 문제를 고쳤습니다. 이제 티커가 있으면 티커로 먼저 마스터를 조회해, 미국 상장 ADR 등도 정확히 자동 등록되고 지역도 미국으로 잡힙니다.</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.2 변경사항 (미지원 종목 자동등록 차단 강화)</div>
             <div>· 매입단가가 있는 화면이라도 홍콩·인도 등 해외 종목(예: 알리바바)이 원화·달러로 잘못 자동 등록되던 문제를 고쳤습니다. 티커에 거래소 표시가 없어도, 국내·미국 종목 마스터(티커·종목명 조회)에 없으면 해외로 보고 수동 입력으로 보냅니다. (한국·미국 종목은 그대로 자동 등록)</div>
-            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.1 변경사항 (지역 판정 정확화 — 거래소 기준)</div>
-            <div>· 지역별 구성이 통화로 국가를 판단하던 것을 거래소 기준으로 바로잡았습니다. 한국 상장 미국 ETF(원화)·미국 상장 개별주(달러)처럼 상장 통화와 투자 대상이 다른 종목이 통화 때문에 잘못 분류되던 문제를 해결했습니다. 개별종목은 티커·종목명으로 국내·미국 종목 마스터를 조회해 거래소 국가를 판별하고, 어디에도 없으면 '글로벌'로 둡니다(통화로 미국이라 단정하지 않음).</div>
-            <div>· 종목 정보를 조회할 때 거래소 국가·통화를 함께 저장해 홍콩·인도 등 해외 종목의 지역·미지원 판별 정확도를 높였습니다. ※ sector-map.js 함께 배포 필요</div>
             <button onClick={() => setShowAllHistory(v => !v)} style={{ marginTop:10, padding:"6px 12px", borderRadius:8, background:"none", border:"1px solid #334155", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
               {showAllHistory ? "이전 버전 접기 ▲" : "이전 버전 더보기 ▼"}
             </button>
             {showAllHistory && (<>
+            <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.1 변경사항 (지역 판정 정확화 — 거래소 기준)</div>
+            <div>· 지역별 구성이 통화로 국가를 판단하던 것을 거래소 기준으로 바로잡았습니다. 한국 상장 미국 ETF(원화)·미국 상장 개별주(달러)처럼 상장 통화와 투자 대상이 다른 종목이 통화 때문에 잘못 분류되던 문제를 해결했습니다. 개별종목은 티커·종목명으로 국내·미국 종목 마스터를 조회해 거래소 국가를 판별하고, 어디에도 없으면 '글로벌'로 둡니다(통화로 미국이라 단정하지 않음).</div>
+            <div>· 종목 정보를 조회할 때 거래소 국가·통화를 함께 저장해 홍콩·인도 등 해외 종목의 지역·미지원 판별 정확도를 높였습니다. ※ sector-map.js 함께 배포 필요</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.9.0 변경사항 (지원·미지원 통화 구분)</div>
             <div>· 원·달러·엔 외 통화(홍콩·중국·인도·유럽·호주 등) 종목은 자동 등록하지 않고 수동 입력으로 보냅니다. 종전에는 이런 종목이 원화·달러로 잘못 잡혀 자산평가액이 크게 어긋났는데, 이제 통화·평단가·수량·투자지역·섹터를 직접 지정해 정확히 등록합니다. (홍콩·중국 등은 추후 정식 지원 예정)</div>
             <div style={{ marginBottom:4, color:"#64748b", fontWeight:600 }}>v3.8.2 변경사항 (수동 입력 통화·섹터 분리)</div>
@@ -9140,7 +9154,7 @@ function CompareTab() {
 }
 
 // ---------- 피드백 (플로팅 버튼 + 별점 + 자유입력 → Supabase feedbacks) ----------
-const APP_VERSION = "3.9.6";
+const APP_VERSION = "3.9.7";
 
 // 0.5단위 별점 입력 (별 좌/우 반쪽 클릭)
 function StarRating({ value, onChange, size = 36 }) {
