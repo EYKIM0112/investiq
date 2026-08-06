@@ -6829,9 +6829,9 @@ function Advisor() {
   const getAdvice = async (q, isRetry = false, mode = "auto") => {
     if (!q) return;
     setLoading(true);
-    const portfolioStr = portfolio
+    const portfolioStr = (portfolio && portfolio.holdings && portfolio.holdings.length)
       ? portfolio.holdings.map(h => `${h.name}(${h.ticker}) ${h.shares}주 평단${h.avg_price}`).join(", ")
-      : "포트폴리오 정보 없음";
+      : "보유 종목 없음 (포트폴리오가 비어 있음. 추천은 모두 [신규]로 표시하고 [보유중]은 절대 쓰지 말 것)";
     const insightCtx = getMarketInsightContext(1500); // 앱 내 시장 인사이트 재사용
     const srcDateStr = fmtAdviceSourceDate(getAdviceSourceStatus().oldest);
     if (!isRetry) {
